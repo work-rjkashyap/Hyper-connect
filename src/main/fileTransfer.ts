@@ -1,0 +1,257 @@
+import fs from 'fs'
+import path from 'path'
+import net from 'net'
+import { v4 as uuidv4 } from 'uuid'
+import { BrowserWindow, ipcMain, dialog } from 'electron'
+import { connectionManager } from './protocol'
+import { discoveryManager } from './discovery'
+import { tcpServer } from './tcpServer'
+import { FileMetadata, NetworkMessage, FileTransferProgress } from '../shared/messageTypes'
+import { getDeviceInfo } from './identity'
+
+class FileTransferManager {
+  private activeTransfers: Map<
+    string,
+    FileTransferProgress & {
+      filePath?: string
+      metadata?: FileMetadata
+      writeStream?: fs.WriteStream
+    }
+  > = new Map()
+  private mainWindow?: BrowserWindow
+
+  setup(mainWindow: BrowserWindow): void {
+    this.mainWindow = mainWindow
+
+    ipcMain.handle('send-file', async (_, deviceId: string, filePath: string) => {
+      return this.initiateSend(deviceId, filePath)
+    })
+
+    ipcMain.handle('accept-file', async (_, fileId: string) => {
+      const transfer = this.activeTransfers.get(fileId)
+      if (!transfer || !transfer.metadata) return
+
+      const { filePath } = await dialog.showSaveDialog({
+        defaultPath: path.join(process.env.HOME || '', 'Downloads', transfer.metadata.name)
+      })
+
+      if (filePath) {
+        this.sendAccept(fileId, filePath)
+      } else {
+        this.sendReject(fileId)
+      }
+    })
+
+    ipcMain.handle('reject-file', (_, fileId: string) => {
+      this.sendReject(fileId)
+    })
+
+    // Handle raw connections from TCPServer
+    tcpServer.on('raw-connection', (socket: net.Socket, initialBuffer: Buffer) => {
+      // Header format: "FILE_STREAM:<fileId>\n"
+      const str = initialBuffer.toString()
+      const match = str.match(/^FILE_STREAM:([a-zA-Z0-9-]+)\n/)
+      if (match) {
+        const fileId = match[1]
+        const transfer = this.activeTransfers.get(fileId)
+        if (transfer && transfer.filePath) {
+          transfer.writeStream = fs.createWriteStream(transfer.filePath)
+          transfer.status = 'active'
+
+          // Process any remaining bytes in initialBuffer after the header
+          const headerLength = match[0].length
+          if (initialBuffer.length > headerLength) {
+            transfer.writeStream.write(initialBuffer.slice(headerLength))
+          }
+
+          socket.on('data', (data) => {
+            if (transfer.writeStream) {
+              transfer.writeStream.write(data)
+              const received = transfer.writeStream.bytesWritten
+              const progress = received / (transfer.metadata?.size || 1)
+              transfer.progress = progress
+              this.mainWindow?.webContents.send('file-transfer-progress', transfer)
+            }
+          })
+
+          socket.on('end', () => {
+            if (transfer.writeStream) {
+              transfer.writeStream.end()
+              transfer.status = 'completed'
+              this.mainWindow?.webContents.send('file-transfer-progress', transfer)
+            }
+          })
+        }
+      }
+    })
+  }
+
+  async initiateSend(deviceId: string, filePath: string): Promise<string> {
+    const stats = fs.statSync(filePath)
+    const fileId = uuidv4()
+    const metadata: FileMetadata = {
+      fileId,
+      name: path.basename(filePath),
+      size: stats.size,
+      path: filePath
+    }
+
+    const device = discoveryManager.getDiscoveredDevices().find((d) => d.deviceId === deviceId)
+    if (!device) throw new Error('Device not found')
+
+    const message: NetworkMessage = {
+      type: 'FILE_META',
+      deviceId: getDeviceInfo().deviceId,
+      payload: metadata,
+      id: uuidv4(),
+      timestamp: Date.now()
+    }
+
+    this.activeTransfers.set(fileId, {
+      fileId,
+      deviceId,
+      progress: 0,
+      speed: 0,
+      eta: 0,
+      status: 'pending',
+      filePath,
+      metadata
+    })
+
+    await connectionManager.getConnection(device)
+    connectionManager.sendMessage(deviceId, message)
+
+    return fileId
+  }
+
+  public handleIncomingMeta(message: NetworkMessage): void {
+    const metadata: FileMetadata = message.payload
+    this.activeTransfers.set(metadata.fileId, {
+      fileId: metadata.fileId,
+      deviceId: message.deviceId,
+      progress: 0,
+      speed: 0,
+      eta: 0,
+      status: 'pending',
+      metadata
+    })
+
+    this.mainWindow?.webContents.send('file-received', message)
+  }
+
+  public async handleAccept(message: NetworkMessage) {
+    const { fileId } = message.payload
+    const transfer = this.activeTransfers.get(fileId)
+    if (!transfer || !transfer.filePath) return
+
+    transfer.status = 'active'
+    this.startStreaming(fileId, transfer.filePath, transfer.deviceId)
+  }
+
+  public handleReject(message: NetworkMessage): void {
+    const { fileId } = message.payload
+    const transfer = this.activeTransfers.get(fileId)
+    if (transfer) {
+      transfer.status = 'rejected'
+      this.mainWindow?.webContents.send('file-transfer-progress', transfer)
+    }
+  }
+
+  private async sendAccept(fileId: string, savePath: string): Promise<void> {
+    const transfer = this.activeTransfers.get(fileId)
+    if (!transfer) return
+
+    const device = discoveryManager
+      .getDiscoveredDevices()
+      .find((d) => d.deviceId === transfer.deviceId)
+    if (!device) return
+
+    transfer.filePath = savePath
+
+    const message: NetworkMessage = {
+      type: 'FILE_ACCEPT',
+      deviceId: getDeviceInfo().deviceId,
+      payload: { fileId },
+      id: uuidv4(),
+      timestamp: Date.now()
+    }
+
+    await connectionManager.getConnection(device)
+    connectionManager.sendMessage(transfer.deviceId, message)
+  }
+
+  private async sendReject(fileId: string): Promise<void> {
+    const transfer = this.activeTransfers.get(fileId)
+    if (!transfer) return
+
+    const device = discoveryManager
+      .getDiscoveredDevices()
+      .find((d) => d.deviceId === transfer.deviceId)
+    if (!device) return
+
+    const message: NetworkMessage = {
+      type: 'FILE_REJECT',
+      deviceId: getDeviceInfo().deviceId,
+      payload: { fileId },
+      id: uuidv4(),
+      timestamp: Date.now()
+    }
+
+    await connectionManager.getConnection(device)
+    connectionManager.sendMessage(transfer.deviceId, message)
+
+    this.activeTransfers.delete(fileId)
+  }
+
+  private async startStreaming(fileId: string, filePath: string, deviceId: string): Promise<void> {
+    const transfer = this.activeTransfers.get(fileId)
+    if (!transfer) return
+
+    const device = discoveryManager.getDiscoveredDevices().find((d) => d.deviceId === deviceId)
+    if (!device) return
+
+    // Open DEDICATED connection for file stream
+    const socket = net.connect(device.port, device.address, () => {
+      socket.setNoDelay(true)
+
+      // Send header
+      socket.write(`FILE_STREAM:${fileId}\n`)
+
+      // Pipe file
+      const readStream = fs.createReadStream(filePath, { highWaterMark: 256 * 1024 })
+      readStream.pipe(socket)
+
+      let uploaded = 0
+      const startTime = Date.now()
+
+      readStream.on('data', (chunk) => {
+        uploaded += chunk.length
+        const now = Date.now()
+        const duration = (now - startTime) / 1000
+        const speed = uploaded / duration
+        const progress = uploaded / (transfer.metadata?.size || 1)
+        const eta = speed > 0 ? ((transfer.metadata?.size || 0) - uploaded) / speed : 0
+
+        transfer.progress = progress
+        transfer.speed = speed
+        transfer.eta = eta
+
+        this.mainWindow?.webContents.send('file-transfer-progress', transfer)
+      })
+
+      readStream.on('end', () => {
+        transfer.status = 'completed'
+        this.mainWindow?.webContents.send('file-transfer-progress', transfer)
+        socket.end()
+      })
+    })
+
+    socket.on('error', (err) => {
+      console.error('File stream socket error:', err)
+      transfer.status = 'failed'
+      this.mainWindow?.webContents.send('file-transfer-progress', transfer)
+    })
+  }
+}
+
+export const fileTransferManager = new FileTransferManager()
