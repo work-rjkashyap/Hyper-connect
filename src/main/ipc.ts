@@ -30,8 +30,15 @@ export function setupIpc(mainWindow: BrowserWindow): void {
   // Messaging
   ipcMain.handle('send-message', async (_, deviceId: string, payload: string) => {
     const devices = discoveryManager.getDiscoveredDevices()
+    console.log(
+      `[IPC] Sending message to ${deviceId}. Available devices:`,
+      devices.map((d) => `${d.displayName} (${d.address}:${d.port})`)
+    )
     const target = devices.find((d) => d.deviceId === deviceId)
-    if (!target) throw new Error('Device not found')
+    if (!target) {
+      console.error(`[IPC] Target device ${deviceId} not found in discovery list`)
+      throw new Error('Device not found')
+    }
 
     const message: NetworkMessage = {
       type: 'MESSAGE',
@@ -42,11 +49,15 @@ export function setupIpc(mainWindow: BrowserWindow): void {
     }
 
     try {
+      console.log(
+        `[IPC] Connecting to ${target.displayName} at ${target.address}:${target.port}...`
+      )
       await connectionManager.getConnection(target)
+      console.log(`[IPC] Connection established, sending payload`)
       connectionManager.sendMessage(deviceId, message)
       return message
     } catch (e) {
-      console.error('Failed to send message:', e)
+      console.error(`[IPC] Failed to reach ${target.address}:${target.port}:`, e)
       throw e
     }
   })

@@ -12,7 +12,9 @@ export class ConnectionManager extends EventEmitter {
     }
 
     return new Promise((resolve, reject) => {
+      console.log(`[Protocol] Attempting to connect to ${device.address}:${device.port}...`)
       const socket = net.connect(device.port, device.address, () => {
+        console.log(`[Protocol] Successfully connected to ${device.address}:${device.port}`)
         socket.setNoDelay(true)
         socket.setKeepAlive(true, 1000)
         this.activeConnections.set(device.deviceId, socket)
