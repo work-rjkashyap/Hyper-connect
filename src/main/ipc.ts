@@ -7,8 +7,15 @@ import { NetworkMessage, Device } from '../shared/messageTypes'
 import { v4 as uuidv4 } from 'uuid'
 import { fileTransferManager } from './fileTransfer'
 
-export function setupIpc(mainWindow: BrowserWindow) {
+export function setupIpc(mainWindow: BrowserWindow): void {
   fileTransferManager.setup(mainWindow)
+
+  // Safe message sending helper - checks if window is destroyed before sending
+  const sendToRenderer = (channel: string, ...args: unknown[]): void => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send(channel, ...args)
+    }
+  }
 
   // Device Info
   ipcMain.handle('get-device-info', () => getDeviceInfo())
@@ -44,16 +51,16 @@ export function setupIpc(mainWindow: BrowserWindow) {
     }
   })
 
-  // Forward events to renderer
-  discoveryManager.on('deviceFound', (device: Device) => {
-    mainWindow.webContents.send('device-discovered', device)
-  })
+  // Forward events to renderer with safe sending
+  const onDeviceFound = (device: Device): void => {
+    sendToRenderer('device-discovered', device)
+  }
 
-  discoveryManager.on('deviceLost', (deviceId: string) => {
-    mainWindow.webContents.send('device-lost', deviceId)
-  })
+  const onDeviceLost = (deviceId: string): void => {
+    sendToRenderer('device-lost', deviceId)
+  }
 
-  const handleIncomingMessage = (message: NetworkMessage, socket: any) => {
+  const handleIncomingMessage = (message: NetworkMessage, socket: any): void => {
     if (message.type === 'HELLO') {
       connectionManager.registerSocket(message.deviceId, socket)
     } else if (message.type === 'FILE_META') {
@@ -64,9 +71,19 @@ export function setupIpc(mainWindow: BrowserWindow) {
       fileTransferManager.handleReject(message)
     }
 
-    mainWindow.webContents.send('message-received', message)
+    sendToRenderer('message-received', message)
   }
 
+  discoveryManager.on('deviceFound', onDeviceFound)
+  discoveryManager.on('deviceLost', onDeviceLost)
   tcpServer.on('message', handleIncomingMessage)
   connectionManager.on('message', handleIncomingMessage)
+
+  // Cleanup event listeners when window is destroyed
+  mainWindow.on('closed', () => {
+    discoveryManager.removeListener('deviceFound', onDeviceFound)
+    discoveryManager.removeListener('deviceLost', onDeviceLost)
+    tcpServer.removeListener('message', handleIncomingMessage)
+    connectionManager.removeListener('message', handleIncomingMessage)
+  })
 }
