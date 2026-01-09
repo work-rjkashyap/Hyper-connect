@@ -22,6 +22,8 @@ interface AppState {
   setSelectedDeviceId: (deviceId: string | null) => void
   setOnboardingComplete: (complete: boolean) => void
   setDiscoveredDevices: (devices: Device[]) => void
+  clearMessages: () => void
+  clearTransfers: () => void
 }
 
 export const useStore = create<AppState>()(
@@ -103,7 +105,10 @@ export const useStore = create<AppState>()(
         set({
           discoveredDevices: devices.map((d) => ({ ...d, isOnline: true }))
         })
-      }
+      },
+
+      clearMessages: () => set({ messages: {} }),
+      clearTransfers: () => set({ transfers: {} })
     }),
     {
       name: 'hyper-connect-storage',

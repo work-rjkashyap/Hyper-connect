@@ -111,7 +111,8 @@ class FileTransferManager {
                 status: transfer.status,
                 name: transfer.metadata?.name,
                 path: transfer.filePath,
-                size: transfer.metadata?.size
+                size: transfer.metadata?.size,
+                direction: 'incoming'
               })
             }
           })
@@ -129,7 +130,8 @@ class FileTransferManager {
                 status: 'completed',
                 name: transfer.metadata?.name,
                 path: transfer.filePath,
-                size: transfer.metadata?.size
+                size: transfer.metadata?.size,
+                direction: 'incoming'
               })
             }
           })
@@ -138,7 +140,7 @@ class FileTransferManager {
     })
   }
 
-  async initiateSend(deviceId: string, filePath: string): Promise<string> {
+  async initiateSend(deviceId: string, filePath: string): Promise<NetworkMessage> {
     const stats = fs.statSync(filePath)
     const fileId = uuidv4()
     const metadata: FileMetadata = {
@@ -167,7 +169,8 @@ class FileTransferManager {
       eta: 0,
       status: 'pending',
       filePath,
-      metadata
+      metadata,
+      direction: 'outgoing'
     })
 
     // Notify renderer of new pending transfer
@@ -178,13 +181,16 @@ class FileTransferManager {
       speed: 0,
       eta: 0,
       status: 'pending',
-      name: metadata.name
+      name: metadata.name,
+      path: filePath,
+      size: metadata.size,
+      direction: 'outgoing'
     })
 
     await connectionManager.getConnection(device)
     connectionManager.sendMessage(deviceId, message)
 
-    return fileId
+    return message
   }
 
   public handleIncomingMeta(message: NetworkMessage): void {
@@ -196,7 +202,8 @@ class FileTransferManager {
       speed: 0,
       eta: 0,
       status: 'pending',
-      metadata
+      metadata,
+      direction: 'incoming'
     })
 
     // Notify renderer of new incoming file request
@@ -207,7 +214,9 @@ class FileTransferManager {
       speed: 0,
       eta: 0,
       status: 'pending',
-      name: metadata.name
+      name: metadata.name,
+      size: metadata.size,
+      direction: 'incoming'
     })
 
     this.mainWindow?.webContents.send('file-received', message)
@@ -226,7 +235,9 @@ class FileTransferManager {
       speed: transfer.speed,
       eta: transfer.eta,
       status: 'active',
-      name: transfer.metadata?.name
+      name: transfer.metadata?.name,
+      size: transfer.metadata?.size,
+      direction: 'outgoing'
     })
     this.startStreaming(fileId, transfer.filePath, transfer.deviceId)
   }
@@ -236,7 +247,11 @@ class FileTransferManager {
     const transfer = this.activeTransfers.get(fileId)
     if (transfer) {
       transfer.status = 'rejected'
-      this.mainWindow?.webContents.send('file-transfer-progress', transfer)
+      this.mainWindow?.webContents.send('file-transfer-progress', {
+        ...transfer,
+        name: transfer.metadata?.name,
+        size: transfer.metadata?.size
+      })
     }
   }
 
@@ -330,7 +345,8 @@ class FileTransferManager {
           status: transfer.status,
           name: transfer.metadata?.name,
           path: transfer.filePath,
-          size: transfer.metadata?.size
+          size: transfer.metadata?.size,
+          direction: 'outgoing'
         })
       })
 
@@ -345,7 +361,8 @@ class FileTransferManager {
           status: 'completed',
           name: transfer.metadata?.name,
           path: transfer.filePath,
-          size: transfer.metadata?.size
+          size: transfer.metadata?.size,
+          direction: 'outgoing'
         })
         socket.end()
       })
@@ -363,7 +380,8 @@ class FileTransferManager {
         status: 'failed',
         name: transfer.metadata?.name,
         path: transfer.filePath,
-        size: transfer.metadata?.size
+        size: transfer.metadata?.size,
+        direction: 'outgoing'
       })
     })
   }

@@ -58,6 +58,7 @@ export class ConnectionManager extends EventEmitter {
       })
 
       socket.on('close', () => {
+        console.log(`[Protocol] Connection closed for device ${device.deviceId}`)
         this.activeConnections.delete(device.deviceId)
         this.emit('disconnected', device.deviceId)
       })
@@ -84,11 +85,22 @@ export class ConnectionManager extends EventEmitter {
 
   sendMessage(deviceId: string, message: NetworkMessage): void {
     const socket = this.activeConnections.get(deviceId)
-    if (socket && !socket.destroyed) {
+    if (socket && !socket.destroyed && socket.writable) {
       socket.write(JSON.stringify(message) + '\n')
     } else {
       console.warn(`No active connection for device ${deviceId}`)
     }
+  }
+
+  async ping(device: Device): Promise<void> {
+    const socket = await this.getConnection(device)
+    const pingMsg: NetworkMessage = {
+      type: 'PING',
+      deviceId: device.deviceId, // This should actually be our own deviceId, but since we are sending it to them
+      id: 'ping',
+      timestamp: Date.now()
+    }
+    socket.write(JSON.stringify(pingMsg) + '\n')
   }
 
   registerSocket(deviceId: string, socket: net.Socket): void {

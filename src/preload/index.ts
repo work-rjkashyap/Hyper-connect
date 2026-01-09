@@ -15,6 +15,8 @@ const api = {
   rejectFile: (fileId: string) => ipcRenderer.invoke('reject-file', fileId),
   selectFile: () => ipcRenderer.invoke('select-file'),
   openFileLocation: (filePath: string) => ipcRenderer.invoke('open-file-location', filePath),
+  clearCache: () => ipcRenderer.invoke('clear-cache'),
+  rescanDevices: () => ipcRenderer.invoke('rescan-devices'),
 
   // Event Listeners
   onDeviceDiscovered: (callback: any) => {

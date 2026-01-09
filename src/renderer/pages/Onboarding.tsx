@@ -1,4 +1,6 @@
 import React, { useState } from 'react'
+import logoLight from '../assets/logo_light.png'
+import logoDark from '../assets/logo_dark.png'
 import {
   Card,
   CardContent,
@@ -10,7 +12,6 @@ import {
 import { Input } from '../components/ui/input'
 import { Button } from '../components/ui/button'
 import { useStore } from '../store/useStore'
-import { Monitor } from 'lucide-react'
 import { ThemeToggle } from '../components/ui/theme-toggle'
 
 export const Onboarding: React.FC = () => {
@@ -43,12 +44,25 @@ export const Onboarding: React.FC = () => {
 
       <Card className="w-full max-w-md border border-border/50 shadow-2xl glass animate-in zoom-in-95 duration-500">
         <CardHeader className="text-center space-y-4">
-          <div className="mx-auto w-20 h-20 bg-linear-to-br from-primary/20 to-primary/5 rounded-3xl flex items-center justify-center shadow-inner">
-            <Monitor className="w-10 h-10 text-primary" />
+          <div className="mx-auto w-24 h-24 relative">
+            {/* Glow effect behind the logo */}
+            <div className="absolute inset-0 bg-primary/20 rounded-full blur-xl animate-pulse" />
+            <div className="relative w-full h-full bg-white dark:bg-slate-950 rounded-3xl p-3 shadow-lg flex items-center justify-center border border-border/10 overflow-hidden">
+              <img
+                src={logoLight}
+                alt="Hyper-connect Logo"
+                className="w-full h-full object-contain dark:hidden"
+              />
+              <img
+                src={logoDark}
+                alt="Hyper-connect Logo"
+                className="w-full h-full object-contain hidden dark:block"
+              />
+            </div>
           </div>
           <div className="space-y-2">
-            <CardTitle className="text-3xl font-bold tracking-tight bg-linear-to-br from-foreground to-foreground/70 bg-clip-text text-transparent">
-              Hyper-connect
+            <CardTitle className="text-3xl font-bold tracking-tight bg-gradient-to-br from-foreground to-foreground/70 bg-clip-text text-transparent">
+              Hyper Connect
             </CardTitle>
             <CardDescription className="text-base">
               Set a display name for this device so others can find you on the network.

@@ -14,6 +14,7 @@ function createWindow(): void {
     width: 1000,
     height: 800,
     show: false,
+    title: 'Hyper Connect',
     autoHideMenuBar: true,
     ...(process.platform === 'linux' ? { icon } : {}),
     webPreferences: {
@@ -55,6 +56,7 @@ app.whenReady().then(async () => {
   const deviceInfo = getDeviceInfo()
   const port = await tcpServer.start()
   discoveryManager.startDiscovery(deviceInfo, port) // Now safe to start discovery
+  discoveryManager.startHeartbeat() // Start the presence heartbeat check
 
   app.on('activate', function () {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

@@ -25,6 +25,8 @@ export interface NetworkMessage {
     | 'FILE_REJECT'
     | 'FILE_PROGRESS'
     | 'FILE_COMPLETE'
+    | 'PING'
+    | 'PONG'
   deviceId: string
   payload?: any
   id?: string
@@ -47,4 +49,5 @@ export interface FileTransferProgress {
   status: 'pending' | 'active' | 'completed' | 'failed' | 'rejected'
   path?: string
   size?: number
+  direction?: 'incoming' | 'outgoing'
 }

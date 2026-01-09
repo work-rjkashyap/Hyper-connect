@@ -6,11 +6,13 @@ export interface IApi {
   updateDisplayName: (name: string) => Promise<DeviceInfo>
   getDiscoveredDevices: () => Promise<Device[]>
   sendMessage: (deviceId: string, payload: string) => Promise<NetworkMessage>
-  sendFile: (deviceId: string, filePath: string) => Promise<string>
+  sendFile: (deviceId: string, filePath: string) => Promise<NetworkMessage>
   acceptFile: (fileId: string) => Promise<void>
   rejectFile: (fileId: string) => Promise<void>
   selectFile: () => Promise<string | null>
   openFileLocation: (filePath: string) => Promise<void>
+  clearCache: () => Promise<boolean>
+  rescanDevices: () => Promise<void>
 
   onDeviceDiscovered: (callback: (device: Device) => void) => void
   onDeviceLost: (callback: (deviceId: string) => void) => void

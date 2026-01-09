@@ -49,14 +49,18 @@ export class DiscoveryManager extends EventEmitter {
 
     // 2. Discover other devices
     this.browser = this.bonjour.find({ type: 'hyperconnect', protocol: 'tcp' })
+    this.setupBrowserListeners(deviceInfo.deviceId)
+  }
+
+  private setupBrowserListeners(localDeviceId: string): void {
+    if (!this.browser) return
 
     this.browser.on('up', (service: Service) => {
       const deviceId = service.txt?.deviceId
-      if (!deviceId || deviceId === deviceInfo.deviceId) return
+      if (!deviceId || deviceId === localDeviceId) return
 
       console.log(`Found peer: ${service.name} (${service.addresses?.join(', ')})`)
 
-      // Prefer IPv4 and non-internal addresses
       const address =
         service.addresses?.find((addr) => addr.includes('.') && !addr.startsWith('127.')) ||
         service.addresses?.[0] ||
@@ -89,6 +93,67 @@ export class DiscoveryManager extends EventEmitter {
         this.emit('deviceLost', deviceId)
       }
     })
+  }
+
+  async startHeartbeat(): Promise<void> {
+    const { connectionManager } = await import('./protocol')
+    
+    setInterval(async () => {
+      for (const [deviceId, device] of this.discoveredDevices) {
+        if (!device.isOnline) continue
+
+        try {
+          // Attempt to connect briefly to verify presence
+          await connectionManager.ping(device)
+          // Update lastSeen
+          device.lastSeen = Date.now()
+        } catch (e) {
+          console.log(`[Heartbeat] Device ${device.displayName} is unreachable, marking offline.`)
+          device.isOnline = false
+          this.emit('deviceLost', deviceId)
+        }
+      }
+    }, 15000) // Every 15 seconds
+  }
+
+  markDeviceOnline(deviceId: string): void {
+    const device = this.discoveredDevices.get(deviceId)
+    if (device) {
+      const wasOffline = !device.isOnline
+      device.isOnline = true
+      device.lastSeen = Date.now()
+      if (wasOffline) {
+        console.log(`[Discovery] Device ${device.displayName} came back online via message/traffic`)
+        this.emit('deviceFound', device)
+      }
+    }
+  }
+
+  rescan(): void {
+    console.log('[Discovery] Manual rescan triggered')
+    if (this.browser) {
+      const { getDeviceInfo } = require('./identity')
+      const localDeviceId = getDeviceInfo().deviceId
+      this.browser.stop()
+      // Clearing browser listeners happens automatically on stop usually, but we'll re-init
+      this.browser = this.bonjour.find({ type: 'hyperconnect', protocol: 'tcp' })
+      this.setupBrowserListeners(localDeviceId)
+      
+      // Also trigger a heartbeat pulse immediately
+      this.triggerHeartbeatOnce()
+    }
+  }
+
+  private async triggerHeartbeatOnce(): Promise<void> {
+    const { connectionManager } = await import('./protocol')
+    for (const [deviceId, device] of this.discoveredDevices) {
+      try {
+        await connectionManager.ping(device)
+        this.markDeviceOnline(deviceId)
+      } catch (e) {
+        // Just fail silently for manual rescan pulse
+      }
+    }
   }
 
   getDiscoveredDevices(): Device[] {

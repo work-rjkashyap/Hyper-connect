@@ -24,8 +24,19 @@ export function setupIpc(mainWindow: BrowserWindow): void {
     return getDeviceInfo()
   })
 
+  ipcMain.handle('clear-cache', async () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      const session = mainWindow.webContents.session
+      await session.clearCache()
+      await session.clearStorageData()
+      return true
+    }
+    return false
+  })
+
   // Discovery
   ipcMain.handle('get-discovered-devices', () => discoveryManager.getDiscoveredDevices())
+  ipcMain.handle('rescan-devices', () => discoveryManager.rescan())
 
   // Messaging
   ipcMain.handle('send-message', async (_, deviceId: string, payload: string) => {
@@ -74,8 +85,22 @@ export function setupIpc(mainWindow: BrowserWindow): void {
   }
 
   const handleIncomingMessage = (message: NetworkMessage, socket: any): void => {
+    // Mark device as online whenever we receive any traffic from it
+    discoveryManager.markDeviceOnline(message.deviceId)
+
     if (message.type === 'HELLO') {
       connectionManager.registerSocket(message.deviceId, socket)
+    } else if (message.type === 'PING') {
+      const pong: NetworkMessage = {
+        type: 'PONG',
+        deviceId: getDeviceInfo().deviceId,
+        id: 'pong',
+        timestamp: Date.now()
+      }
+      socket.write(JSON.stringify(pong) + '\n')
+      return // Don't forward to renderer
+    } else if (message.type === 'PONG') {
+      return // Don't forward to renderer
     } else if (message.type === 'FILE_META') {
       fileTransferManager.handleIncomingMeta(message)
     } else if (message.type === 'FILE_ACCEPT') {
