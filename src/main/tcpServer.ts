@@ -12,23 +12,32 @@ export class TCPServer extends EventEmitter {
     this.server = net.createServer((socket) => this.handleConnection(socket))
   }
 
-  start(): Promise<number> {
-    return new Promise((resolve, reject) => {
-      this.server.listen(0, '0.0.0.0', () => {
-        const address = this.server.address() as net.AddressInfo
-        this.port = address.port
-        console.log(`TCP Server listening on port ${this.port}`)
-        resolve(this.port)
-      })
+  async start(preferredPort: number = 52900): Promise<number> {
+    return new Promise((resolve) => {
+      const tryListen = (currentPort: number): void => {
+        this.server.listen(currentPort, '0.0.0.0', () => {
+          const address = this.server.address() as net.AddressInfo
+          this.port = address.port
+          this.server.removeAllListeners('error')
+          console.log(`TCP Server listening on port ${this.port}`)
+          resolve(this.port)
+        })
 
-      this.server.on('error', (err) => {
-        console.error('TCP Server error:', err)
-        reject(err)
-      })
+        this.server.once('error', (err: { code: string }) => {
+          if (err.code === 'EADDRINUSE' && currentPort !== 0) {
+            console.log(`Port ${currentPort} in use, trying dynamic port...`)
+            tryListen(0)
+          } else {
+            console.error('TCP Server error:', err)
+          }
+        })
+      }
+
+      tryListen(preferredPort)
     })
   }
 
-  private handleConnection(socket: net.Socket) {
+  private handleConnection(socket: net.Socket): void {
     socket.setNoDelay(true)
     socket.setKeepAlive(true, 1000)
 
@@ -52,7 +61,7 @@ export class TCPServer extends EventEmitter {
       }
 
       // NDJSON / Multi-line JSON support
-      let str = buffer.toString()
+      const str = buffer.toString()
       const lines = str.split('\n')
 
       if (lines.length > 1) {
@@ -85,15 +94,15 @@ export class TCPServer extends EventEmitter {
     })
   }
 
-  registerConnection(deviceId: string, socket: net.Socket) {
+  registerConnection(deviceId: string, socket: net.Socket): void {
     this.connections.set(deviceId, socket)
   }
 
-  sendMessage(socket: net.Socket, message: NetworkMessage) {
+  sendMessage(socket: net.Socket, message: NetworkMessage): void {
     socket.write(JSON.stringify(message) + '\n')
   }
 
-  stop() {
+  stop(): void {
     this.server.close()
     for (const socket of this.connections.values()) {
       socket.destroy()

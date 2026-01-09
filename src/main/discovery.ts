@@ -54,14 +54,20 @@ export class DiscoveryManager extends EventEmitter {
       const deviceId = service.txt?.deviceId
       if (!deviceId || deviceId === deviceInfo.deviceId) return
 
-      console.log(`Found peer: ${service.name} (${service.addresses?.[0]})`)
+      console.log(`Found peer: ${service.name} (${service.addresses?.join(', ')})`)
+
+      // Prefer IPv4 and non-internal addresses
+      const address =
+        service.addresses?.find((addr) => addr.includes('.') && !addr.startsWith('127.')) ||
+        service.addresses?.[0] ||
+        ''
 
       const device: Device = {
         deviceId,
         displayName: service.txt?.displayName || service.name,
         platform: service.txt?.platform || 'unknown',
         appVersion: service.txt?.appVersion || '0.0.0',
-        address: service.addresses?.[0] || '',
+        address,
         port: service.port,
         lastSeen: Date.now(),
         isOnline: true

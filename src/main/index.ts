@@ -61,6 +61,17 @@ app.whenReady().then(async () => {
   })
 })
 
+app.on('will-quit', () => {
+  console.log('App quitting, stopping services...')
+  discoveryManager.stop()
+  tcpServer.stop()
+})
+
+// Ensure cleanup on SIGINT/terminal close
+process.on('SIGINT', () => {
+  app.quit()
+})
+
 // Quit when all windows are closed, except on macOS. There, it's common
 // for applications and their menu bar to stay active until the user quits
 // explicitly with Cmd + Q.
