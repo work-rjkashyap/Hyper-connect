@@ -10,6 +10,7 @@ export interface IApi {
   acceptFile: (fileId: string) => Promise<void>
   rejectFile: (fileId: string) => Promise<void>
   selectFile: () => Promise<string | null>
+  openFileLocation: (filePath: string) => Promise<void>
 
   onDeviceDiscovered: (callback: (device: Device) => void) => void
   onDeviceLost: (callback: (deviceId: string) => void) => void

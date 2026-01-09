@@ -45,4 +45,5 @@ export interface FileTransferProgress {
   speed: number
   eta: number
   status: 'pending' | 'active' | 'completed' | 'failed' | 'rejected'
+  path?: string
 }

@@ -2,7 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import net from 'net'
 import { v4 as uuidv4 } from 'uuid'
-import { BrowserWindow, ipcMain, dialog, app } from 'electron'
+import { BrowserWindow, ipcMain, dialog, app, shell } from 'electron'
 import { connectionManager } from './protocol'
 import { discoveryManager } from './discovery'
 import { tcpServer } from './tcpServer'
@@ -61,6 +61,12 @@ class FileTransferManager {
       return filePaths[0]
     })
 
+    ipcMain.handle('open-file-location', async (_, filePath: string) => {
+      if (filePath && fs.existsSync(filePath)) {
+        shell.showItemInFolder(filePath)
+      }
+    })
+
     // Handle raw connections from TCPServer
     tcpServer.on('raw-connection', (socket: net.Socket, initialBuffer: Buffer) => {
       // Header format: "FILE_STREAM:<fileId>\n"
@@ -103,7 +109,8 @@ class FileTransferManager {
                 speed: transfer.speed,
                 eta: transfer.eta,
                 status: transfer.status,
-                name: transfer.metadata?.name
+                name: transfer.metadata?.name,
+                path: transfer.filePath
               })
             }
           })
@@ -119,7 +126,8 @@ class FileTransferManager {
                 speed: transfer.speed,
                 eta: 0,
                 status: 'completed',
-                name: transfer.metadata?.name
+                name: transfer.metadata?.name,
+                path: transfer.filePath
               })
             }
           })
@@ -318,7 +326,8 @@ class FileTransferManager {
           speed: transfer.speed,
           eta: transfer.eta,
           status: transfer.status,
-          name: transfer.metadata?.name
+          name: transfer.metadata?.name,
+          path: transfer.filePath
         })
       })
 
@@ -331,7 +340,8 @@ class FileTransferManager {
           speed: transfer.speed,
           eta: 0,
           status: 'completed',
-          name: transfer.metadata?.name
+          name: transfer.metadata?.name,
+          path: transfer.filePath
         })
         socket.end()
       })
@@ -347,7 +357,8 @@ class FileTransferManager {
         speed: transfer.speed,
         eta: transfer.eta,
         status: 'failed',
-        name: transfer.metadata?.name
+        name: transfer.metadata?.name,
+        path: transfer.filePath
       })
     })
   }

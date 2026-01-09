@@ -256,7 +256,7 @@ const DeviceView: React.FC<{ device: Device }> = ({ device }) => {
                   >
                     {!isFile ? (
                       <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">
-                        {msg.payload as string}
+                        {typeof msg.payload === 'string' ? msg.payload : JSON.stringify(msg.payload)}
                       </p>
                     ) : (
                       <div className="space-y-3">
@@ -280,9 +280,7 @@ const DeviceView: React.FC<{ device: Device }> = ({ device }) => {
                           </div>
                           <div className="flex-1 min-w-0">
                             <p className="text-sm font-medium text-white wrap-break-word">
-                              {isFile
-                                ? (msg.payload as FileMetadata).name
-                                : (msg.payload as string)}
+                              {(msg.payload as FileMetadata).name || 'File'}
                             </p>
                             <p
                               className={cn(
@@ -295,36 +293,7 @@ const DeviceView: React.FC<{ device: Device }> = ({ device }) => {
                           </div>
                         </div>
 
-                        {!isLocal && (() => {
-                          const fileId = (msg.payload as FileMetadata).fileId
-                          const transfer = useStore.getState().transfers[fileId]
-                          const shouldShowButtons = !transfer || transfer.status === 'pending'
-
-                          return shouldShowButtons ? (
-                            <div className="flex gap-2">
-                              <Button
-                                size="sm"
-                                variant="primary"
-                                className="flex-1 h-8 text-[11px] font-bold uppercase tracking-wider bg-background text-foreground hover:bg-background/90"
-                                onClick={() =>
-                                  window.api.acceptFile((msg.payload as FileMetadata).fileId)
-                                }
-                              >
-                                Accept
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="flex-1 h-8 text-[11px] font-bold uppercase tracking-wider bg-destructive/10 text-destructive hover:bg-destructive/20 border-destructive/20"
-                                onClick={() =>
-                                  window.api.rejectFile((msg.payload as FileMetadata).fileId)
-                                }
-                              >
-                                Reject
-                              </Button>
-                            </div>
-                          ) : null
-                        })()}
+                        {!isLocal && <AcceptRejectButtons fileId={(msg.payload as FileMetadata).fileId} />}
                       </div>
                     )}
                   </div>
@@ -388,75 +357,151 @@ const TransferView: React.FC<{ device: Device }> = ({ device }) => {
   }
 
   return (
-    <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-background/50">
+    <div className="flex-1 overflow-y-auto p-6 space-y-8 bg-background/50">
       <div
         onClick={handleSelectFile}
-        className="group border-2 border-dashed border-border/60 rounded-2xl p-12 text-center space-y-4 hover:border-primary/50 hover:bg-primary/5 transition-all cursor-pointer"
+        className="relative group border-2 border-dashed border-border/60 rounded-3xl p-16 text-center space-y-4 hover:border-primary/50 hover:bg-primary/5 transition-all cursor-pointer"
       >
-        <div className="absolute top-0 right-0 min-w-4.5 h-4.5 bg-red-500 rounded-full flex items-center justify-center border-2 border-slate-900 -translate-y-1/3 translate-x-1/3 shadow-lg">
-          <FileUp className="w-8 h-8 text-primary/40 group-hover:text-primary transition-colors" />
+        <div className="absolute top-0 right-0 w-12 h-12 bg-primary text-primary-foreground rounded-full flex items-center justify-center border-4 border-background -translate-y-1/2 translate-x-1/2 shadow-xl group-hover:scale-110 transition-transform">
+          <FileUp className="w-6 h-6" />
         </div>
-        <div className="space-y-1">
-          <p className="text-base font-semibold">Drop files here to send</p>
-          <p className="text-sm text-muted-foreground">
-            Select a file from your computer to transfer instantly.
+        <div className="space-y-2">
+          <p className="text-xl font-bold tracking-tight">Drop files here to send</p>
+          <p className="text-sm text-muted-foreground max-w-xs mx-auto">
+            Select any file from your computer to transfer it instantly to {device.displayName}.
           </p>
         </div>
-        <Button variant="outline" className="mt-2 font-semibold">
-          Choose File
+        <Button variant="secondary" className="mt-4 font-bold uppercase tracking-wider text-xs px-8">
+          Browse Files
         </Button>
       </div>
 
-      <div className="space-y-4">
-        <h3 className="text-sm font-bold uppercase tracking-widest text-muted-foreground/60 px-2 flex items-center gap-2">
-          <Separator className="flex-1 opacity-20" /> Recent Transfers{' '}
-          <Separator className="flex-1 opacity-20" />
-        </h3>
+      <div className="space-y-6">
+        <div className="flex items-center gap-4">
+          <h3 className="text-xs font-bold uppercase tracking-[0.2em] text-muted-foreground/50 whitespace-nowrap">
+            Transfer History
+          </h3>
+          <Separator className="flex-1 opacity-10" />
+        </div>
+
         {transfers.length === 0 ? (
-          <div className="text-center py-10 text-muted-foreground/60">
-            <p className="text-sm italic">No active transfers</p>
+          <div className="text-center py-20 bg-muted/5 rounded-3xl border border-dashed border-border/40">
+            <div className="w-16 h-16 bg-muted/20 rounded-full flex items-center justify-center mx-auto mb-4">
+              <Paperclip className="w-6 h-6 text-muted-foreground/30" />
+            </div>
+            <p className="text-sm font-medium text-muted-foreground/60">No recent activity</p>
           </div>
         ) : (
-          <div className="grid gap-3">
-            {[...transfers].reverse().map((transfer) => (
-              <Card key={transfer.fileId} className="bg-card/50 overflow-hidden group">
-                <CardContent className="p-4 flex items-center gap-4">
-                  <div className="p-3 bg-primary/5 rounded-xl border border-primary/10">
-                    <Paperclip className="w-5 h-5 text-primary/60" />
-                  </div>
-                  <div className="flex-1 min-w-0 space-y-2">
-                    <div className="flex items-center justify-between gap-4">
-                      <p className="text-sm font-bold truncate">
-                        {(transfer as FileTransferProgress & { name?: string }).name || 'File'}
-                      </p>
-                      <span className="text-[10px] font-bold text-muted-foreground uppercase bg-secondary px-2 py-0.5 rounded-full">
-                        {transfer.status}
-                      </span>
+          <div className="grid gap-4">
+            {[...transfers].reverse().map((transfer) => {
+              const statusColors = {
+                pending: 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20',
+                active: 'bg-primary/10 text-primary border-primary/20',
+                completed: 'bg-green-500/10 text-green-500 border-green-500/20',
+                failed: 'bg-red-500/10 text-red-500 border-red-500/20',
+                rejected: 'bg-muted/10 text-muted-foreground border-border'
+              }
+
+              const isCompleted = transfer.status === 'completed'
+
+              return (
+                <Card
+                  key={transfer.fileId}
+                  onClick={() => {
+                    if (isCompleted && transfer.path) {
+                      window.api.openFileLocation(transfer.path)
+                    }
+                  }}
+                  className={cn(
+                    'bg-card/40 border-border/40 overflow-hidden group transition-all rounded-2xl',
+                    isCompleted && 'cursor-pointer hover:border-primary/50 hover:bg-primary/5 hover:shadow-lg active:scale-[0.98]'
+                  )}
+                >
+                  <CardContent className="p-5 flex items-center gap-5">
+                    <div
+                      className={cn(
+                        'p-3.5 rounded-2xl border transition-colors',
+                        isCompleted
+                          ? 'bg-green-500/10 border-green-500/20 text-green-600'
+                          : 'bg-primary/5 border-primary/10 text-primary/70'
+                      )}
+                    >
+                      {isCompleted ? <Paperclip className="w-6 h-6" /> : <FileText className="w-6 h-6" />}
                     </div>
-                    {transfer.status === 'active' && (
-                      <div className="space-y-1.5 animate-in fade-in duration-500">
-                        <div className="flex justify-between text-[10px] text-muted-foreground font-medium uppercase tracking-tighter">
-                          <span>
-                            {(transfer.progress * 100).toFixed(0)}% •{' '}
-                            {(transfer.speed / 1024 / 1024).toFixed(1)} MB/s
-                          </span>
-                          <span>{Math.ceil(transfer.eta)}s left</span>
+                    <div className="flex-1 min-w-0 space-y-3">
+                      <div className="flex items-center justify-between gap-4">
+                        <div className="min-w-0">
+                          <p className="text-sm font-bold truncate">
+                            {(transfer as FileTransferProgress & { name?: string }).name || 'File'}
+                          </p>
+                          <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">
+                            {transfer.deviceId === device.deviceId ? 'Incoming' : 'Outgoing'}
+                          </p>
                         </div>
-                        <div className="h-2 w-full bg-secondary rounded-full overflow-hidden">
-                          <div
-                            className="h-full bg-primary transition-all duration-300"
-                            style={{ width: `${transfer.progress * 100}%` }}
-                          />
-                        </div>
+                        <span
+                          className={cn(
+                            'text-[9px] font-black tracking-widest uppercase px-2.5 py-1 rounded-full border',
+                            statusColors[transfer.status] || statusColors.pending
+                          )}
+                        >
+                          {transfer.status}
+                        </span>
                       </div>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+                      {transfer.status === 'active' && (
+                        <div className="space-y-2 animate-in fade-in slide-in-from-top-1 duration-500">
+                          <div className="flex justify-between text-[10px] text-muted-foreground font-bold tracking-tight">
+                            <span className="flex items-center gap-2">
+                              <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
+                              {(transfer.progress * 100).toFixed(0)}% •{' '}
+                              {(transfer.speed / 1024 / 1024).toFixed(1)} MB/s
+                            </span>
+                            <span className="flex items-center gap-1.5 font-mono">
+                              {Math.ceil(transfer.eta)}s remaining
+                            </span>
+                          </div>
+                          <div className="h-2 w-full bg-muted/30 rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-primary shadow-[0_0_10px_rgba(var(--primary),0.5)] transition-all duration-500 ease-out"
+                              style={{ width: `${transfer.progress * 100}%` }}
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              )
+            })}
           </div>
         )}
       </div>
+    </div>
+  )
+}
+
+const AcceptRejectButtons: React.FC<{ fileId: string }> = ({ fileId }) => {
+  const transfer = useStore((state) => state.transfers[fileId])
+  const shouldShowButtons = !transfer || transfer.status === 'pending'
+
+  if (!shouldShowButtons) return null
+
+  return (
+    <div className="flex gap-2 animate-in fade-in duration-300">
+      <Button
+        size="sm"
+        className="flex-1 h-8 text-[11px] font-bold uppercase tracking-wider bg-background text-foreground hover:bg-background/90"
+        onClick={() => window.api.acceptFile(fileId)}
+      >
+        Accept
+      </Button>
+      <Button
+        size="sm"
+        variant="outline"
+        className="flex-1 h-8 text-[11px] font-bold uppercase tracking-wider bg-destructive/10 text-destructive hover:bg-destructive/20 border-destructive/20"
+        onClick={() => window.api.rejectFile(fileId)}
+      >
+        Reject
+      </Button>
     </div>
   )
 }

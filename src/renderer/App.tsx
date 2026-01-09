@@ -59,7 +59,11 @@ export const App: React.FC = () => {
 
         window.api.onMessageReceived((message: NetworkMessage) => {
             const state = useStore.getState()
-            addMessage(message.deviceId, message)
+
+            // Only add messages that should be displayed in the chat UI
+            if (message.type === 'MESSAGE' || message.type === 'FILE_META') {
+                addMessage(message.deviceId, message)
+            }
 
             // If it's a chat message or file request and not from the currently selected device, increment unread count
             if (

@@ -14,6 +14,7 @@ const api = {
   acceptFile: (fileId: string) => ipcRenderer.invoke('accept-file', fileId),
   rejectFile: (fileId: string) => ipcRenderer.invoke('reject-file', fileId),
   selectFile: () => ipcRenderer.invoke('select-file'),
+  openFileLocation: (filePath: string) => ipcRenderer.invoke('open-file-location', filePath),
 
   // Event Listeners
   onDeviceDiscovered: (callback: any) => {
