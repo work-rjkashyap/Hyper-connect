@@ -295,30 +295,36 @@ const DeviceView: React.FC<{ device: Device }> = ({ device }) => {
                           </div>
                         </div>
 
-                        {!isLocal && (
-                          <div className="flex gap-2">
-                            <Button
-                              size="sm"
-                              variant="primary"
-                              className="flex-1 h-8 text-[11px] font-bold uppercase tracking-wider bg-background text-foreground hover:bg-background/90"
-                              onClick={() =>
-                                window.api.acceptFile((msg.payload as FileMetadata).fileId)
-                              }
-                            >
-                              Accept
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="flex-1 h-8 text-[11px] font-bold uppercase tracking-wider bg-destructive/10 text-destructive hover:bg-destructive/20 border-destructive/20"
-                              onClick={() =>
-                                window.api.rejectFile((msg.payload as FileMetadata).fileId)
-                              }
-                            >
-                              Reject
-                            </Button>
-                          </div>
-                        )}
+                        {!isLocal && (() => {
+                          const fileId = (msg.payload as FileMetadata).fileId
+                          const transfer = useStore.getState().transfers[fileId]
+                          const shouldShowButtons = !transfer || transfer.status === 'pending'
+
+                          return shouldShowButtons ? (
+                            <div className="flex gap-2">
+                              <Button
+                                size="sm"
+                                variant="primary"
+                                className="flex-1 h-8 text-[11px] font-bold uppercase tracking-wider bg-background text-foreground hover:bg-background/90"
+                                onClick={() =>
+                                  window.api.acceptFile((msg.payload as FileMetadata).fileId)
+                                }
+                              >
+                                Accept
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="flex-1 h-8 text-[11px] font-bold uppercase tracking-wider bg-destructive/10 text-destructive hover:bg-destructive/20 border-destructive/20"
+                                onClick={() =>
+                                  window.api.rejectFile((msg.payload as FileMetadata).fileId)
+                                }
+                              >
+                                Reject
+                              </Button>
+                            </div>
+                          ) : null
+                        })()}
                       </div>
                     )}
                   </div>

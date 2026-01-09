@@ -2,7 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import net from 'net'
 import { v4 as uuidv4 } from 'uuid'
-import { BrowserWindow, ipcMain, dialog } from 'electron'
+import { BrowserWindow, ipcMain, dialog, app } from 'electron'
 import { connectionManager } from './protocol'
 import { discoveryManager } from './discovery'
 import { tcpServer } from './tcpServer'
@@ -31,15 +31,21 @@ class FileTransferManager {
       const transfer = this.activeTransfers.get(fileId)
       if (!transfer || !transfer.metadata) return
 
-      const { filePath } = await dialog.showSaveDialog({
-        defaultPath: path.join(process.env.HOME || '', 'Downloads', transfer.metadata.name)
-      })
-
-      if (filePath) {
-        this.sendAccept(fileId, filePath)
-      } else {
-        this.sendReject(fileId)
+      // Automatically save to Downloads folder
+      const downloadsPath = app.getPath('downloads')
+      let filePath = path.join(downloadsPath, transfer.metadata.name)
+      
+      // Handle file name conflicts by appending a number
+      let counter = 1
+      const ext = path.extname(transfer.metadata.name)
+      const baseName = path.basename(transfer.metadata.name, ext)
+      
+      while (fs.existsSync(filePath)) {
+        filePath = path.join(downloadsPath, `${baseName} (${counter})${ext}`)
+        counter++
       }
+
+      this.sendAccept(fileId, filePath)
     })
 
     ipcMain.handle('reject-file', (_, fileId: string) => {
@@ -66,20 +72,39 @@ class FileTransferManager {
         if (transfer && transfer.filePath) {
           transfer.writeStream = fs.createWriteStream(transfer.filePath)
           transfer.status = 'active'
+          let receivedBytes = 0
+          const startTime = Date.now()
 
           // Process any remaining bytes in initialBuffer after the header
           const headerLength = match[0].length
           if (initialBuffer.length > headerLength) {
-            transfer.writeStream.write(initialBuffer.slice(headerLength))
+            const remainingData = initialBuffer.slice(headerLength)
+            transfer.writeStream.write(remainingData)
+            receivedBytes += remainingData.length
           }
 
           socket.on('data', (data) => {
             if (transfer.writeStream) {
               transfer.writeStream.write(data)
-              const received = transfer.writeStream.bytesWritten
-              const progress = received / (transfer.metadata?.size || 1)
+              receivedBytes += data.length
+              const now = Date.now()
+              const duration = (now - startTime) / 1000
+              const speed = duration > 0 ? receivedBytes / duration : 0
+              const progress = receivedBytes / (transfer.metadata?.size || 1)
+              const eta = speed > 0 ? ((transfer.metadata?.size || 0) - receivedBytes) / speed : 0
+              
               transfer.progress = progress
-              this.mainWindow?.webContents.send('file-transfer-progress', transfer)
+              transfer.speed = speed
+              transfer.eta = eta
+              this.mainWindow?.webContents.send('file-transfer-progress', {
+                fileId: transfer.fileId,
+                deviceId: transfer.deviceId,
+                progress: transfer.progress,
+                speed: transfer.speed,
+                eta: transfer.eta,
+                status: transfer.status,
+                name: transfer.metadata?.name
+              })
             }
           })
 
@@ -87,7 +112,15 @@ class FileTransferManager {
             if (transfer.writeStream) {
               transfer.writeStream.end()
               transfer.status = 'completed'
-              this.mainWindow?.webContents.send('file-transfer-progress', transfer)
+              this.mainWindow?.webContents.send('file-transfer-progress', {
+                fileId: transfer.fileId,
+                deviceId: transfer.deviceId,
+                progress: 1,
+                speed: transfer.speed,
+                eta: 0,
+                status: 'completed',
+                name: transfer.metadata?.name
+              })
             }
           })
         }
@@ -257,9 +290,8 @@ class FileTransferManager {
       // Send header
       socket.write(`FILE_STREAM:${fileId}\n`)
 
-      // Pipe file
+      // Stream file manually for progress tracking
       const readStream = fs.createReadStream(filePath, { highWaterMark: 256 * 1024 })
-      readStream.pipe(socket)
 
       let uploaded = 0
       const startTime = Date.now()
@@ -268,7 +300,7 @@ class FileTransferManager {
         uploaded += chunk.length
         const now = Date.now()
         const duration = (now - startTime) / 1000
-        const speed = uploaded / duration
+        const speed = duration > 0 ? uploaded / duration : 0
         const progress = uploaded / (transfer.metadata?.size || 1)
         const eta = speed > 0 ? ((transfer.metadata?.size || 0) - uploaded) / speed : 0
 
@@ -276,12 +308,31 @@ class FileTransferManager {
         transfer.speed = speed
         transfer.eta = eta
 
-        this.mainWindow?.webContents.send('file-transfer-progress', transfer)
+        // Write chunk to socket
+        socket.write(chunk)
+
+        this.mainWindow?.webContents.send('file-transfer-progress', {
+          fileId: transfer.fileId,
+          deviceId: transfer.deviceId,
+          progress: transfer.progress,
+          speed: transfer.speed,
+          eta: transfer.eta,
+          status: transfer.status,
+          name: transfer.metadata?.name
+        })
       })
 
       readStream.on('end', () => {
         transfer.status = 'completed'
-        this.mainWindow?.webContents.send('file-transfer-progress', transfer)
+        this.mainWindow?.webContents.send('file-transfer-progress', {
+          fileId: transfer.fileId,
+          deviceId: transfer.deviceId,
+          progress: 1,
+          speed: transfer.speed,
+          eta: 0,
+          status: 'completed',
+          name: transfer.metadata?.name
+        })
         socket.end()
       })
     })
@@ -289,7 +340,15 @@ class FileTransferManager {
     socket.on('error', (err) => {
       console.error('File stream socket error:', err)
       transfer.status = 'failed'
-      this.mainWindow?.webContents.send('file-transfer-progress', transfer)
+      this.mainWindow?.webContents.send('file-transfer-progress', {
+        fileId: transfer.fileId,
+        deviceId: transfer.deviceId,
+        progress: transfer.progress,
+        speed: transfer.speed,
+        eta: transfer.eta,
+        status: 'failed',
+        name: transfer.metadata?.name
+      })
     })
   }
 }
