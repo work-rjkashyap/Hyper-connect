@@ -46,6 +46,15 @@ class FileTransferManager {
       this.sendReject(fileId)
     })
 
+    ipcMain.handle('select-file', async () => {
+      if (!this.mainWindow) return null
+      const { canceled, filePaths } = await dialog.showOpenDialog(this.mainWindow, {
+        properties: ['openFile']
+      })
+      if (canceled || filePaths.length === 0) return null
+      return filePaths[0]
+    })
+
     // Handle raw connections from TCPServer
     tcpServer.on('raw-connection', (socket: net.Socket, initialBuffer: Buffer) => {
       // Header format: "FILE_STREAM:<fileId>\n"
@@ -118,6 +127,17 @@ class FileTransferManager {
       metadata
     })
 
+    // Notify renderer of new pending transfer
+    this.mainWindow?.webContents.send('file-transfer-progress', {
+      fileId,
+      deviceId,
+      progress: 0,
+      speed: 0,
+      eta: 0,
+      status: 'pending',
+      name: metadata.name
+    })
+
     await connectionManager.getConnection(device)
     connectionManager.sendMessage(deviceId, message)
 
@@ -136,15 +156,35 @@ class FileTransferManager {
       metadata
     })
 
+    // Notify renderer of new incoming file request
+    this.mainWindow?.webContents.send('file-transfer-progress', {
+      fileId: metadata.fileId,
+      deviceId: message.deviceId,
+      progress: 0,
+      speed: 0,
+      eta: 0,
+      status: 'pending',
+      name: metadata.name
+    })
+
     this.mainWindow?.webContents.send('file-received', message)
   }
 
-  public async handleAccept(message: NetworkMessage) {
+  public async handleAccept(message: NetworkMessage): Promise<void> {
     const { fileId } = message.payload
     const transfer = this.activeTransfers.get(fileId)
     if (!transfer || !transfer.filePath) return
 
     transfer.status = 'active'
+    this.mainWindow?.webContents.send('file-transfer-progress', {
+      fileId,
+      deviceId: transfer.deviceId,
+      progress: transfer.progress,
+      speed: transfer.speed,
+      eta: transfer.eta,
+      status: 'active',
+      name: transfer.metadata?.name
+    })
     this.startStreaming(fileId, transfer.filePath, transfer.deviceId)
   }
 

@@ -4,9 +4,14 @@ import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
 import { Card, CardContent } from '../components/ui/card'
 import { Separator } from '../components/ui/separator'
-import { Monitor, Send, Paperclip, CheckCircle2, Laptop, FileUp } from 'lucide-react'
+import { Send, Laptop, Monitor, Paperclip, FileText, FileUp, CheckCircle2 } from 'lucide-react'
 import { ThemeToggle } from '../components/ui/theme-toggle'
-import { Device, NetworkMessage } from '../../shared/messageTypes'
+import {
+  Device,
+  NetworkMessage,
+  FileMetadata,
+  FileTransferProgress
+} from '../../shared/messageTypes'
 import { useShallow } from 'zustand/react/shallow'
 import { cn } from '@renderer/lib/utils'
 
@@ -170,6 +175,13 @@ const DeviceView: React.FC<{ device: Device }> = ({ device }) => {
     }
   }
 
+  const handleFileSelect = async (): Promise<void> => {
+    const path = await window.api.selectFile()
+    if (path) {
+      await window.api.sendFile(device.deviceId, path)
+    }
+  }
+
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       <header className="h-16 border-b bg-background/80 backdrop-blur-md px-6 flex items-center justify-between shrink-0">
@@ -185,72 +197,150 @@ const DeviceView: React.FC<{ device: Device }> = ({ device }) => {
               <span
                 className={cn(
                   'w-2 h-2 rounded-full',
-                  device.isOnline ? 'bg-green-500 animate-pulse' : 'bg-muted-foreground/30'
+                  device.isOnline ? 'bg-green-500 animate-pulse' : 'bg-muted-foreground'
                 )}
               />
               {device.isOnline ? 'Online' : 'Offline'}
             </p>
           </div>
         </div>
-        <div className="flex bg-secondary p-1 rounded-lg">
-          <button
-            onClick={() => setTab('chat')}
-            className={cn(
-              'px-4 py-1.5 text-sm font-semibold rounded-md transition-all',
-              tab === 'chat' ? 'bg-background shadow-sm' : 'hover:text-primary'
-            )}
-          >
-            Chat
-          </button>
-          <button
-            onClick={() => setTab('files')}
-            className={cn(
-              'px-4 py-1.5 text-sm font-semibold rounded-md transition-all',
-              tab === 'files' ? 'bg-background shadow-sm' : 'hover:text-primary'
-            )}
-          >
-            Files
-          </button>
+        <div className="flex items-center gap-2">
+          <ThemeToggle />
         </div>
       </header>
 
+      <div className="flex border-b bg-muted/30 p-1">
+        <button
+          onClick={() => setTab('chat')}
+          className={cn(
+            'flex-1 py-2 text-xs font-bold uppercase tracking-wider transition-all rounded-md',
+            tab === 'chat'
+              ? 'bg-background shadow-sm text-primary'
+              : 'text-muted-foreground hover:text-foreground'
+          )}
+        >
+          Messages
+        </button>
+        <button
+          onClick={() => setTab('files')}
+          className={cn(
+            'flex-1 py-2 text-xs font-bold uppercase tracking-wider transition-all rounded-md',
+            tab === 'files'
+              ? 'bg-background shadow-sm text-primary'
+              : 'text-muted-foreground hover:text-foreground'
+          )}
+        >
+          Transfers
+        </button>
+      </div>
+
       {tab === 'chat' ? (
-        <div className="flex-1 flex flex-col min-h-0 bg-background/30 shadow-inner">
-          <div className="flex-1 overflow-y-auto p-6 space-y-4">
-            {messages.length === 0 && (
-              <div className="flex flex-col items-center justify-center h-full opacity-30 select-none">
-                <p className="text-sm font-medium">No messages yet</p>
-              </div>
-            )}
-            {messages.map((msg, i) => (
-              <div
-                key={i}
-                className={cn(
-                  'flex flex-col animate-in fade-in slide-in-from-bottom-2 duration-300',
-                  msg.deviceId === localDevice?.deviceId ? 'items-end' : 'items-start'
-                )}
-              >
+        <div className="flex-1 flex flex-col overflow-hidden bg-muted/5">
+          <div className="flex-1 overflow-y-auto p-6 space-y-6">
+            {messages.map((msg, i) => {
+              const isLocal = msg.deviceId === localDevice?.deviceId
+              const isFile = msg.type === 'FILE_META'
+
+              return (
                 <div
-                  className={cn(
-                    'max-w-[80%] rounded-2xl px-4 py-2 text-sm shadow-sm',
-                    msg.deviceId === localDevice?.deviceId
-                      ? 'bg-primary text-primary-foreground rounded-tr-none'
-                      : 'bg-secondary text-secondary-foreground rounded-tl-none border border-border/50'
-                  )}
+                  key={msg.id || i}
+                  className={cn('flex flex-col', isLocal ? 'items-end' : 'items-start')}
                 >
-                  {msg.payload}
+                  <div
+                    className={cn(
+                      'max-w-[85%] rounded-2xl px-4 py-3 shadow-sm',
+                      isLocal
+                        ? 'bg-primary text-primary-foreground rounded-tr-none'
+                        : 'bg-card border border-border/50 rounded-tl-none'
+                    )}
+                  >
+                    {!isFile ? (
+                      <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">
+                        {msg.payload as string}
+                      </p>
+                    ) : (
+                      <div className="space-y-3">
+                        <div
+                          className={cn(
+                            'flex items-center gap-3 p-3 rounded-xl border',
+                            isLocal
+                              ? 'bg-primary-foreground/10 border-primary-foreground/20'
+                              : 'bg-muted/50 border-border'
+                          )}
+                        >
+                          <div
+                            className={cn(
+                              'p-2 rounded-lg',
+                              isLocal ? 'bg-primary-foreground/20' : 'bg-primary/10'
+                            )}
+                          >
+                            <FileText
+                              className={cn('w-5 h-5', isLocal ? 'text-white' : 'text-primary')}
+                            />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-white wrap-break-word">
+                              {isFile
+                                ? (msg.payload as FileMetadata).name
+                                : (msg.payload as string)}
+                            </p>
+                            <p
+                              className={cn(
+                                'text-[10px] uppercase font-bold tracking-tight opacity-70',
+                                isLocal ? 'text-white' : 'text-muted-foreground'
+                              )}
+                            >
+                              Incoming File
+                            </p>
+                          </div>
+                        </div>
+
+                        {!isLocal && (
+                          <div className="flex gap-2">
+                            <Button
+                              size="sm"
+                              variant="primary"
+                              className="flex-1 h-8 text-[11px] font-bold uppercase tracking-wider bg-background text-foreground hover:bg-background/90"
+                              onClick={() =>
+                                window.api.acceptFile((msg.payload as FileMetadata).fileId)
+                              }
+                            >
+                              Accept
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="flex-1 h-8 text-[11px] font-bold uppercase tracking-wider bg-destructive/10 text-destructive hover:bg-destructive/20 border-destructive/20"
+                              onClick={() =>
+                                window.api.rejectFile((msg.payload as FileMetadata).fileId)
+                              }
+                            >
+                              Reject
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  <span className="text-[10px] text-muted-foreground mt-1.5 px-1 font-medium">
+                    {new Date(msg.timestamp || 0).toLocaleTimeString([], {
+                      hour: '2-digit',
+                      minute: '2-digit'
+                    })}
+                  </span>
                 </div>
-                <span className="text-[10px] text-muted-foreground mt-1 px-1">
-                  {new Date(msg.timestamp || 0).toLocaleTimeString([], {
-                    hour: '2-digit',
-                    minute: '2-digit'
-                  })}
-                </span>
-              </div>
-            ))}
+              )
+            })}
           </div>
           <div className="p-4 bg-background border-t">
             <div className="flex gap-2 max-w-4xl mx-auto items-end">
+              <button
+                type="button"
+                onClick={handleFileSelect}
+                className="p-2 hover:bg-secondary rounded-xl text-muted-foreground hover:text-primary transition-all hover:scale-110 active:scale-95"
+              >
+                <Paperclip className="w-5 h-5" />
+              </button>
               <div className="flex-1 relative">
                 <Input
                   placeholder="Type a message..."
@@ -280,21 +370,15 @@ const DeviceView: React.FC<{ device: Device }> = ({ device }) => {
 const TransferView: React.FC<{ device: Device }> = ({ device }) => {
   const transfers = useStore(
     useShallow((state) =>
-      Object.values(state.transfers).filter((t: any) => t.deviceId === device.deviceId)
+      Object.values(state.transfers).filter((t) => t.deviceId === device.deviceId)
     )
   )
 
-  const handleSelectFile = async () => {
-    // We'll need a custom dialog or file input
-    const input = document.createElement('input')
-    input.type = 'file'
-    input.onchange = async (e: any) => {
-      const path = e.target.files[0].path
-      if (path) {
-        await window.api.sendFile(device.deviceId, path)
-      }
+  const handleSelectFile = async (): Promise<void> => {
+    const path = await window.api.selectFile()
+    if (path) {
+      await window.api.sendFile(device.deviceId, path)
     }
-    input.click()
   }
 
   return (
@@ -303,7 +387,7 @@ const TransferView: React.FC<{ device: Device }> = ({ device }) => {
         onClick={handleSelectFile}
         className="group border-2 border-dashed border-border/60 rounded-2xl p-12 text-center space-y-4 hover:border-primary/50 hover:bg-primary/5 transition-all cursor-pointer"
       >
-        <div className="w-16 h-16 bg-primary/5 rounded-full flex items-center justify-center mx-auto group-hover:scale-110 transition-transform">
+        <div className="absolute top-0 right-0 min-w-4.5 h-4.5 bg-red-500 rounded-full flex items-center justify-center border-2 border-slate-900 -translate-y-1/3 translate-x-1/3 shadow-lg">
           <FileUp className="w-8 h-8 text-primary/40 group-hover:text-primary transition-colors" />
         </div>
         <div className="space-y-1">
@@ -337,7 +421,7 @@ const TransferView: React.FC<{ device: Device }> = ({ device }) => {
                   <div className="flex-1 min-w-0 space-y-2">
                     <div className="flex items-center justify-between gap-4">
                       <p className="text-sm font-bold truncate">
-                        {(transfer as any).name || 'File'}
+                        {(transfer as FileTransferProgress & { name?: string }).name || 'File'}
                       </p>
                       <span className="text-[10px] font-bold text-muted-foreground uppercase bg-secondary px-2 py-0.5 rounded-full">
                         {transfer.status}

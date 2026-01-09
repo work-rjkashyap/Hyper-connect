@@ -13,6 +13,7 @@ const api = {
     ipcRenderer.invoke('send-file', deviceId, filePath),
   acceptFile: (fileId: string) => ipcRenderer.invoke('accept-file', fileId),
   rejectFile: (fileId: string) => ipcRenderer.invoke('reject-file', fileId),
+  selectFile: () => ipcRenderer.invoke('select-file'),
 
   // Event Listeners
   onDeviceDiscovered: (callback: any) => {
