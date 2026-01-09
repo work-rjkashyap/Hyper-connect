@@ -57,7 +57,25 @@ export const App: React.FC = () => {
     })
 
     window.api.onMessageReceived((message) => {
+      const state = useStore.getState()
       addMessage(message.deviceId, message)
+
+      // If it's a chat message and not from the currently selected device, increment unread count
+      if (message.type === 'MESSAGE' && message.deviceId !== state.selectedDeviceId) {
+        state.incrementUnreadCount(message.deviceId)
+
+        const device = state.discoveredDevices.find((d) => d.deviceId === message.deviceId)
+        toast(`New message from ${device?.displayName || 'Unknown'}`, {
+          description: message.payload as string,
+          action: {
+            label: 'View',
+            onClick: () => {
+              state.setSelectedDeviceId(message.deviceId)
+              state.clearUnreadCount(message.deviceId)
+            }
+          }
+        })
+      }
     })
 
     window.api.onFileReceived((message) => {

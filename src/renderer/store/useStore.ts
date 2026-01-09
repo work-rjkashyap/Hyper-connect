@@ -10,6 +10,10 @@ interface AppState {
   selectedDeviceId: string | null
   onboardingComplete: boolean
 
+  unreadCounts: Record<string, number> // deviceId -> count
+  incrementUnreadCount: (deviceId: string) => void
+  clearUnreadCount: (deviceId: string) => void
+
   setLocalDevice: (device: DeviceInfo) => void
   addDiscoveredDevice: (device: Device) => void
   removeDiscoveredDevice: (deviceId: string) => void
@@ -29,6 +33,23 @@ export const useStore = create<AppState>()(
       transfers: {},
       selectedDeviceId: null,
       onboardingComplete: false,
+      unreadCounts: {},
+
+      incrementUnreadCount: (deviceId) =>
+        set((state) => ({
+          unreadCounts: {
+            ...state.unreadCounts,
+            [deviceId]: (state.unreadCounts[deviceId] || 0) + 1
+          }
+        })),
+
+      clearUnreadCount: (deviceId) =>
+        set((state) => ({
+          unreadCounts: {
+            ...state.unreadCounts,
+            [deviceId]: 0
+          }
+        })),
 
       setLocalDevice: (device) => set({ localDevice: device }),
 
@@ -90,7 +111,8 @@ export const useStore = create<AppState>()(
       partialize: (state) => ({
         onboardingComplete: state.onboardingComplete,
         localDevice: state.localDevice,
-        messages: state.messages
+        messages: state.messages,
+        unreadCounts: state.unreadCounts
       })
     }
   )

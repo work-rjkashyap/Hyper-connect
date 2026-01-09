@@ -11,7 +11,14 @@ import { useShallow } from 'zustand/react/shallow'
 import { cn } from '@renderer/lib/utils'
 
 export const Main: React.FC = () => {
-  const { discoveredDevices, selectedDeviceId, setSelectedDeviceId, localDevice } = useStore()
+  const {
+    discoveredDevices,
+    selectedDeviceId,
+    setSelectedDeviceId,
+    localDevice,
+    unreadCounts,
+    clearUnreadCount
+  } = useStore()
 
   console.log('[Main] Rendering - selectedDeviceId:', selectedDeviceId)
   const selectedDevice = discoveredDevices.find((d) => d.deviceId === selectedDeviceId)
@@ -64,7 +71,10 @@ export const Main: React.FC = () => {
             discoveredDevices.map((device) => (
               <button
                 key={device.deviceId}
-                onClick={() => setSelectedDeviceId(device.deviceId)}
+                onClick={() => {
+                  setSelectedDeviceId(device.deviceId)
+                  clearUnreadCount(device.deviceId)
+                }}
                 className={cn(
                   'w-full flex items-center gap-3 p-3 rounded-lg transition-all border border-transparent',
                   selectedDeviceId === device.deviceId
@@ -98,12 +108,19 @@ export const Main: React.FC = () => {
                     {device.address}
                   </p>
                 </div>
-                <div
-                  className={cn(
-                    'w-2 h-2 rounded-full shrink-0',
-                    device.isOnline ? 'bg-green-500 animate-pulse' : 'bg-muted-foreground/30'
+                <div className="flex flex-col items-end gap-1.5 shrink-0">
+                  {unreadCounts[device.deviceId] > 0 && (
+                    <div className="min-w-[18px] h-[18px] rounded-full bg-red-500 text-[10px] font-bold text-white flex items-center justify-center px-1 animate-in zoom-in duration-300">
+                      {unreadCounts[device.deviceId] > 99 ? '99+' : unreadCounts[device.deviceId]}
+                    </div>
                   )}
-                />
+                  <div
+                    className={cn(
+                      'w-2 h-2 rounded-full shrink-0',
+                      device.isOnline ? 'bg-green-500 animate-pulse' : 'bg-muted-foreground/30'
+                    )}
+                  />
+                </div>
               </button>
             ))
           )}
