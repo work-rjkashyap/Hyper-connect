@@ -89,7 +89,8 @@ export const useStore = create<AppState>()(
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
         onboardingComplete: state.onboardingComplete,
-        localDevice: state.localDevice
+        localDevice: state.localDevice,
+        messages: state.messages
       })
     }
   )

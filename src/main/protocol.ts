@@ -8,23 +8,51 @@ export class ConnectionManager extends EventEmitter {
   async getConnection(device: Device): Promise<net.Socket> {
     if (this.activeConnections.has(device.deviceId)) {
       const socket = this.activeConnections.get(device.deviceId)!
-      if (!socket.destroyed) return socket
+      if (!socket.destroyed && socket.writable) return socket
+      this.activeConnections.delete(device.deviceId)
     }
+
+    const { getDeviceInfo } = await import('./identity')
 
     return new Promise((resolve, reject) => {
       console.log(`[Protocol] Attempting to connect to ${device.address}:${device.port}...`)
+
+      let connected = false
       const socket = net.connect(device.port, device.address, () => {
+        connected = true
         console.log(`[Protocol] Successfully connected to ${device.address}:${device.port}`)
         socket.setNoDelay(true)
         socket.setKeepAlive(true, 1000)
         this.activeConnections.set(device.deviceId, socket)
 
-        // Initial handshake
+        // Initial handshake to let the peer know who we are
+        const hello: NetworkMessage = {
+          type: 'HELLO',
+          deviceId: getDeviceInfo().deviceId,
+          id: 'hello',
+          timestamp: Date.now()
+        }
+        socket.write(JSON.stringify(hello) + '\n')
+
         this.emit('connected', device.deviceId, socket)
         resolve(socket)
       })
 
+      // Set a 5-second connection timeout
+      socket.setTimeout(5000)
+      socket.on('timeout', () => {
+        if (!connected) {
+          console.error(`[Protocol] Connection timeout to ${device.address}:${device.port}`)
+          socket.destroy()
+          reject(new Error('Connection timed out'))
+        }
+      })
+
       socket.on('error', (err) => {
+        console.error(
+          `[Protocol] Connection error to ${device.address}:${device.port}:`,
+          err.message
+        )
         this.activeConnections.delete(device.deviceId)
         reject(err)
       })
@@ -34,7 +62,7 @@ export class ConnectionManager extends EventEmitter {
         this.emit('disconnected', device.deviceId)
       })
 
-      // Setup data handling for client-initiated connections too
+      // Setup data handling
       let buffer = ''
       socket.on('data', (data) => {
         buffer += data.toString()
