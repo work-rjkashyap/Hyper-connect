@@ -6,7 +6,8 @@ import { Card, CardContent } from '../components/ui/card'
 import { Separator } from '../components/ui/separator'
 import { Monitor, Send, Paperclip, CheckCircle2, Laptop, FileUp } from 'lucide-react'
 import { ThemeToggle } from '../components/ui/theme-toggle'
-import { Device } from '../../shared/messageTypes'
+import { Device, NetworkMessage } from '../../shared/messageTypes'
+import { useShallow } from 'zustand/react/shallow'
 import { cn } from '@renderer/lib/utils'
 
 export const Main: React.FC = () => {
@@ -126,10 +127,12 @@ export const Main: React.FC = () => {
     )
 }
 
+const EMPTY_MESSAGES: NetworkMessage[] = []
+
 const DeviceView: React.FC<{ device: Device }> = ({ device }) => {
     console.log('[DeviceView] Rendering for device:', device.deviceId)
     const [tab, setTab] = useState<'chat' | 'files'>('chat')
-    const messages = useStore((state) => state.messages[device.deviceId] || [])
+    const messages = useStore((state) => state.messages[device.deviceId] || EMPTY_MESSAGES)
     const [input, setInput] = useState('')
 
     const handleSend = async (): Promise<void> => {
@@ -240,8 +243,8 @@ const DeviceView: React.FC<{ device: Device }> = ({ device }) => {
 }
 
 const TransferView: React.FC<{ device: Device }> = ({ device }) => {
-    const transfers = useStore((state) =>
-        Object.values(state.transfers).filter((t) => t.deviceId === device.deviceId)
+    const transfers = useStore(
+        useShallow((state) => Object.values(state.transfers).filter((t: any) => t.deviceId === device.deviceId))
     )
 
     const handleSelectFile = async () => {

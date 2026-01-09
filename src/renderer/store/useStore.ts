@@ -77,7 +77,6 @@ export const useStore = create<AppState>()(
       setSelectedDeviceId: (deviceId) => set({ selectedDeviceId: deviceId }),
 
       setOnboardingComplete: (complete) => set({ onboardingComplete: complete }),
-
       setDiscoveredDevices: (devices) => {
         console.log('[Store] Setting discovered devices:', devices)
         set({
@@ -91,17 +90,7 @@ export const useStore = create<AppState>()(
       partialize: (state) => ({
         onboardingComplete: state.onboardingComplete,
         localDevice: state.localDevice
-      }),
-      onRehydrateStorage: () => (state) => {
-        // Ensure discoveredDevices is always initialized after rehydration
-        if (state) {
-          console.log('[Store] Rehydrated from storage, reinitializing discoveredDevices')
-          state.discoveredDevices = []
-          state.messages = {}
-          state.transfers = {}
-          state.selectedDeviceId = null
-        }
-      }
+      })
     }
   )
 )
