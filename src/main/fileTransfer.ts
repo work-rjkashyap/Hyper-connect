@@ -110,7 +110,8 @@ class FileTransferManager {
                 eta: transfer.eta,
                 status: transfer.status,
                 name: transfer.metadata?.name,
-                path: transfer.filePath
+                path: transfer.filePath,
+                size: transfer.metadata?.size
               })
             }
           })
@@ -127,7 +128,8 @@ class FileTransferManager {
                 eta: 0,
                 status: 'completed',
                 name: transfer.metadata?.name,
-                path: transfer.filePath
+                path: transfer.filePath,
+                size: transfer.metadata?.size
               })
             }
           })
@@ -327,7 +329,8 @@ class FileTransferManager {
           eta: transfer.eta,
           status: transfer.status,
           name: transfer.metadata?.name,
-          path: transfer.filePath
+          path: transfer.filePath,
+          size: transfer.metadata?.size
         })
       })
 
@@ -341,7 +344,8 @@ class FileTransferManager {
           eta: 0,
           status: 'completed',
           name: transfer.metadata?.name,
-          path: transfer.filePath
+          path: transfer.filePath,
+          size: transfer.metadata?.size
         })
         socket.end()
       })
@@ -358,7 +362,8 @@ class FileTransferManager {
         eta: transfer.eta,
         status: 'failed',
         name: transfer.metadata?.name,
-        path: transfer.filePath
+        path: transfer.filePath,
+        size: transfer.metadata?.size
       })
     })
   }

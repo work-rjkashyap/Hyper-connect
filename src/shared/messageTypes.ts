@@ -46,4 +46,5 @@ export interface FileTransferProgress {
   eta: number
   status: 'pending' | 'active' | 'completed' | 'failed' | 'rejected'
   path?: string
+  size?: number
 }

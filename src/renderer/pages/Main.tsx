@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { useStore } from '../store/useStore'
 import { Button } from '../components/ui/button'
 import { Input } from '../components/ui/input'
@@ -14,6 +14,20 @@ import {
 } from '../../shared/messageTypes'
 import { useShallow } from 'zustand/react/shallow'
 import { cn } from '@renderer/lib/utils'
+
+const formatFileSize = (bytes?: number): string => {
+  if (!bytes) return '0 B'
+  const k = 1024
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i]
+}
+
+const getFileType = (filename?: string): string => {
+  if (!filename) return 'Unknown'
+  const ext = filename.split('.').pop()
+  return ext ? ext.toUpperCase() : 'Unknown'
+}
 
 export const Main: React.FC = () => {
   const {
@@ -162,6 +176,22 @@ const DeviceView: React.FC<{ device: Device }> = ({ device }) => {
   const [tab, setTab] = useState<'chat' | 'files'>('chat')
   const messages = useStore((state) => state.messages[device.deviceId] || EMPTY_MESSAGES)
   const [input, setInput] = useState('')
+  const scrollRef = useRef<HTMLDivElement>(null)
+
+  const scrollToBottom = (): void => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTo({
+        top: scrollRef.current.scrollHeight,
+        behavior: 'smooth'
+      })
+    }
+  }
+
+  useEffect(() => {
+    if (tab === 'chat') {
+      scrollToBottom()
+    }
+  }, [messages, tab])
 
   const handleSend = async (): Promise<void> => {
     if (!input.trim()) return
@@ -236,7 +266,7 @@ const DeviceView: React.FC<{ device: Device }> = ({ device }) => {
 
       {tab === 'chat' ? (
         <div className="flex-1 flex flex-col overflow-hidden bg-muted/5">
-          <div className="flex-1 overflow-y-auto p-6 space-y-6">
+          <div ref={scrollRef} className="flex-1 overflow-y-auto p-6 space-y-6">
             {messages.map((msg, i) => {
               const isLocal = msg.deviceId === localDevice?.deviceId
               const isFile = msg.type === 'FILE_META'
@@ -259,42 +289,10 @@ const DeviceView: React.FC<{ device: Device }> = ({ device }) => {
                         {typeof msg.payload === 'string' ? msg.payload : JSON.stringify(msg.payload)}
                       </p>
                     ) : (
-                      <div className="space-y-3">
-                        <div
-                          className={cn(
-                            'flex items-center gap-3 p-3 rounded-xl border',
-                            isLocal
-                              ? 'bg-primary-foreground/10 border-primary-foreground/20'
-                              : 'bg-muted/50 border-border'
-                          )}
-                        >
-                          <div
-                            className={cn(
-                              'p-2 rounded-lg',
-                              isLocal ? 'bg-primary-foreground/20' : 'bg-primary/10'
-                            )}
-                          >
-                            <FileText
-                              className={cn('w-5 h-5', isLocal ? 'text-white' : 'text-primary')}
-                            />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-white wrap-break-word">
-                              {(msg.payload as FileMetadata).name || 'File'}
-                            </p>
-                            <p
-                              className={cn(
-                                'text-[10px] uppercase font-bold tracking-tight opacity-70',
-                                isLocal ? 'text-white' : 'text-muted-foreground'
-                              )}
-                            >
-                              Incoming File
-                            </p>
-                          </div>
-                        </div>
-
-                        {!isLocal && <AcceptRejectButtons fileId={(msg.payload as FileMetadata).fileId} />}
-                      </div>
+                      <FileChatBubble
+                        msg={msg}
+                        isLocal={isLocal}
+                      />
                     )}
                   </div>
                   <span className="text-[10px] text-muted-foreground mt-1.5 px-1 font-medium">
@@ -342,6 +340,95 @@ const DeviceView: React.FC<{ device: Device }> = ({ device }) => {
   )
 }
 
+const FileChatBubble: React.FC<{ msg: NetworkMessage, isLocal: boolean }> = ({ msg, isLocal }) => {
+  const metadata = msg.payload as FileMetadata
+  const transfer = useStore((state) => state.transfers[metadata.fileId])
+  const status = transfer?.status || 'pending'
+  const isCompleted = status === 'completed'
+  const isActive = status === 'active'
+
+  return (
+    <div className="space-y-3">
+      <div
+        onClick={() => {
+          if (isCompleted && (transfer?.path || (isLocal && metadata.path))) {
+            window.api.openFileLocation(transfer?.path || metadata.path!)
+          }
+        }}
+        className={cn(
+          'flex items-center gap-3 p-3 rounded-xl border transition-all',
+          isLocal
+            ? 'bg-primary-foreground/10 border-primary-foreground/20'
+            : 'bg-muted/50 border-border',
+          isCompleted && 'cursor-pointer hover:bg-black/5 active:scale-[0.98]'
+        )}
+      >
+        <div
+          className={cn(
+            'p-2 rounded-lg',
+            isLocal ? 'bg-primary-foreground/20' : 'bg-primary/10'
+          )}
+        >
+          {isCompleted ? (
+            <CheckCircle2 className={cn('w-5 h-5', isLocal ? 'text-white' : 'text-green-500')} />
+          ) : (
+            <FileText className={cn('w-5 h-5', isLocal ? 'text-white' : 'text-primary')} />
+          )}
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-medium text-white wrap-break-word">
+            {metadata.name || 'File'}
+          </p>
+          <div className="flex items-center gap-2 mt-0.5">
+            <p
+              className={cn(
+                'text-[10px] uppercase font-black tracking-widest opacity-70',
+                isLocal ? 'text-white' : 'text-muted-foreground'
+              )}
+            >
+              {getFileType(metadata.name)}
+            </p>
+            <span className="w-1 h-1 rounded-full bg-current opacity-30" />
+            <p
+              className={cn(
+                'text-[10px] font-bold opacity-70',
+                isLocal ? 'text-white' : 'text-muted-foreground'
+              )}
+            >
+              {formatFileSize(metadata.size)}
+            </p>
+            {isCompleted && (
+              <>
+                <span className="w-1 h-1 rounded-full bg-current opacity-30" />
+                <p className={cn('text-[9px] font-black uppercase tracking-tighter', isLocal ? 'text-white' : 'text-primary')}>
+                  Done
+                </p>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {isActive && transfer && (
+        <div className="px-1 space-y-1.5 animate-in fade-in duration-300">
+          <div className="flex justify-between text-[9px] text-white/70 font-bold uppercase tracking-tighter">
+            <span>{(transfer.progress * 100).toFixed(0)}%</span>
+            <span>{formatFileSize(transfer.speed)}/s</span>
+          </div>
+          <div className="h-1 w-full bg-white/10 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-white transition-all duration-300"
+              style={{ width: `${transfer.progress * 100}%` }}
+            />
+          </div>
+        </div>
+      )}
+
+      {!isLocal && status === 'pending' && <AcceptRejectButtons fileId={metadata.fileId} />}
+    </div>
+  )
+}
+
 const TransferView: React.FC<{ device: Device }> = ({ device }) => {
   const transfers = useStore(
     useShallow((state) =>
@@ -360,20 +447,25 @@ const TransferView: React.FC<{ device: Device }> = ({ device }) => {
     <div className="flex-1 overflow-y-auto p-6 space-y-8 bg-background/50">
       <div
         onClick={handleSelectFile}
-        className="relative group border-2 border-dashed border-border/60 rounded-3xl p-16 text-center space-y-4 hover:border-primary/50 hover:bg-primary/5 transition-all cursor-pointer"
+        className="relative group border-2 border-dashed border-border/60 rounded-[2.5rem] p-16 text-center space-y-6 hover:border-primary/50 hover:bg-primary/5 transition-all cursor-pointer overflow-hidden"
       >
-        <div className="absolute top-0 right-0 w-12 h-12 bg-primary text-primary-foreground rounded-full flex items-center justify-center border-4 border-background -translate-y-1/2 translate-x-1/2 shadow-xl group-hover:scale-110 transition-transform">
-          <FileUp className="w-6 h-6" />
+        <div className="flex flex-col items-center gap-6">
+          <div className="w-20 h-20 bg-primary/10 text-primary rounded-full flex items-center justify-center border-2 border-primary/20 shadow-inner group-hover:scale-110 group-hover:bg-primary group-hover:text-primary-foreground transition-all duration-500">
+            <FileUp className="w-10 h-10" />
+          </div>
+          <div className="space-y-2">
+            <p className="text-2xl font-black tracking-tight">Drop files here to send</p>
+            <p className="text-sm text-muted-foreground max-w-xs mx-auto font-medium">
+              Select any file from your computer to transfer it instantly to {device.displayName}.
+            </p>
+          </div>
+          <Button variant="secondary" className="mt-2 font-bold uppercase tracking-wider text-[11px] px-10 h-10 rounded-xl shadow-sm">
+            Browse Files
+          </Button>
         </div>
-        <div className="space-y-2">
-          <p className="text-xl font-bold tracking-tight">Drop files here to send</p>
-          <p className="text-sm text-muted-foreground max-w-xs mx-auto">
-            Select any file from your computer to transfer it instantly to {device.displayName}.
-          </p>
-        </div>
-        <Button variant="secondary" className="mt-4 font-bold uppercase tracking-wider text-xs px-8">
-          Browse Files
-        </Button>
+
+        {/* Decorative corner element */}
+        <div className="absolute -top-12 -right-12 w-24 h-24 bg-primary/5 rounded-full blur-2xl group-hover:bg-primary/10 transition-colors" />
       </div>
 
       <div className="space-y-6">
@@ -434,9 +526,15 @@ const TransferView: React.FC<{ device: Device }> = ({ device }) => {
                           <p className="text-sm font-bold truncate">
                             {(transfer as FileTransferProgress & { name?: string }).name || 'File'}
                           </p>
-                          <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">
-                            {transfer.deviceId === device.deviceId ? 'Incoming' : 'Outgoing'}
-                          </p>
+                          <div className="flex items-center gap-2">
+                            <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider">
+                              {getFileType((transfer as any).name)} • {formatFileSize((transfer as any).size)}
+                            </p>
+                            <span className="w-1 h-1 rounded-full bg-muted-foreground/30" />
+                            <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">
+                              {transfer.deviceId === device.deviceId ? 'Incoming' : 'Outgoing'}
+                            </p>
+                          </div>
                         </div>
                         <span
                           className={cn(
