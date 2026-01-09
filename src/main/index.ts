@@ -49,11 +49,12 @@ app.whenReady().then(async () => {
 
   createWindow()
 
-  // Initialize services
+  // Initialize services - IMPORTANT: Setup IPC BEFORE starting discovery!
+  setupIpc(mainWindow) // Set up IPC listeners first
+
   const deviceInfo = getDeviceInfo()
   const port = await tcpServer.start()
-  discoveryManager.startDiscovery(deviceInfo, port)
-  setupIpc(mainWindow)
+  discoveryManager.startDiscovery(deviceInfo, port) // Now safe to start discovery
 
   app.on('activate', function () {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

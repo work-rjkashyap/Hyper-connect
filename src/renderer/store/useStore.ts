@@ -17,6 +17,7 @@ interface AppState {
   updateTransfer: (progress: FileTransferProgress) => void
   setSelectedDeviceId: (deviceId: string | null) => void
   setOnboardingComplete: (complete: boolean) => void
+  setDiscoveredDevices: (devices: Device[]) => void
 }
 
 export const useStore = create<AppState>()(
@@ -33,15 +34,21 @@ export const useStore = create<AppState>()(
 
       addDiscoveredDevice: (device) =>
         set((state) => {
+          console.log('[Store] Adding discovered device:', device)
+          console.log('[Store] Current devices before update:', state.discoveredDevices)
           const exists = state.discoveredDevices.some((d) => d.deviceId === device.deviceId)
           if (exists) {
-            return {
-              discoveredDevices: state.discoveredDevices.map((d) =>
-                d.deviceId === device.deviceId ? device : d
-              )
-            }
+            console.log('[Store] Device already exists, updating')
+            const newDevices = state.discoveredDevices.map((d) =>
+              d.deviceId === device.deviceId ? { ...device, isOnline: true } : d
+            )
+            console.log('[Store] Updated devices:', newDevices)
+            return { discoveredDevices: newDevices }
           }
-          return { discoveredDevices: [...state.discoveredDevices, device] }
+          console.log('[Store] Adding new device')
+          const newDevices = [...state.discoveredDevices, { ...device, isOnline: true }]
+          console.log('[Store] New devices array:', newDevices)
+          return { discoveredDevices: newDevices }
         }),
 
       removeDiscoveredDevice: (deviceId) =>
@@ -69,7 +76,14 @@ export const useStore = create<AppState>()(
 
       setSelectedDeviceId: (deviceId) => set({ selectedDeviceId: deviceId }),
 
-      setOnboardingComplete: (complete) => set({ onboardingComplete: complete })
+      setOnboardingComplete: (complete) => set({ onboardingComplete: complete }),
+
+      setDiscoveredDevices: (devices) => {
+        console.log('[Store] Setting discovered devices:', devices)
+        set({
+          discoveredDevices: devices.map((d) => ({ ...d, isOnline: true }))
+        })
+      }
     }),
     {
       name: 'hyper-connect-storage',
@@ -77,7 +91,17 @@ export const useStore = create<AppState>()(
       partialize: (state) => ({
         onboardingComplete: state.onboardingComplete,
         localDevice: state.localDevice
-      })
+      }),
+      onRehydrateStorage: () => (state) => {
+        // Ensure discoveredDevices is always initialized after rehydration
+        if (state) {
+          console.log('[Store] Rehydrated from storage, reinitializing discoveredDevices')
+          state.discoveredDevices = []
+          state.messages = {}
+          state.transfers = {}
+          state.selectedDeviceId = null
+        }
+      }
     }
   )
 )

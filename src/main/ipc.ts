@@ -53,7 +53,9 @@ export function setupIpc(mainWindow: BrowserWindow): void {
 
   // Forward events to renderer with safe sending
   const onDeviceFound = (device: Device): void => {
+    console.log('[IPC] Device found, sending to renderer:', device)
     sendToRenderer('device-discovered', device)
+    console.log('[IPC] Device-discovered event sent')
   }
 
   const onDeviceLost = (deviceId: string): void => {

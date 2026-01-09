@@ -16,26 +16,36 @@ export class DiscoveryManager extends EventEmitter {
   startDiscovery(deviceInfo: DeviceInfo, port: number): void {
     console.log(`Starting discovery for ${deviceInfo.displayName} on port ${port}...`)
     // 1. Advertise this device
-    this.service = this.bonjour.publish({
-      name: deviceInfo.displayName,
-      type: 'hyperconnect',
-      protocol: 'tcp',
-      port: port,
-      txt: {
-        deviceId: deviceInfo.deviceId,
-        displayName: deviceInfo.displayName,
-        platform: deviceInfo.platform,
-        appVersion: deviceInfo.appVersion
-      }
-    })
+    const publish = (name: string): void => {
+      this.service = this.bonjour.publish({
+        name,
+        type: 'hyperconnect',
+        protocol: 'tcp',
+        port: port,
+        txt: {
+          deviceId: deviceInfo.deviceId,
+          displayName: deviceInfo.displayName,
+          platform: deviceInfo.platform,
+          appVersion: deviceInfo.appVersion
+        }
+      })
 
-    this.service.on('up', () => {
-      console.log(`Discovery service published: ${deviceInfo.displayName} (_hyperconnect._tcp)`)
-    })
+      this.service.on('up', () => {
+        console.log(`Discovery service published: ${name} (_hyperconnect._tcp)`)
+      })
 
-    this.service.on('error', (err) => {
-      console.error('Discovery service error:', err)
-    })
+      this.service.on('error', (err) => {
+        console.error('Discovery service error:', err)
+        if (err.message.includes('already in use')) {
+          const freshName = `${name}-${Math.floor(Math.random() * 1000)}`
+          console.log(`Service name conflict, retrying with: ${freshName}`)
+          this.service?.stop?.()
+          publish(freshName)
+        }
+      })
+    }
+
+    publish(deviceInfo.displayName)
 
     // 2. Discover other devices
     this.browser = this.bonjour.find({ type: 'hyperconnect', protocol: 'tcp' })
