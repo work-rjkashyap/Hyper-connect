@@ -230,7 +230,7 @@ class FileTransferManager {
   }
 
   public handleIncomingMeta(message: NetworkMessage): void {
-    const metadata: FileMetadata = message.payload
+    const metadata: FileMetadata = message.payload as FileMetadata
     this.activeTransfers.set(metadata.fileId, {
       fileId: metadata.fileId,
       deviceId: message.deviceId,
@@ -259,7 +259,7 @@ class FileTransferManager {
   }
 
   public async handleAccept(message: NetworkMessage): Promise<void> {
-    const { fileId } = message.payload
+    const { fileId } = message.payload as { fileId: string }
     const transfer = this.activeTransfers.get(fileId)
     if (!transfer || !transfer.filePath) return
 
@@ -279,7 +279,7 @@ class FileTransferManager {
   }
 
   public handleReject(message: NetworkMessage): void {
-    const { fileId } = message.payload
+    const { fileId } = message.payload as { fileId: string }
     const transfer = this.activeTransfers.get(fileId)
     if (transfer) {
       transfer.status = 'rejected'
@@ -352,11 +352,12 @@ class FileTransferManager {
     }
 
     // Open DEDICATED connection for file stream
-    const socket = net.connect(device.port, device.address, () => {
-      socket.setNoDelay(true)
+    const socket = new net.Socket({
+      writableHighWaterMark: 4 * 1024 * 1024 // 4MB
+    } as any)
 
-      // Increase buffer size for high-speed transfer
-      socket.writableHighWaterMark = 4 * 1024 * 1024 // 4MB
+    socket.connect(device.port, device.address, () => {
+      socket.setNoDelay(true)
 
       // 1. Send header
       socket.write(`FILE_STREAM:${fileId}\n`)
