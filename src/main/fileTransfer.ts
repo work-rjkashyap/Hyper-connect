@@ -1,13 +1,17 @@
 import fs from 'fs'
 import path from 'path'
 import net from 'net'
+import stream from 'stream'
 import { v4 as uuidv4 } from 'uuid'
 import { BrowserWindow, ipcMain, dialog, app, shell } from 'electron'
 import { connectionManager } from './protocol'
 import { discoveryManager } from './discovery'
 import { tcpServer } from './tcpServer'
-import { FileMetadata, NetworkMessage, FileTransferProgress } from '../shared/messageTypes'
+import { FileMetadata, NetworkMessage, FileTransferProgress } from '@shared/messageTypes'
 import { getDeviceInfo } from './identity'
+import { createDecryptionStream, createEncryptionStream } from './crypto/streamCrypto'
+import { getSession } from './crypto/sessionKey'
+import crypto from 'node:crypto'
 
 class FileTransferManager {
   private activeTransfers: Map<
@@ -34,12 +38,12 @@ class FileTransferManager {
       // Automatically save to Downloads folder
       const downloadsPath = app.getPath('downloads')
       let filePath = path.join(downloadsPath, transfer.metadata.name)
-      
+
       // Handle file name conflicts by appending a number
       let counter = 1
       const ext = path.extname(transfer.metadata.name)
       const baseName = path.basename(transfer.metadata.name, ext)
-      
+
       while (fs.existsSync(filePath)) {
         filePath = path.join(downloadsPath, `${baseName} (${counter})${ext}`)
         counter++
@@ -81,43 +85,75 @@ class FileTransferManager {
           let receivedBytes = 0
           const startTime = Date.now()
 
-          // Process any remaining bytes in initialBuffer after the header
+          // Process remaining bytes in initialBuffer after header
           const headerLength = match[0].length
-          if (initialBuffer.length > headerLength) {
-            const remainingData = initialBuffer.slice(headerLength)
-            transfer.writeStream.write(remainingData)
-            receivedBytes += remainingData.length
+          const bufferedData = initialBuffer.slice(headerLength)
+
+          const session = getSession(transfer.deviceId)
+
+          if (!session) {
+            console.error(`[FileTransfer] No session key for device ${transfer.deviceId}`)
+            socket.destroy()
+            return
+          }
+
+          let decipherStream: stream.Transform | null = null
+          let ivBuffer = Buffer.alloc(0)
+
+          const processChunk = (chunk: Buffer): void => {
+            if (!decipherStream) {
+              ivBuffer = Buffer.concat([ivBuffer, chunk])
+              if (ivBuffer.length >= 16) {
+                const iv = ivBuffer.slice(0, 16)
+                const remaining = ivBuffer.slice(16)
+
+                decipherStream = createDecryptionStream(session.sessionKey, iv)
+                decipherStream.pipe(transfer.writeStream!)
+
+                if (remaining.length > 0) {
+                  decipherStream.write(remaining)
+                  receivedBytes += remaining.length
+                }
+              }
+            } else {
+              decipherStream.write(chunk)
+              receivedBytes += chunk.length
+            }
+
+            // Update progress
+            const now = Date.now()
+            const duration = (now - startTime) / 1000
+            const speed = duration > 0 ? receivedBytes / duration : 0
+            const progress = receivedBytes / (transfer.metadata?.size || 1)
+            const eta = speed > 0 ? ((transfer.metadata?.size || 0) - receivedBytes) / speed : 0
+
+            transfer.progress = progress
+            transfer.speed = speed
+            transfer.eta = eta
+            this.mainWindow?.webContents.send('file-transfer-progress', {
+              fileId: transfer.fileId,
+              deviceId: transfer.deviceId,
+              progress: transfer.progress,
+              speed: transfer.speed,
+              eta: transfer.eta,
+              status: transfer.status,
+              name: transfer.metadata?.name,
+              path: transfer.filePath,
+              size: transfer.metadata?.size,
+              direction: 'incoming'
+            })
+          }
+
+          if (bufferedData.length > 0) {
+            processChunk(bufferedData)
           }
 
           socket.on('data', (data) => {
-            if (transfer.writeStream) {
-              transfer.writeStream.write(data)
-              receivedBytes += data.length
-              const now = Date.now()
-              const duration = (now - startTime) / 1000
-              const speed = duration > 0 ? receivedBytes / duration : 0
-              const progress = receivedBytes / (transfer.metadata?.size || 1)
-              const eta = speed > 0 ? ((transfer.metadata?.size || 0) - receivedBytes) / speed : 0
-              
-              transfer.progress = progress
-              transfer.speed = speed
-              transfer.eta = eta
-              this.mainWindow?.webContents.send('file-transfer-progress', {
-                fileId: transfer.fileId,
-                deviceId: transfer.deviceId,
-                progress: transfer.progress,
-                speed: transfer.speed,
-                eta: transfer.eta,
-                status: transfer.status,
-                name: transfer.metadata?.name,
-                path: transfer.filePath,
-                size: transfer.metadata?.size,
-                direction: 'incoming'
-              })
-            }
+            processChunk(data)
           })
 
           socket.on('end', () => {
+            if (decipherStream) decipherStream.end()
             if (transfer.writeStream) {
               transfer.writeStream.end()
               transfer.status = 'completed'
@@ -308,18 +344,35 @@ class FileTransferManager {
     const device = discoveryManager.getDiscoveredDevices().find((d) => d.deviceId === deviceId)
     if (!device) return
 
+    const session = getSession(deviceId)
+
+    if (!session) {
+      console.error(`[FileTransfer] No session key for device ${deviceId}`)
+      return
+    }
+
     // Open DEDICATED connection for file stream
     const socket = net.connect(device.port, device.address, () => {
       socket.setNoDelay(true)
 
-      // Send header
+      // Increase buffer size for high-speed transfer
+      socket.writableHighWaterMark = 4 * 1024 * 1024 // 4MB
+
+      // 1. Send header
       socket.write(`FILE_STREAM:${fileId}\n`)
 
-      // Stream file manually for progress tracking
+      // 2. Generate and send random 16-byte IV
+      const iv = crypto.randomBytes(16)
+      socket.write(iv)
+
+      // 3. Setup encryption stream
+      const encryptionStream = createEncryptionStream(session.sessionKey, iv)
       const readStream = fs.createReadStream(filePath, { highWaterMark: 256 * 1024 })
 
       let uploaded = 0
       const startTime = Date.now()
+
+      encryptionStream.pipe(socket)
 
       readStream.on('data', (chunk) => {
         uploaded += chunk.length
@@ -332,9 +385,6 @@ class FileTransferManager {
         transfer.progress = progress
         transfer.speed = speed
         transfer.eta = eta
-
-        // Write chunk to socket
-        socket.write(chunk)
 
         this.mainWindow?.webContents.send('file-transfer-progress', {
           fileId: transfer.fileId,
@@ -350,7 +400,13 @@ class FileTransferManager {
         })
       })
 
+      readStream.pipe(encryptionStream)
+
       readStream.on('end', () => {
+        // No need to call encryptionStream.end() if we just piped it
+      })
+
+      socket.on('finish', () => {
         transfer.status = 'completed'
         this.mainWindow?.webContents.send('file-transfer-progress', {
           fileId: transfer.fileId,
@@ -364,7 +420,6 @@ class FileTransferManager {
           size: transfer.metadata?.size,
           direction: 'outgoing'
         })
-        socket.end()
       })
     })
 

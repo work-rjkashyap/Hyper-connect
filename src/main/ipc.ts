@@ -1,11 +1,13 @@
 import { ipcMain, BrowserWindow } from 'electron'
+import net from 'net'
 import { getDeviceInfo, updateDisplayName } from './identity'
 import { discoveryManager } from './discovery'
 import { tcpServer } from './tcpServer'
 import { connectionManager } from './protocol'
-import { NetworkMessage, Device } from '../shared/messageTypes'
+import { NetworkMessage, Device } from '@shared/messageTypes'
 import { v4 as uuidv4 } from 'uuid'
 import { fileTransferManager } from './fileTransfer'
+import { isSensitiveMessageType } from './crypto/messageCrypto'
 
 export function setupIpc(mainWindow: BrowserWindow): void {
   fileTransferManager.setup(mainWindow)
@@ -67,9 +69,9 @@ export function setupIpc(mainWindow: BrowserWindow): void {
       console.log(`[IPC] Connection established, sending payload`)
       connectionManager.sendMessage(deviceId, message)
       return message
-    } catch (e) {
-      console.error(`[IPC] Failed to reach ${target.address}:${target.port}:`, e)
-      throw e
+    } catch {
+      console.error(`[IPC] Failed to reach ${target.address}:${target.port}`)
+      throw new Error(`Failed to reach ${target.address}:${target.port}`)
     }
   })
 
@@ -84,9 +86,21 @@ export function setupIpc(mainWindow: BrowserWindow): void {
     sendToRenderer('device-lost', deviceId)
   }
 
-  const handleIncomingMessage = (message: NetworkMessage, socket: any): void => {
+  const handleIncomingMessage = (
+    message: NetworkMessage,
+    socket: net.Socket,
+    isEncrypted?: boolean
+  ): void => {
     // Mark device as online whenever we receive any traffic from it
     discoveryManager.markDeviceOnline(message.deviceId)
+
+    // Security check: reject sensitive messages if not encrypted
+    if (isSensitiveMessageType(message.type) && !isEncrypted) {
+      console.error(
+        `[IPC] Rejecting unencrypted sensitive message ${message.type} from ${message.deviceId}`
+      )
+      return
+    }
 
     if (message.type === 'HELLO') {
       connectionManager.registerSocket(message.deviceId, socket)
@@ -97,7 +111,7 @@ export function setupIpc(mainWindow: BrowserWindow): void {
         id: 'pong',
         timestamp: Date.now()
       }
-      socket.write(JSON.stringify(pong) + '\n')
+      tcpServer.sendMessage(socket, pong)
       return // Don't forward to renderer
     } else if (message.type === 'PONG') {
       return // Don't forward to renderer

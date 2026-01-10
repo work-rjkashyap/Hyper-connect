@@ -1,5 +1,5 @@
 import { Bonjour, Browser, Service } from 'bonjour-service'
-import { Device, DeviceInfo } from '../shared/messageTypes'
+import { Device, DeviceInfo } from '@shared/messageTypes'
 import EventEmitter from 'events'
 
 export class DiscoveryManager extends EventEmitter {
@@ -7,6 +7,7 @@ export class DiscoveryManager extends EventEmitter {
   private service?: Service
   private browser?: Browser
   private discoveredDevices: Map<string, Device> = new Map()
+  private localDeviceId?: string
 
   constructor() {
     super()
@@ -14,6 +15,7 @@ export class DiscoveryManager extends EventEmitter {
   }
 
   startDiscovery(deviceInfo: DeviceInfo, port: number): void {
+    this.localDeviceId = deviceInfo.deviceId
     console.log(`Starting discovery for ${deviceInfo.displayName} on port ${port}...`)
     // 1. Advertise this device
     const publish = (name: string): void => {
@@ -97,7 +99,7 @@ export class DiscoveryManager extends EventEmitter {
 
   async startHeartbeat(): Promise<void> {
     const { connectionManager } = await import('./protocol')
-    
+
     setInterval(async () => {
       for (const [deviceId, device] of this.discoveredDevices) {
         if (!device.isOnline) continue
@@ -107,7 +109,7 @@ export class DiscoveryManager extends EventEmitter {
           await connectionManager.ping(device)
           // Update lastSeen
           device.lastSeen = Date.now()
-        } catch (e) {
+        } catch {
           console.log(`[Heartbeat] Device ${device.displayName} is unreachable, marking offline.`)
           device.isOnline = false
           this.emit('deviceLost', deviceId)
@@ -131,14 +133,12 @@ export class DiscoveryManager extends EventEmitter {
 
   rescan(): void {
     console.log('[Discovery] Manual rescan triggered')
-    if (this.browser) {
-      const { getDeviceInfo } = require('./identity')
-      const localDeviceId = getDeviceInfo().deviceId
+    if (this.browser && this.localDeviceId) {
       this.browser.stop()
       // Clearing browser listeners happens automatically on stop usually, but we'll re-init
       this.browser = this.bonjour.find({ type: 'hyperconnect', protocol: 'tcp' })
-      this.setupBrowserListeners(localDeviceId)
-      
+      this.setupBrowserListeners(this.localDeviceId)
+
       // Also trigger a heartbeat pulse immediately
       this.triggerHeartbeatOnce()
     }
@@ -150,7 +150,7 @@ export class DiscoveryManager extends EventEmitter {
       try {
         await connectionManager.ping(device)
         this.markDeviceOnline(deviceId)
-      } catch (e) {
+      } catch {
         // Just fail silently for manual rescan pulse
       }
     }

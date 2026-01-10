@@ -19,6 +19,8 @@ export interface Device {
 export interface NetworkMessage {
   type:
     | 'HELLO'
+    | 'HELLO_SECURE'
+    | 'ENCRYPTED_MESSAGE'
     | 'MESSAGE'
     | 'FILE_META'
     | 'FILE_ACCEPT'
@@ -28,7 +30,7 @@ export interface NetworkMessage {
     | 'PING'
     | 'PONG'
   deviceId: string
-  payload?: any
+  payload?: unknown
   id?: string
   timestamp?: number
 }
@@ -48,6 +50,7 @@ export interface FileTransferProgress {
   eta: number
   status: 'pending' | 'active' | 'completed' | 'failed' | 'rejected'
   path?: string
+  name?: string
   size?: number
   direction?: 'incoming' | 'outgoing'
 }

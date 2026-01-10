@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
-import { Device, NetworkMessage, FileTransferProgress, DeviceInfo } from '../../shared/messageTypes'
+import { Device, NetworkMessage, FileTransferProgress, DeviceInfo } from '@shared/messageTypes'
 
 interface AppState {
   localDevice: DeviceInfo | null
@@ -22,7 +22,7 @@ interface AppState {
   setSelectedDeviceId: (deviceId: string | null) => void
   setOnboardingComplete: (complete: boolean) => void
   setDiscoveredDevices: (devices: Device[]) => void
-  clearMessages: () => void
+  clearMessages: (deviceId?: string) => void
   clearTransfers: () => void
 }
 
@@ -107,7 +107,15 @@ export const useStore = create<AppState>()(
         })
       },
 
-      clearMessages: () => set({ messages: {} }),
+      clearMessages: (deviceId) =>
+        set((state) => {
+          if (deviceId) {
+            const newMessages = { ...state.messages }
+            delete newMessages[deviceId]
+            return { messages: newMessages }
+          }
+          return { messages: {} }
+        }),
       clearTransfers: () => set({ transfers: {} })
     }),
     {

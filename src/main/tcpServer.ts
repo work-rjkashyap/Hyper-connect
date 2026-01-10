@@ -1,6 +1,15 @@
 import net from 'net'
 import EventEmitter from 'events'
-import { NetworkMessage } from '../shared/messageTypes'
+import { NetworkMessage } from '@shared/messageTypes'
+import { generateKeyPair, computeSharedSecret } from './crypto/ecdh'
+import { deriveSessionKey, storeSession, discardSession, getSession } from './crypto/sessionKey'
+import {
+  encryptMessage,
+  decryptMessage,
+  isEncryptedMessage,
+  isSensitiveMessageType
+} from './crypto/messageCrypto'
+import { getDeviceInfo } from './identity'
 
 export class TCPServer extends EventEmitter {
   private server: net.Server
@@ -41,8 +50,12 @@ export class TCPServer extends EventEmitter {
     socket.setNoDelay(true)
     socket.setKeepAlive(true, 1000)
 
+    // Performance optimization for high-speed transfers
+    // Note: highWaterMark is read-only on the socket itself, usually set at server level
+
     let isRawStream = false
     let buffer = Buffer.alloc(0)
+    let authenticatedDeviceId: string | null = null
 
     socket.on('data', (data) => {
       if (isRawStream) {
@@ -69,8 +82,34 @@ export class TCPServer extends EventEmitter {
         for (const line of lines) {
           if (!line.trim()) continue
           try {
-            const message: NetworkMessage = JSON.parse(line)
-            this.emit('message', message, socket)
+            const rawMessage = JSON.parse(line)
+
+            // Handle Handshake
+            if (rawMessage.type === 'HELLO_SECURE') {
+              this.handleSecureHandshake(socket, rawMessage).then((deviceId) => {
+                authenticatedDeviceId = deviceId
+              })
+              continue
+            }
+
+            // Handle Encrypted Messages
+            if (isEncryptedMessage(rawMessage)) {
+              if (authenticatedDeviceId) {
+                const session = getSession(authenticatedDeviceId)
+                if (session) {
+                  const decrypted = decryptMessage(rawMessage, session.sessionKey)
+                  this.emit('message', decrypted, socket, true)
+                } else {
+                  console.error(
+                    `[Server] No session key for authenticated device ${authenticatedDeviceId}`
+                  )
+                }
+              } else {
+                console.warn('[Server] Received encrypted message before authentication')
+              }
+            } else {
+              this.emit('message', rawMessage, socket, false)
+            }
           } catch (e) {
             console.error('Failed to parse incoming message:', e)
           }
@@ -79,13 +118,10 @@ export class TCPServer extends EventEmitter {
     })
 
     socket.on('close', () => {
-      // Handle cleanup
-      for (const [deviceId, conn] of this.connections.entries()) {
-        if (conn === socket) {
-          this.connections.delete(deviceId)
-          this.emit('connectionClosed', deviceId)
-          break
-        }
+      if (authenticatedDeviceId) {
+        this.connections.delete(authenticatedDeviceId)
+        discardSession(authenticatedDeviceId)
+        this.emit('connectionClosed', authenticatedDeviceId)
       }
     })
 
@@ -94,11 +130,76 @@ export class TCPServer extends EventEmitter {
     })
   }
 
+  private async handleSecureHandshake(
+    socket: net.Socket,
+    message: NetworkMessage
+  ): Promise<string> {
+    const remotePublicKey = (message.payload as any)?.publicKey
+    const remoteDeviceId = message.deviceId
+
+    if (!remotePublicKey) {
+      throw new Error('Missing public key in HELLO_SECURE')
+    }
+
+    console.log(`[Server] Received HELLO_SECURE from ${remoteDeviceId}`)
+
+    // 1. Generate local ephemeral key pair
+    const { publicKey, privateKey } = generateKeyPair()
+
+    // 2. Compute shared secret and derive session key
+    const sharedSecret = computeSharedSecret(privateKey, remotePublicKey)
+    const sessionKey = deriveSessionKey(sharedSecret)
+
+    // 3. Store session
+    storeSession(remoteDeviceId, { sessionKey, deviceId: remoteDeviceId })
+    this.connections.set(remoteDeviceId, socket)
+
+    // 4. Respond with our HELLO_SECURE
+    const deviceInfo = getDeviceInfo()
+    const response: NetworkMessage = {
+      type: 'HELLO_SECURE',
+      deviceId: deviceInfo.deviceId,
+      id: 'hello-secure-resp',
+      timestamp: Date.now(),
+      payload: {
+        publicKey,
+        displayName: deviceInfo.displayName,
+        platform: deviceInfo.platform
+      }
+    }
+
+    socket.write(JSON.stringify(response) + '\n')
+    console.log(`[Server] Secure session established with ${remoteDeviceId}`)
+
+    return remoteDeviceId
+  }
+
   registerConnection(deviceId: string, socket: net.Socket): void {
     this.connections.set(deviceId, socket)
   }
 
   sendMessage(socket: net.Socket, message: NetworkMessage): void {
+    const deviceId = [...this.connections.entries()].find(([, s]) => s === socket)?.[0]
+
+    if (deviceId) {
+      const session = getSession(deviceId)
+      const isSensitive = isSensitiveMessageType(message.type)
+
+      if (session) {
+        console.log(`[Server] Sending encrypted ${message.type} to ${deviceId}`)
+        const encrypted = encryptMessage(message, session.sessionKey)
+        socket.write(JSON.stringify(encrypted) + '\n')
+        return
+      } else if (isSensitive) {
+        console.error(
+          `[Server] Refusing to send sensitive message ${message.type} without encryption to ${deviceId}`
+        )
+        return
+      }
+    }
+
+    // Fallback for non-sensitive messages or before authentication
+    console.warn(`[Server] Sending unencrypted ${message.type}`)
     socket.write(JSON.stringify(message) + '\n')
   }
 

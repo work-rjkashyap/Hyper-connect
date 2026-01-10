@@ -1,5 +1,5 @@
 import { ElectronAPI } from '@electron-toolkit/preload'
-import { Device, NetworkMessage, FileTransferProgress, DeviceInfo } from '../shared/messageTypes'
+import { Device, NetworkMessage, FileTransferProgress, DeviceInfo } from '@shared/messageTypes'
 
 export interface IApi {
   getDeviceInfo: () => Promise<DeviceInfo>

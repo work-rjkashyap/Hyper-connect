@@ -3,12 +3,17 @@ import { v4 as uuidv4 } from 'uuid'
 import fs from 'fs'
 import path from 'path'
 import os from 'os'
-import { DeviceInfo } from '../shared/messageTypes'
+import { DeviceInfo } from '@shared/messageTypes'
 
 const CONFIG_PATH = path.join(app.getPath('userData'), 'device-config.json')
 
+interface DeviceConfig {
+  deviceId?: string
+  displayName?: string
+}
+
 export function getDeviceInfo(): DeviceInfo {
-  let config: any = {}
+  let config: DeviceConfig = {}
 
   if (fs.existsSync(CONFIG_PATH)) {
     try {
@@ -42,7 +47,7 @@ export function updateDisplayName(name: string): void {
   saveConfig(config)
 }
 
-function loadConfig(): any {
+function loadConfig(): DeviceConfig {
   if (fs.existsSync(CONFIG_PATH)) {
     try {
       return JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8'))
@@ -53,7 +58,7 @@ function loadConfig(): any {
   return {}
 }
 
-function saveConfig(config: any): void {
+function saveConfig(config: DeviceConfig): void {
   try {
     fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2))
   } catch (e) {
