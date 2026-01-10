@@ -14,8 +14,9 @@ function createWindow(): void {
     width: 1000,
     height: 800,
     show: false,
-    title: 'Hyper Connect',
+    title: '',
     autoHideMenuBar: true,
+    titleBarStyle: 'hidden',
     ...(process.platform === 'linux' ? { icon } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),

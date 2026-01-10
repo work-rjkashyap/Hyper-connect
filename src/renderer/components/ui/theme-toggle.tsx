@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { Moon, Sun } from 'lucide-react'
-import { Button } from './button'
-
+import { Button } from '@renderer/components/ui/button'
 export const ThemeToggle: React.FC = () => {
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     if (typeof window !== 'undefined') {
@@ -9,7 +8,6 @@ export const ThemeToggle: React.FC = () => {
     }
     return 'light'
   })
-
   useEffect(() => {
     const root = window.document.documentElement
     if (theme === 'dark') {
@@ -19,7 +17,6 @@ export const ThemeToggle: React.FC = () => {
     }
     localStorage.setItem('theme', theme)
   }, [theme])
-
   return (
     <Button
       variant="ghost"

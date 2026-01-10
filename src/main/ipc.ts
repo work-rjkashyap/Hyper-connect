@@ -36,6 +36,48 @@ export function setupIpc(mainWindow: BrowserWindow): void {
     return false
   })
 
+  // Download Directory Management
+  ipcMain.handle('get-download-path', async () => {
+    const { app } = await import('electron')
+    const Store = (await import('electron-store')).default
+    const store = new Store()
+    const customPath = store.get('downloadPath') as string | undefined
+    return customPath || app.getPath('downloads')
+  })
+
+  ipcMain.handle('select-download-directory', async () => {
+    const { dialog } = await import('electron')
+    const result = await dialog.showOpenDialog(mainWindow, {
+      properties: ['openDirectory', 'createDirectory'],
+      title: 'Select Download Directory'
+    })
+    if (!result.canceled && result.filePaths.length > 0) {
+      return result.filePaths[0]
+    }
+    return null
+  })
+
+  ipcMain.handle('set-download-path', async (_, path: string) => {
+    const Store = (await import('electron-store')).default
+    const store = new Store()
+    store.set('downloadPath', path)
+    return path
+  })
+
+  // Auto-accept Preference
+  ipcMain.handle('get-auto-accept', async () => {
+    const Store = (await import('electron-store')).default
+    const store = new Store()
+    return store.get('autoAccept', false) as boolean
+  })
+
+  ipcMain.handle('set-auto-accept', async (_, autoAccept: boolean) => {
+    const Store = (await import('electron-store')).default
+    const store = new Store()
+    store.set('autoAccept', autoAccept)
+    return autoAccept
+  })
+
   // Discovery
   ipcMain.handle('get-discovered-devices', () => discoveryManager.getDiscoveredDevices())
   ipcMain.handle('rescan-devices', () => discoveryManager.rescan())

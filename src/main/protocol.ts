@@ -59,11 +59,14 @@ export class ConnectionManager extends EventEmitter {
             if (!line) return
             const message: NetworkMessage = JSON.parse(line)
 
-            if (message.type === 'HELLO_SECURE' && (message.payload as any)?.publicKey) {
+            if (
+              message.type === 'HELLO_SECURE' &&
+              (message.payload as { publicKey: string })?.publicKey
+            ) {
               // 3. Compute shared secret and derive session key
               const sharedSecret = computeSharedSecret(
                 privateKey,
-                (message.payload as any).publicKey
+                (message.payload as { publicKey: string }).publicKey
               )
               const sessionKey = deriveSessionKey(sharedSecret)
 

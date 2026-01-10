@@ -1,4 +1,4 @@
-import { cn } from 'src/renderer/lib/utils'
+import { cn } from '@renderer/lib/utils'
 
 function Kbd({ className, ...props }: React.ComponentProps<'kbd'>): React.ReactElement {
   return (

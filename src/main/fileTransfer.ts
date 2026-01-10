@@ -35,8 +35,11 @@ class FileTransferManager {
       const transfer = this.activeTransfers.get(fileId)
       if (!transfer || !transfer.metadata) return
 
-      // Automatically save to Downloads folder
-      const downloadsPath = app.getPath('downloads')
+      // Get custom download path or use default Downloads folder
+      const Store = (await import('electron-store')).default
+      const store = new Store()
+      const customPath = store.get('downloadPath') as string | undefined
+      const downloadsPath = customPath || app.getPath('downloads')
       let filePath = path.join(downloadsPath, transfer.metadata.name)
 
       // Handle file name conflicts by appending a number
@@ -229,7 +232,7 @@ class FileTransferManager {
     return message
   }
 
-  public handleIncomingMeta(message: NetworkMessage): void {
+  public async handleIncomingMeta(message: NetworkMessage): Promise<void> {
     const metadata: FileMetadata = message.payload as FileMetadata
     this.activeTransfers.set(metadata.fileId, {
       fileId: metadata.fileId,
@@ -256,6 +259,30 @@ class FileTransferManager {
     })
 
     this.mainWindow?.webContents.send('file-received', message)
+
+    // Handle Auto-accept
+    const Store = (await import('electron-store')).default
+    const store = new Store()
+    const autoAccept = store.get('autoAccept', false) as boolean
+
+    if (autoAccept) {
+      console.log(`[FileTransfer] Auto-accepting file: ${metadata.name}`)
+      const customPath = store.get('downloadPath') as string | undefined
+      const downloadsPath = customPath || app.getPath('downloads')
+      let filePath = path.join(downloadsPath, metadata.name)
+
+      // Handle file name conflicts
+      let counter = 1
+      const ext = path.extname(metadata.name)
+      const baseName = path.basename(metadata.name, ext)
+
+      while (fs.existsSync(filePath)) {
+        filePath = path.join(downloadsPath, `${baseName} (${counter})${ext}`)
+        counter++
+      }
+
+      await this.sendAccept(metadata.fileId, filePath)
+    }
   }
 
   public async handleAccept(message: NetworkMessage): Promise<void> {
@@ -353,8 +380,9 @@ class FileTransferManager {
 
     // Open DEDICATED connection for file stream
     const socket = new net.Socket({
+      // @ts-expect-error - writableHighWaterMark is missing in some node typings but valid
       writableHighWaterMark: 4 * 1024 * 1024 // 4MB
-    } as any)
+    })
 
     socket.connect(device.port, device.address, () => {
       socket.setNoDelay(true)

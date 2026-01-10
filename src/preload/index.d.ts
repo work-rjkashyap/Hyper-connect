@@ -13,6 +13,11 @@ export interface IApi {
   openFileLocation: (filePath: string) => Promise<void>
   clearCache: () => Promise<boolean>
   rescanDevices: () => Promise<void>
+  getDownloadPath: () => Promise<string>
+  selectDownloadDirectory: () => Promise<string | null>
+  setDownloadPath: (path: string) => Promise<string>
+  getAutoAccept: () => Promise<boolean>
+  setAutoAccept: (autoAccept: boolean) => Promise<boolean>
 
   onDeviceDiscovered: (callback: (device: Device) => void) => void
   onDeviceLost: (callback: (deviceId: string) => void) => void

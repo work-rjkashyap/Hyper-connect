@@ -20,6 +20,13 @@ const api = {
     ipcRenderer.invoke('open-file-location', filePath),
   clearCache: (): Promise<boolean> => ipcRenderer.invoke('clear-cache'),
   rescanDevices: (): Promise<void> => ipcRenderer.invoke('rescan-devices'),
+  getDownloadPath: (): Promise<string> => ipcRenderer.invoke('get-download-path'),
+  selectDownloadDirectory: (): Promise<string | null> =>
+    ipcRenderer.invoke('select-download-directory'),
+  setDownloadPath: (path: string): Promise<string> => ipcRenderer.invoke('set-download-path', path),
+  getAutoAccept: (): Promise<boolean> => ipcRenderer.invoke('get-auto-accept'),
+  setAutoAccept: (autoAccept: boolean): Promise<boolean> =>
+    ipcRenderer.invoke('set-auto-accept', autoAccept),
 
   // Event Listeners
   onDeviceDiscovered: (callback: (device: Device) => void): (() => void) => {
