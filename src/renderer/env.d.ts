@@ -13,11 +13,11 @@ export interface IApi {
   openFileLocation: (filePath: string) => Promise<void>
   clearCache: () => Promise<boolean>
 
-  onDeviceDiscovered: (callback: (device: Device) => void) => void
-  onDeviceLost: (callback: (deviceId: string) => void) => void
-  onMessageReceived: (callback: (message: NetworkMessage) => void) => void
-  onFileReceived: (callback: (message: NetworkMessage) => void) => void
-  onFileTransferProgress: (callback: (progress: FileTransferProgress) => void) => void
+  onDeviceDiscovered: (callback: (device: Device) => void) => () => void
+  onDeviceLost: (callback: (deviceId: string) => void) => () => void
+  onMessageReceived: (callback: (message: NetworkMessage) => void) => () => void
+  onFileReceived: (callback: (message: NetworkMessage) => void) => () => void
+  onFileTransferProgress: (callback: (progress: FileTransferProgress) => void) => () => void
   rescanDevices: () => Promise<void>
 }
 

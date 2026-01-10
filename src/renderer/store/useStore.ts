@@ -82,12 +82,19 @@ export const useStore = create<AppState>()(
         })),
 
       addMessage: (deviceId, message) =>
-        set((state) => ({
-          messages: {
-            ...state.messages,
-            [deviceId]: [...(state.messages[deviceId] || []), message]
+        set((state) => {
+          const deviceMessages = state.messages[deviceId] || []
+          // Avoid duplicate messages by checking ID
+          if (deviceMessages.some((m) => m.id === message.id)) {
+            return state
           }
-        })),
+          return {
+            messages: {
+              ...state.messages,
+              [deviceId]: [...deviceMessages, message]
+            }
+          }
+        }),
 
       updateTransfer: (progress) =>
         set((state) => ({

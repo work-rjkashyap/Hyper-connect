@@ -34,8 +34,8 @@ export const App: React.FC = () => {
 
         init()
 
-        // Listen for events
-        window.api.onDeviceDiscovered((device) => {
+        // Listen for events and store cleanup functions
+        const unsubDiscovered = window.api.onDeviceDiscovered((device) => {
             addDiscoveredDevice(device)
             if (!notifiedDevices.current.has(device.deviceId)) {
                 notifiedDevices.current.add(device.deviceId)
@@ -46,7 +46,7 @@ export const App: React.FC = () => {
             }
         })
 
-        window.api.onDeviceLost((deviceId) => {
+        const unsubLost = window.api.onDeviceLost((deviceId) => {
             const device = useStore.getState().discoveredDevices.find((d) => d.deviceId === deviceId)
             removeDiscoveredDevice(deviceId)
             if (device) {
@@ -57,7 +57,7 @@ export const App: React.FC = () => {
             }
         })
 
-        window.api.onMessageReceived((message: NetworkMessage) => {
+        const unsubMessage = window.api.onMessageReceived((message: NetworkMessage) => {
             const state = useStore.getState()
 
             // Only add messages that should be displayed in the chat UI
@@ -94,12 +94,20 @@ export const App: React.FC = () => {
             }
         })
 
-        window.api.onFileReceived(() => {
+        const unsubFile = window.api.onFileReceived(() => {
             // Message is already added by onMessageReceived
             // We could use this for additional file-specific logic if needed
         })
 
-        window.api.onFileTransferProgress((progress) => updateTransfer(progress))
+        const unsubProgress = window.api.onFileTransferProgress((progress) => updateTransfer(progress))
+
+        return () => {
+            unsubDiscovered()
+            unsubLost()
+            unsubMessage()
+            unsubFile()
+            unsubProgress()
+        }
     }, [
         setLocalDevice,
         setDiscoveredDevices,

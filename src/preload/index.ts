@@ -22,30 +22,49 @@ const api = {
   rescanDevices: (): Promise<void> => ipcRenderer.invoke('rescan-devices'),
 
   // Event Listeners
-  onDeviceDiscovered: (callback: (device: Device) => void): void => {
+  onDeviceDiscovered: (callback: (device: Device) => void): (() => void) => {
     console.log('[Preload] Registering onDeviceDiscovered listener')
-    ipcRenderer.on('device-discovered', (_, device) => {
+    const listener = (_: unknown, device: unknown): void => {
       console.log('[Preload] device-discovered event received:', device)
       callback(device as Device)
-    })
+    }
+    ipcRenderer.on('device-discovered', listener)
+    return (): void => {
+      ipcRenderer.removeListener('device-discovered', listener)
+    }
   },
-  onDeviceLost: (callback: (deviceId: string) => void): void => {
+  onDeviceLost: (callback: (deviceId: string) => void): (() => void) => {
     console.log('[Preload] Registering onDeviceLost listener')
-    ipcRenderer.on('device-lost', (_, deviceId) => {
+    const listener = (_: unknown, deviceId: unknown): void => {
       console.log('[Preload] device-lost event received:', deviceId)
       callback(deviceId as string)
-    })
+    }
+    ipcRenderer.on('device-lost', listener)
+    return (): void => {
+      ipcRenderer.removeListener('device-lost', listener)
+    }
   },
-  onMessageReceived: (callback: (message: NetworkMessage) => void): void => {
-    ipcRenderer.on('message-received', (_, message) => callback(message as NetworkMessage))
+  onMessageReceived: (callback: (message: NetworkMessage) => void): (() => void) => {
+    const listener = (_: unknown, message: unknown): void => callback(message as NetworkMessage)
+    ipcRenderer.on('message-received', listener)
+    return (): void => {
+      ipcRenderer.removeListener('message-received', listener)
+    }
   },
-  onFileReceived: (callback: (message: NetworkMessage) => void): void => {
-    ipcRenderer.on('file-received', (_, message) => callback(message as NetworkMessage))
+  onFileReceived: (callback: (message: NetworkMessage) => void): (() => void) => {
+    const listener = (_: unknown, message: unknown): void => callback(message as NetworkMessage)
+    ipcRenderer.on('file-received', listener)
+    return (): void => {
+      ipcRenderer.removeListener('file-received', listener)
+    }
   },
-  onFileTransferProgress: (callback: (progress: FileTransferProgress) => void): void => {
-    ipcRenderer.on('file-transfer-progress', (_, progress) =>
+  onFileTransferProgress: (callback: (progress: FileTransferProgress) => void): (() => void) => {
+    const listener = (_: unknown, progress: unknown): void =>
       callback(progress as FileTransferProgress)
-    )
+    ipcRenderer.on('file-transfer-progress', listener)
+    return (): void => {
+      ipcRenderer.removeListener('file-transfer-progress', listener)
+    }
   }
 }
 
