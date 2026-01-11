@@ -12,7 +12,7 @@ function createWindow(): void {
     width: 1000,
     height: 800,
     show: false,
-    title: '',
+    title: 'HyperConnect',
     transparent: true,
     frame: false, // optional: removes window frame
     titleBarStyle: process.platform === 'darwin' ? 'hidden' : 'default',

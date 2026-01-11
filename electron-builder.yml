@@ -1,5 +1,5 @@
 appId: com.electron.app
-productName: hyper-connect
+productName: HyperConnect
 directories:
   buildResources: build
 files:
