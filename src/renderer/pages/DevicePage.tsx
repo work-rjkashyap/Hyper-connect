@@ -11,8 +11,10 @@ import {
   Copy,
   Trash2,
   Reply,
-  Forward
+  Forward,
+  X
 } from 'lucide-react'
+import { ForwardDialog } from '../components/ForwardDialog'
 import { toast } from 'sonner'
 import {
   ContextMenu,
@@ -52,6 +54,8 @@ export const DevicePage: React.FC = () => {
     }))
   )
   const [pendingDeletes, setPendingDeletes] = useState<Set<string>>(new Set())
+  const [replyingTo, setReplyingTo] = useState<NetworkMessage | null>(null)
+  const [forwardingMessage, setForwardingMessage] = useState<NetworkMessage | null>(null)
   const device = discoveredDevices.find((d) => d.deviceId === deviceId)
   useEffect(() => {
     if (deviceId) {
@@ -93,10 +97,28 @@ export const DevicePage: React.FC = () => {
     if (!input.trim() || !device) return
     try {
       const sentMsg = await window.api.sendMessage(device.deviceId, input)
+      if (replyingTo) {
+        sentMsg.replyTo = replyingTo.id
+      }
       addMessage(device.deviceId, sentMsg)
       setInput('')
+      setReplyingTo(null)
     } catch (e) {
       console.error('[DevicePage] Send error:', e)
+    }
+  }
+
+  const handleForward = async (targetDeviceId: string): Promise<void> => {
+    if (!forwardingMessage) return
+    try {
+      const payload = forwardingMessage.payload as string
+      const sentMsg = await window.api.sendMessage(targetDeviceId, payload)
+      addMessage(targetDeviceId, sentMsg)
+      setForwardingMessage(null)
+      toast.success('Message forwarded')
+    } catch (e) {
+      console.error('[DevicePage] Forward error:', e)
+      toast.error('Failed to forward message')
     }
   }
   const handleFileSelect = async (): Promise<void> => {
@@ -281,23 +303,29 @@ export const DevicePage: React.FC = () => {
                             </div>
                           </ContextMenuTrigger>
                           <ContextMenuContent className="w-48">
+                            <ContextMenuItem
+                              onClick={() => setReplyingTo(msg)}
+                              className="flex items-center gap-2"
+                            >
+                              <Reply className="w-4 h-4" />
+                              <span>Reply</span>
+                            </ContextMenuItem>
+                            <ContextMenuItem
+                              onClick={() => setForwardingMessage(msg)}
+                              className="flex items-center gap-2"
+                            >
+                              <Forward className="w-4 h-4" />
+                              <span>Forward</span>
+                            </ContextMenuItem>
                             {!isFile && (
                               <ContextMenuItem
                                 onClick={() => handleCopy(msg.payload as string)}
-                                className="gap-2"
+                                className="flex items-center gap-2"
                               >
                                 <Copy className="w-4 h-4" />
-                                Copy Message
+                                <span>Copy Text</span>
                               </ContextMenuItem>
                             )}
-                            <ContextMenuItem className="gap-2">
-                              <Reply className="w-4 h-4" />
-                              Reply
-                            </ContextMenuItem>
-                            <ContextMenuItem className="gap-2">
-                              <Forward className="w-4 h-4" />
-                              Forward
-                            </ContextMenuItem>
                             <ContextMenuSeparator />
                             <ContextMenuItem
                               onClick={() => handleDelete(msg)}
@@ -336,6 +364,28 @@ export const DevicePage: React.FC = () => {
             )}
           </div>
           <div className="p-4 bg-background border-t shrink-0 relative z-20">
+            {replyingTo && (
+              <div className="max-w-4xl mx-auto mb-2 flex items-center gap-3 bg-secondary/50 p-2.5 rounded-xl border border-border/50 animate-in slide-in-from-bottom-2 duration-200">
+                <div className="w-1 bg-primary self-stretch rounded-full opacity-50" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-[10px] font-bold text-primary uppercase tracking-wider mb-0.5">
+                    Replying to{' '}
+                    {replyingTo.deviceId === localDevice?.deviceId ? 'you' : device.displayName}
+                  </p>
+                  <p className="text-sm text-muted-foreground truncate">
+                    {replyingTo.payload as string}
+                  </p>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 rounded-full hover:bg-secondary"
+                  onClick={() => setReplyingTo(null)}
+                >
+                  <X className="w-4 h-4" />
+                </Button>
+              </div>
+            )}
             <div className="flex gap-2 max-w-4xl mx-auto items-center">
               <button
                 type="button"
@@ -373,6 +423,11 @@ export const DevicePage: React.FC = () => {
       ) : (
         <TransferView device={device} />
       )}
+      <ForwardDialog
+        isOpen={!!forwardingMessage}
+        onOpenChange={(open) => !open && setForwardingMessage(null)}
+        onForward={handleForward}
+      />
     </div>
   )
 }

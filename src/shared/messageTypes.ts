@@ -39,6 +39,7 @@ export interface NetworkMessage {
   id?: string
   ackId?: string
   timestamp?: number
+  replyTo?: string
   status?: 'sending' | 'sent' | 'delivered' | 'read'
 }
 
