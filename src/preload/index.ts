@@ -11,10 +11,10 @@ const api = {
   updateProfile: (name?: string, image?: string): Promise<DeviceInfo> =>
     ipcRenderer.invoke('update-profile', name, image),
   getDiscoveredDevices: (): Promise<Device[]> => ipcRenderer.invoke('get-discovered-devices'),
-  sendMessage: (deviceId: string, payload: string): Promise<NetworkMessage> =>
-    ipcRenderer.invoke('send-message', deviceId, payload),
-  sendFile: (deviceId: string, filePath: string): Promise<NetworkMessage> =>
-    ipcRenderer.invoke('send-file', deviceId, filePath),
+  sendMessage: (deviceId: string, payload: string, replyTo?: string): Promise<NetworkMessage> =>
+    ipcRenderer.invoke('send-message', deviceId, payload, replyTo),
+  sendFile: (deviceId: string, filePath: string, replyTo?: string): Promise<NetworkMessage> =>
+    ipcRenderer.invoke('send-file', deviceId, filePath, replyTo),
   acceptFile: (fileId: string): Promise<void> => ipcRenderer.invoke('accept-file', fileId),
   rejectFile: (fileId: string): Promise<void> => ipcRenderer.invoke('reject-file', fileId),
   selectFile: (): Promise<string | null> => ipcRenderer.invoke('select-file'),

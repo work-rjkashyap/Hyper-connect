@@ -89,7 +89,7 @@ export function setupIpc(mainWindow: BrowserWindow): void {
   ipcMain.handle('rescan-devices', () => discoveryManager.rescan())
 
   // Messaging
-  ipcMain.handle('send-message', async (_, deviceId: string, payload: string) => {
+  ipcMain.handle('send-message', async (_, deviceId: string, payload: string, replyTo?: string) => {
     const devices = discoveryManager.getDiscoveredDevices()
     console.log(
       `[IPC] Sending message to ${deviceId}. Available devices:`,
@@ -106,7 +106,8 @@ export function setupIpc(mainWindow: BrowserWindow): void {
       deviceId: getDeviceInfo().deviceId,
       id: uuidv4(),
       payload,
-      timestamp: Date.now()
+      timestamp: Date.now(),
+      replyTo
     }
 
     try {

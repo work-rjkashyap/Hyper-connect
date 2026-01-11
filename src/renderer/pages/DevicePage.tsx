@@ -25,7 +25,7 @@ import {
 } from '../components/ui/context-menu'
 import { useStore } from '../store/useStore'
 import { cn, formatFileSize, formatChatDate } from '../lib/utils'
-import { NetworkMessage, Device } from '../../shared/messageTypes'
+import { NetworkMessage, Device, FileMetadata } from '../../shared/messageTypes'
 import { Button } from '../components/ui/button'
 import { Separator } from '../components/ui/separator'
 import { ThemeToggle } from '../components/ui/theme-toggle'
@@ -96,10 +96,7 @@ export const DevicePage: React.FC = () => {
   const handleSend = async (): Promise<void> => {
     if (!input.trim() || !device) return
     try {
-      const sentMsg = await window.api.sendMessage(device.deviceId, input)
-      if (replyingTo) {
-        sentMsg.replyTo = replyingTo.id
-      }
+      const sentMsg = await window.api.sendMessage(device.deviceId, input, replyingTo?.id)
       addMessage(device.deviceId, sentMsg)
       setInput('')
       setReplyingTo(null)
@@ -125,8 +122,9 @@ export const DevicePage: React.FC = () => {
     if (!device) return
     const path = await window.api.selectFile()
     if (path) {
-      const sentMsg = await window.api.sendFile(device.deviceId, path)
+      const sentMsg = await window.api.sendFile(device.deviceId, path, replyingTo?.id)
       addMessage(device.deviceId, sentMsg)
+      setReplyingTo(null)
     }
   }
   const handleCopy = (text: string): void => {
@@ -284,6 +282,7 @@ export const DevicePage: React.FC = () => {
                         <ContextMenu>
                           <ContextMenuTrigger asChild>
                             <div
+                              id={msg.id ? `msg-${msg.id}` : undefined}
                               className={cn(
                                 'max-w-[85%] rounded-2xl px-4 py-3 shadow-sm cursor-default',
                                 isLocal
@@ -291,8 +290,48 @@ export const DevicePage: React.FC = () => {
                                   : 'bg-card border border-border/50 rounded-tl-none'
                               )}
                             >
+                              {msg.replyTo && (
+                                <div
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    const el = document.getElementById(`msg-${msg.replyTo}`)
+                                    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                                  }}
+                                  className={cn(
+                                    'mb-2 p-2 rounded-lg text-[11px] border-l-2 overflow-hidden cursor-pointer hover:opacity-80 transition-opacity',
+                                    isLocal
+                                      ? 'bg-black/20 border-primary-foreground/50 text-primary-foreground/80'
+                                      : 'bg-muted border-primary/50 text-muted-foreground'
+                                  )}
+                                >
+                                  {(() => {
+                                    const repliedMsg = messages.find((m) => m.id === msg.replyTo)
+                                    if (!repliedMsg) {
+                                      return (
+                                        <p className="italic opacity-50">
+                                          Original message not found
+                                        </p>
+                                      )
+                                    }
+                                    return (
+                                      <>
+                                        <p className="font-bold opacity-70 mb-0.5">
+                                          {repliedMsg.deviceId === localDevice?.deviceId
+                                            ? 'You'
+                                            : device.displayName}
+                                        </p>
+                                        <p className="line-clamp-2">
+                                          {repliedMsg.type === 'FILE_META'
+                                            ? `📎 ${(repliedMsg.payload as FileMetadata).name}`
+                                            : (repliedMsg.payload as string)}
+                                        </p>
+                                      </>
+                                    )
+                                  })()}
+                                </div>
+                              )}
                               {!isFile ? (
-                                <p className="text-sm leading-relaxed whitespace-pre-wrap break-words select-text">
+                                <p className="text-sm leading-relaxed whitespace-pre-wrap wrap-break-word select-text">
                                   {typeof msg.payload === 'string'
                                     ? msg.payload
                                     : JSON.stringify(msg.payload)}
@@ -503,7 +542,7 @@ const TransferView: React.FC<{ device: Device }> = ({ device }) => {
                   className={cn(
                     'bg-card/40 border-border/40 overflow-hidden group transition-all rounded-2xl',
                     remainsCompleted &&
-                      'cursor-pointer hover:border-primary/50 hover:bg-primary/5 hover:shadow-lg active:scale-[0.98]'
+                    'cursor-pointer hover:border-primary/50 hover:bg-primary/5 hover:shadow-lg active:scale-[0.98]'
                   )}
                 >
                   <CardContent className="p-5 flex items-center gap-5">

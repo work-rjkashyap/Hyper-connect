@@ -27,8 +27,8 @@ class FileTransferManager {
   setup(mainWindow: BrowserWindow): void {
     this.mainWindow = mainWindow
 
-    ipcMain.handle('send-file', async (_, deviceId: string, filePath: string) => {
-      return this.initiateSend(deviceId, filePath)
+    ipcMain.handle('send-file', async (_, deviceId: string, filePath: string, replyTo?: string) => {
+      return this.initiateSend(deviceId, filePath, replyTo)
     })
 
     ipcMain.handle('accept-file', async (_, fileId: string) => {
@@ -179,7 +179,11 @@ class FileTransferManager {
     })
   }
 
-  async initiateSend(deviceId: string, filePath: string): Promise<NetworkMessage> {
+  async initiateSend(
+    deviceId: string,
+    filePath: string,
+    replyTo?: string
+  ): Promise<NetworkMessage> {
     const stats = fs.statSync(filePath)
     const fileId = uuidv4()
     const metadata: FileMetadata = {
@@ -197,7 +201,8 @@ class FileTransferManager {
       deviceId: getDeviceInfo().deviceId,
       payload: metadata,
       id: uuidv4(),
-      timestamp: Date.now()
+      timestamp: Date.now(),
+      replyTo
     }
 
     this.activeTransfers.set(fileId, {
