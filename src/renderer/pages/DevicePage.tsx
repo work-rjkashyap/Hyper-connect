@@ -12,8 +12,11 @@ import {
   Trash2,
   Reply,
   Forward,
-  X
+  X,
+  Smile
 } from 'lucide-react'
+const EmojiPicker = React.lazy(() => import('emoji-picker-react'))
+import { Popover, PopoverContent, PopoverTrigger } from '../components/ui/popover'
 import { ForwardDialog } from '../components/ForwardDialog'
 import { toast } from 'sonner'
 import {
@@ -44,7 +47,8 @@ export const DevicePage: React.FC = () => {
     localDevice,
     setSelectedDeviceId,
     clearUnreadCount,
-    deleteMessage
+    deleteMessage,
+    theme
   } = useStore(
     useShallow((state) => ({
       discoveredDevices: state.discoveredDevices,
@@ -52,7 +56,8 @@ export const DevicePage: React.FC = () => {
       localDevice: state.localDevice,
       setSelectedDeviceId: state.setSelectedDeviceId,
       clearUnreadCount: state.clearUnreadCount,
-      deleteMessage: state.deleteMessage
+      deleteMessage: state.deleteMessage,
+      theme: state.theme
     }))
   )
   const [pendingDeletes, setPendingDeletes] = useState<Set<string>>(new Set())
@@ -106,7 +111,6 @@ export const DevicePage: React.FC = () => {
       console.error('[DevicePage] Send error:', e)
     }
   }
-
   const handleForward = async (targetDeviceId: string): Promise<void> => {
     if (!forwardingMessage) return
     try {
@@ -282,7 +286,7 @@ export const DevicePage: React.FC = () => {
                           <div
                             id={msg.id ? `msg-${msg.id}` : undefined}
                             className={cn(
-                              'max-w-[85%] rounded-2xl px-4 py-3 shadow-sm cursor-default',
+                              'max-w-[85%] rounded-xl px-3 py-2 shadow-xs cursor-default',
                               isLocal
                                 ? 'bg-primary text-primary-foreground rounded-tr-none'
                                 : 'bg-card border border-border/50 rounded-tl-none'
@@ -296,7 +300,7 @@ export const DevicePage: React.FC = () => {
                                   if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
                                 }}
                                 className={cn(
-                                  'mb-2 p-2 rounded-lg text-[11px] border-l-2 overflow-hidden cursor-pointer hover:opacity-80 transition-opacity',
+                                  'mb-1 p-1.5 rounded-md text-[11px] border-l-2 overflow-hidden cursor-pointer hover:opacity-80 transition-opacity',
                                   isLocal
                                     ? 'bg-black/20 border-primary-foreground/50 text-primary-foreground/80'
                                     : 'bg-muted border-primary/50 text-muted-foreground'
@@ -313,7 +317,7 @@ export const DevicePage: React.FC = () => {
                                   }
                                   return (
                                     <>
-                                      <p className="font-bold opacity-70 mb-0.5">
+                                      <p className="font-bold opacity-70 ">
                                         {repliedMsg.deviceId === localDevice?.deviceId
                                           ? 'You'
                                           : device.displayName}
@@ -373,7 +377,7 @@ export const DevicePage: React.FC = () => {
                           </ContextMenuItem>
                         </ContextMenuContent>
                       </ContextMenu>
-                      <div className="flex items-center gap-1.5 mt-1 px-1">
+                      <div className="flex items-center gap-1.5 mt-0.5 px-1">
                         <span className="text-[10px] text-muted-foreground font-medium">
                           {new Date(msg.timestamp || 0).toLocaleTimeString([], {
                             hour: '2-digit',
@@ -431,6 +435,38 @@ export const DevicePage: React.FC = () => {
             >
               <Paperclip className="w-5 h-5" />
             </button>
+            <Popover>
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  className="p-2.5 hover:bg-secondary rounded-xl text-muted-foreground hover:text-primary transition-all hover:scale-105 active:scale-95"
+                >
+                  <Smile className="w-5 h-5" />
+                </button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" side="top" align="start">
+                <React.Suspense
+                  fallback={
+                    <div className="w-[320px] h-[400px] flex items-center justify-center text-muted-foreground">
+                      Loading...
+                    </div>
+                  }
+                >
+                  <EmojiPicker
+                    width={320}
+                    height={400}
+                    theme={theme as any}
+                    emojiStyle={'native' as any}
+                    searchDisabled={false}
+                    skinTonesDisabled
+                    previewConfig={{
+                      showPreview: true
+                    }}
+                    onEmojiClick={(emojiData) => setInput((prev) => prev + emojiData.emoji)}
+                  />
+                </React.Suspense>
+              </PopoverContent>
+            </Popover>
             <div className="flex-1 relative">
               <Textarea
                 autoFocus

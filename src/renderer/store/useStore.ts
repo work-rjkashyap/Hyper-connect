@@ -30,6 +30,8 @@ interface AppState {
     messageId: string,
     status: 'sent' | 'delivered' | 'read'
   ) => void
+  theme: 'light' | 'dark'
+  setTheme: (theme: 'light' | 'dark') => void
 }
 
 export const useStore = create<AppState>()(
@@ -42,6 +44,9 @@ export const useStore = create<AppState>()(
       selectedDeviceId: null,
       onboardingComplete: false,
       unreadCounts: {},
+      theme: 'light',
+
+      setTheme: (theme) => set({ theme }),
 
       incrementUnreadCount: (deviceId) =>
         set((state) => ({
@@ -194,7 +199,8 @@ export const useStore = create<AppState>()(
         localDevice: state.localDevice,
         messages: state.messages,
         unreadCounts: state.unreadCounts,
-        profileImage: state.localDevice?.profileImage
+        profileImage: state.localDevice?.profileImage,
+        theme: state.theme
       })
     }
   )

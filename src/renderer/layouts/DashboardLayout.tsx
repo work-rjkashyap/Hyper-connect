@@ -8,7 +8,6 @@ import { cn } from '../lib/utils'
 import logoLight from '../assets/logo_light.png'
 import logoDark from '../assets/logo_dark.png'
 import { WindowControls } from '../components/WindowControls'
-
 export const DashboardLayout: React.FC = () => {
   const { discoveredDevices, unreadCounts, localDevice, clearUnreadCount } = useStore(
     useShallow((state) => ({
@@ -23,7 +22,6 @@ export const DashboardLayout: React.FC = () => {
   const navigate = useNavigate()
   const isSettings = location.pathname === '/settings'
   const isMac = navigator.userAgent.includes('Mac')
-
   // basic check for device route
   const activeDeviceId = location.pathname.startsWith('/device/')
     ? location.pathname.split('/device/')[1]
@@ -44,11 +42,11 @@ export const DashboardLayout: React.FC = () => {
       {/* Sidebar */}
       <div className="w-[260px] border-r bg-card/50 flex flex-col shrink-0">
         <div
-          className="p-6 mt-5 flex items-center justify-between"
+          className="p-6 mt-2 flex items-center justify-between"
           style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
         >
           <div className="flex items-center gap-4">
-            <div className="w-8 h-8  bg-white dark:bg-slate-950 rounded-lg p-1 shadow-sm overflow-hidden border border-border/10 flex items-center justify-center">
+            <div className="w-10 h-10  rounded-full overflow-hidden border border-border/50 flex items-center justify-center">
               <img
                 src={logoLight}
                 alt="Logo"
