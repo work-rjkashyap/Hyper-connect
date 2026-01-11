@@ -8,6 +8,8 @@ const api = {
   getDeviceInfo: (): Promise<DeviceInfo> => ipcRenderer.invoke('get-device-info'),
   updateDisplayName: (name: string): Promise<DeviceInfo> =>
     ipcRenderer.invoke('update-display-name', name),
+  updateProfile: (name?: string, image?: string): Promise<DeviceInfo> =>
+    ipcRenderer.invoke('update-profile', name, image),
   getDiscoveredDevices: (): Promise<Device[]> => ipcRenderer.invoke('get-discovered-devices'),
   sendMessage: (deviceId: string, payload: string): Promise<NetworkMessage> =>
     ipcRenderer.invoke('send-message', deviceId, payload),
@@ -71,6 +73,13 @@ const api = {
     ipcRenderer.on('file-transfer-progress', listener)
     return (): void => {
       ipcRenderer.removeListener('file-transfer-progress', listener)
+    }
+  },
+  onNavigateToDevice: (callback: (deviceId: string) => void): (() => void) => {
+    const listener = (_: unknown, deviceId: unknown): void => callback(deviceId as string)
+    ipcRenderer.on('navigate-to-device', listener)
+    return (): void => {
+      ipcRenderer.removeListener('navigate-to-device', listener)
     }
   }
 }

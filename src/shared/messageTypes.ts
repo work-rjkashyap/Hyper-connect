@@ -3,6 +3,7 @@ export interface DeviceInfo {
   displayName: string
   platform: string
   appVersion: string
+  profileImage?: string
 }
 
 export interface Device {
@@ -14,6 +15,7 @@ export interface Device {
   port: number
   lastSeen: number
   isOnline: boolean
+  profileImage?: string
 }
 
 export interface NetworkMessage {

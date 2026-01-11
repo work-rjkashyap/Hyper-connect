@@ -1,7 +1,7 @@
 import React, { useState } from 'react'
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom'
 import { useShallow } from 'zustand/react/shallow'
-import { Laptop, Monitor, RotateCw, Settings } from 'lucide-react'
+import { Laptop, Monitor, RotateCw, Settings, User } from 'lucide-react'
 import { useStore } from '../store/useStore'
 import { ThemeToggle } from '../components/ui/theme-toggle'
 import { cn } from '../lib/utils'
@@ -74,17 +74,16 @@ export const DashboardLayout: React.FC = () => {
               <div className="px-4 pb-4">
                 <div className="p-3 bg-secondary/50 rounded-lg border border-border/50">
                   <div className="flex items-center gap-3">
-                    <div className="p-1 rounded-md shadow-sm w-7 h-7 overflow-hidden flex items-center justify-center bg-white dark:bg-slate-900 border border-border/10">
-                      <img
-                        src={logoLight}
-                        alt="My Device"
-                        className="w-full h-full object-contain dark:hidden"
-                      />
-                      <img
-                        src={logoDark}
-                        alt="My Device"
-                        className="w-full h-full object-contain hidden dark:block"
-                      />
+                    <div className="p-0.5 rounded-full shadow-sm w-9 h-9 overflow-hidden flex items-center justify-center bg-secondary border border-border/10">
+                      {localDevice?.profileImage ? (
+                        <img
+                          src={localDevice.profileImage}
+                          alt="My Profile"
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <User className="w-5 h-5 text-muted-foreground" />
+                      )}
                     </div>
                     <div>
                       <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">
@@ -132,14 +131,18 @@ export const DashboardLayout: React.FC = () => {
                     >
                       <div
                         className={cn(
-                          'p-1.5 rounded-md',
-                          activeDeviceId === device.deviceId ? 'bg-white/10' : 'bg-primary/5'
+                          'p-0 rounded-full overflow-hidden w-9 h-9 flex items-center justify-center border border-border/10',
+                          activeDeviceId === device.deviceId ? 'bg-white/20' : 'bg-primary/5'
                         )}
                       >
-                        {device.platform === 'darwin' ? (
-                          <Laptop className="w-4 h-4" />
+                        {device.profileImage ? (
+                          <img src={device.profileImage} alt={device.displayName} className="w-full h-full object-cover" />
                         ) : (
-                          <Monitor className="w-4 h-4" />
+                          device.platform === 'darwin' ? (
+                            <Laptop className="w-5 h-5" />
+                          ) : (
+                            <Monitor className="w-5 h-5" />
+                          )
                         )}
                       </div>
                       <div className="text-left flex-1 min-w-0">

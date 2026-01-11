@@ -46,7 +46,8 @@ export class ConnectionManager extends EventEmitter {
           payload: {
             publicKey,
             displayName: deviceInfo.displayName,
-            platform: deviceInfo.platform
+            platform: deviceInfo.platform,
+            profileImage: deviceInfo.profileImage
           }
         }
 
@@ -63,22 +64,32 @@ export class ConnectionManager extends EventEmitter {
               message.type === 'HELLO_SECURE' &&
               (message.payload as { publicKey: string })?.publicKey
             ) {
+              const payload = message.payload as {
+                publicKey: string
+                displayName?: string
+                profileImage?: string
+              }
               // 3. Compute shared secret and derive session key
-              const sharedSecret = computeSharedSecret(
-                privateKey,
-                (message.payload as { publicKey: string }).publicKey
-              )
+              const sharedSecret = computeSharedSecret(privateKey, payload.publicKey)
               const sessionKey = deriveSessionKey(sharedSecret)
 
               storeSession(device.deviceId, { sessionKey, deviceId: device.deviceId })
               this.activeConnections.set(device.deviceId, socket)
+
+              // Update device info with received profile image
+              if (payload.profileImage) {
+                device.profileImage = payload.profileImage
+              }
+              if (payload.displayName) {
+                device.displayName = payload.displayName
+              }
 
               console.log(`[Protocol] Secure session established with ${device.deviceId}`)
 
               socket.removeListener('data', onHandshakeData)
               this.setupDataListener(socket, device.deviceId)
 
-              this.emit('connected', device.deviceId, socket)
+              this.emit('connected', device.deviceId, socket, device)
               resolve(socket)
             } else {
               reject(new Error('Invalid handshake response'))

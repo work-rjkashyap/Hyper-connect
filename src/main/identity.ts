@@ -10,6 +10,7 @@ const CONFIG_PATH = path.join(app.getPath('userData'), 'device-config.json')
 interface DeviceConfig {
   deviceId?: string
   displayName?: string
+  profileImage?: string
 }
 
 export function getDeviceInfo(): DeviceInfo {
@@ -36,14 +37,16 @@ export function getDeviceInfo(): DeviceInfo {
   return {
     deviceId: config.deviceId,
     displayName: config.displayName,
+    profileImage: config.profileImage,
     platform: process.platform,
     appVersion: app.getVersion()
   }
 }
 
-export function updateDisplayName(name: string): void {
+export function updateProfile(name?: string, image?: string): void {
   const config = loadConfig()
-  config.displayName = name
+  if (name !== undefined) config.displayName = name
+  if (image !== undefined) config.profileImage = image
   saveConfig(config)
 }
 

@@ -164,7 +164,8 @@ export class TCPServer extends EventEmitter {
       payload: {
         publicKey,
         displayName: deviceInfo.displayName,
-        platform: deviceInfo.platform
+        platform: deviceInfo.platform,
+        profileImage: deviceInfo.profileImage
       }
     }
 

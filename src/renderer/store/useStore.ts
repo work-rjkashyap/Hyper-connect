@@ -132,7 +132,8 @@ export const useStore = create<AppState>()(
         onboardingComplete: state.onboardingComplete,
         localDevice: state.localDevice,
         messages: state.messages,
-        unreadCounts: state.unreadCounts
+        unreadCounts: state.unreadCounts,
+        profileImage: state.localDevice?.profileImage
       })
     }
   )

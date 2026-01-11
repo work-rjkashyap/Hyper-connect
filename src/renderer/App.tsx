@@ -88,12 +88,19 @@ const AppContent: React.FC = () => {
       // Logic handled in onMessageReceived
     })
     const unsubProgress = window.api.onFileTransferProgress((progress) => updateTransfer(progress))
+    const unsubNavigate = window.api.onNavigateToDevice((deviceId) => {
+      const state = useStore.getState()
+      navigate(`/device/${deviceId}`)
+      state.setSelectedDeviceId(deviceId)
+      state.clearUnreadCount(deviceId)
+    })
     return () => {
       unsubDiscovered()
       unsubLost()
       unsubMessage()
       unsubFile()
       unsubProgress()
+      unsubNavigate()
     }
   }, [
     setLocalDevice,

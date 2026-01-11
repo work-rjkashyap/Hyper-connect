@@ -19,6 +19,12 @@ export interface IApi {
   onFileReceived: (callback: (message: NetworkMessage) => void) => () => void
   onFileTransferProgress: (callback: (progress: FileTransferProgress) => void) => () => void
   rescanDevices: () => Promise<void>
+  onNavigateToDevice: (callback: (deviceId: string) => void) => () => void
+  getDownloadPath: () => Promise<string>
+  selectDownloadDirectory: () => Promise<string | null>
+  setDownloadPath: (path: string) => Promise<string>
+  getAutoAccept: () => Promise<boolean>
+  setAutoAccept: (autoAccept: boolean) => Promise<boolean>
 }
 
 declare module '*.png' {

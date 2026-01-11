@@ -1,6 +1,6 @@
 import { ipcMain, BrowserWindow } from 'electron'
 import net from 'net'
-import { getDeviceInfo, updateDisplayName } from './identity'
+import { getDeviceInfo, updateProfile } from './identity'
 import { discoveryManager } from './discovery'
 import { tcpServer } from './tcpServer'
 import { connectionManager } from './protocol'
@@ -8,8 +8,10 @@ import { NetworkMessage, Device } from '@shared/messageTypes'
 import { v4 as uuidv4 } from 'uuid'
 import { fileTransferManager } from './fileTransfer'
 import { isSensitiveMessageType } from './crypto/messageCrypto'
+import { NotificationManager } from './notifications'
 
 export function setupIpc(mainWindow: BrowserWindow): void {
+  const notificationManager = new NotificationManager(mainWindow)
   fileTransferManager.setup(mainWindow)
 
   // Safe message sending helper - checks if window is destroyed before sending
@@ -22,7 +24,11 @@ export function setupIpc(mainWindow: BrowserWindow): void {
   // Device Info
   ipcMain.handle('get-device-info', () => getDeviceInfo())
   ipcMain.handle('update-display-name', (_, name: string) => {
-    updateDisplayName(name)
+    updateProfile(name)
+    return getDeviceInfo()
+  })
+  ipcMain.handle('update-profile', (_, name?: string, image?: string) => {
+    updateProfile(name, image)
     return getDeviceInfo()
   })
 
@@ -121,6 +127,7 @@ export function setupIpc(mainWindow: BrowserWindow): void {
   const onDeviceFound = (device: Device): void => {
     console.log('[IPC] Device found, sending to renderer:', device)
     sendToRenderer('device-discovered', device)
+    notificationManager.showNewDeviceNotification(device)
     console.log('[IPC] Device-discovered event sent')
   }
 
@@ -166,6 +173,7 @@ export function setupIpc(mainWindow: BrowserWindow): void {
     }
 
     sendToRenderer('message-received', message)
+    notificationManager.showNewMessageNotification(message)
   }
 
   discoveryManager.on('deviceFound', onDeviceFound)

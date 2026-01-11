@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
-import logoLight from '../assets/logo_light.png'
 import logoDark from '../assets/logo_dark.png'
+import { User, Camera } from 'lucide-react'
 import {
   Card,
   CardContent,
@@ -16,6 +16,7 @@ import { ThemeToggle } from '@/renderer/components/ui/theme-toggle'
 import { Field, FieldGroup, FieldLabel } from '../components/ui/field'
 export const Onboarding: React.FC = () => {
   const [name, setName] = useState('')
+  const [profileImage, setProfileImage] = useState<string | null>(null)
   const setOnboardingComplete = useStore((state) => state.setOnboardingComplete)
   const setLocalDevice = useStore((state) => state.setLocalDevice)
   useEffect(() => {
@@ -32,15 +33,53 @@ export const Onboarding: React.FC = () => {
     }
     loadDefaultName()
   }, [])
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>): void => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    const reader = new FileReader()
+    reader.onload = (event) => {
+      const img = new Image()
+      img.onload = () => {
+        const canvas = document.createElement('canvas')
+        const MAX_WIDTH = 256
+        const MAX_HEIGHT = 256
+        let width = img.width
+        let height = img.height
+
+        if (width > height) {
+          if (width > MAX_WIDTH) {
+            height *= MAX_WIDTH / width
+            width = MAX_WIDTH
+          }
+        } else {
+          if (height > MAX_HEIGHT) {
+            width *= MAX_HEIGHT / height
+            height = MAX_HEIGHT
+          }
+        }
+
+        canvas.width = width
+        canvas.height = height
+        const ctx = canvas.getContext('2d')
+        ctx?.drawImage(img, 0, 0, width, height)
+        const base64 = canvas.toDataURL('image/jpeg', 0.8)
+        setProfileImage(base64)
+      }
+      img.src = event.target?.result as string
+    }
+    reader.readAsDataURL(file)
+  }
+
   const handleContinue = async (): Promise<void> => {
     const trimmedName = name.trim()
     if (!trimmedName) return
     try {
-      const deviceInfo = await window.api.updateDisplayName(trimmedName)
+      const deviceInfo = await window.api.updateProfile(trimmedName, profileImage || undefined)
       setLocalDevice(deviceInfo)
       setOnboardingComplete(true)
     } catch (e) {
-      console.error('Failed to update name:', e)
+      console.error('Failed to update profile:', e)
     }
   }
   return (
@@ -53,29 +92,35 @@ export const Onboarding: React.FC = () => {
       </div>
       <Card className="w-full max-w-md border border-border/50 shadow-2xl glass animate-in zoom-in-95 duration-500 relative z-20">
         <CardHeader className="text-center space-y-4">
-          <div className="mx-auto w-24 h-24 relative">
-            {/* Glow effect behind the logo */}
-            <div className="absolute inset-0 bg-primary/20 rounded-full blur-xl animate-pulse" />
-            <div className="relative w-full h-full bg-white dark:bg-slate-950 rounded-3xl p-3 shadow-lg flex items-center justify-center border border-border/10 overflow-hidden">
-              <img
-                src={logoLight}
-                alt="Hyper-connect Logo"
-                className="w-full h-full object-contain dark:hidden"
-              />
-              <img
-                src={logoDark}
-                alt="Hyper-connect Logo"
-                className="w-full h-full object-contain hidden dark:block"
+          <div className="mx-auto flex flex-col items-center space-y-6">
+            <div className="w-24 h-24 relative group cursor-pointer" onClick={() => document.getElementById('avatar-input')?.click()}>
+              <div className="absolute inset-0 bg-primary/20 rounded-full blur-xl animate-pulse group-hover:bg-primary/30 transition-colors" />
+              <div className="relative w-full h-full bg-white dark:bg-slate-900 rounded-full p-1 shadow-lg flex items-center justify-center border border-border/10 overflow-hidden">
+                {profileImage ? (
+                  <img src={profileImage} alt="Profile" className="w-full h-full object-cover rounded-full" />
+                ) : (
+                  <User className="w-12 h-12 text-muted-foreground" />
+                )}
+                <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                  <Camera className="w-6 h-6 text-white" />
+                </div>
+              </div>
+              <input
+                id="avatar-input"
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handleImageChange}
               />
             </div>
-          </div>
-          <div className="space-y-2">
-            <CardTitle className="text-3xl font-bold tracking-tight bg-gradient-to-br from-foreground to-foreground/70 bg-clip-text text-transparent">
-              Hyper Connect
-            </CardTitle>
-            <CardDescription className="text-base">
-              Set a display name for this device so others can find you on the network.
-            </CardDescription>
+            <div className="space-y-2">
+              <CardTitle className="text-3xl font-bold tracking-tight bg-linear-to-br from-foreground to-foreground/70 bg-clip-text text-transparent">
+                Hyper Connect
+              </CardTitle>
+              <CardDescription className="text-base">
+                Set a display name and avatar so others can find you on the network.
+              </CardDescription>
+            </div>
           </div>
         </CardHeader>
         <CardContent className="space-y-4 px-8">
