@@ -1,34 +1,56 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useParams, Navigate } from 'react-router-dom'
 import { useShallow } from 'zustand/react/shallow'
-import { FileUp, Paperclip, Send, User, Check, CheckCheck } from 'lucide-react'
+import {
+  FileUp,
+  Paperclip,
+  Send,
+  User,
+  Check,
+  CheckCheck,
+  Copy,
+  Trash2,
+  Reply,
+  Forward
+} from 'lucide-react'
+import { toast } from 'sonner'
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+  ContextMenuSeparator
+} from '../components/ui/context-menu'
 import { useStore } from '../store/useStore'
 import { cn, formatFileSize, formatChatDate } from '../lib/utils'
 import { NetworkMessage, Device } from '../../shared/messageTypes'
 import { Button } from '../components/ui/button'
-import { Input } from '../components/ui/input'
 import { Separator } from '../components/ui/separator'
 import { ThemeToggle } from '../components/ui/theme-toggle'
 import { Card, CardContent } from '../components/ui/card'
 import { FileChatBubble } from '../components/FileChatBubble'
-
+import { Textarea } from '../components/ui/textarea'
 const EMPTY_MESSAGES: NetworkMessage[] = []
-
 export const DevicePage: React.FC = () => {
   const { deviceId } = useParams()
-  const { discoveredDevices, addMessage, localDevice, setSelectedDeviceId, clearUnreadCount } =
-    useStore(
-      useShallow((state) => ({
-        discoveredDevices: state.discoveredDevices,
-        addMessage: state.addMessage,
-        localDevice: state.localDevice,
-        setSelectedDeviceId: state.setSelectedDeviceId,
-        clearUnreadCount: state.clearUnreadCount
-      }))
-    )
-
+  const {
+    discoveredDevices,
+    addMessage,
+    localDevice,
+    setSelectedDeviceId,
+    clearUnreadCount,
+    deleteMessage
+  } = useStore(
+    useShallow((state) => ({
+      discoveredDevices: state.discoveredDevices,
+      addMessage: state.addMessage,
+      localDevice: state.localDevice,
+      setSelectedDeviceId: state.setSelectedDeviceId,
+      clearUnreadCount: state.clearUnreadCount,
+      deleteMessage: state.deleteMessage
+    }))
+  )
   const device = discoveredDevices.find((d) => d.deviceId === deviceId)
-
   useEffect(() => {
     if (deviceId) {
       setSelectedDeviceId(deviceId)
@@ -38,27 +60,25 @@ export const DevicePage: React.FC = () => {
       setSelectedDeviceId(null)
     }
   }, [deviceId, setSelectedDeviceId, clearUnreadCount])
-
   const [tab, setTab] = useState<'chat' | 'files'>('chat')
   const messages = useStore((state) =>
     deviceId ? state.messages[deviceId] || EMPTY_MESSAGES : EMPTY_MESSAGES
   )
   const [input, setInput] = useState('')
   const scrollRef = useRef<HTMLDivElement>(null)
-
-  const scrollToBottom = (): void => {
+  const scrollToBottom = useCallback((): void => {
     if (scrollRef.current) {
       scrollRef.current.scrollTo({
         top: scrollRef.current.scrollHeight,
         behavior: 'smooth'
       })
     }
-  }
-
+  }, [])
   useEffect(() => {
     if (tab === 'chat') {
       scrollToBottom()
       // Mark visible unread messages as read
+      if (!device) return
       const unreadIncoming = messages.filter(
         (m) => m.deviceId !== localDevice?.deviceId && m.status !== 'read'
       )
@@ -66,12 +86,10 @@ export const DevicePage: React.FC = () => {
         if (msg.id) window.api.markAsRead(device.deviceId, msg.id)
       })
     }
-  }, [messages, tab, device.deviceId, localDevice?.deviceId])
-
+  }, [messages, tab, device, localDevice?.deviceId, scrollToBottom])
   if (!device) {
     return <Navigate to="/" replace />
   }
-
   const handleSend = async (): Promise<void> => {
     if (!input.trim() || !device) return
     try {
@@ -82,7 +100,6 @@ export const DevicePage: React.FC = () => {
       console.error('[DevicePage] Send error:', e)
     }
   }
-
   const handleFileSelect = async (): Promise<void> => {
     if (!device) return
     const path = await window.api.selectFile()
@@ -91,7 +108,16 @@ export const DevicePage: React.FC = () => {
       addMessage(device.deviceId, sentMsg)
     }
   }
-
+  const handleCopy = (text: string): void => {
+    navigator.clipboard.writeText(text)
+    toast.success('Copied to clipboard')
+  }
+  const handleDelete = (msgId: string): void => {
+    if (deviceId) {
+      deleteMessage(deviceId, msgId)
+      toast.success('Message deleted')
+    }
+  }
   return (
     <div className="flex-1 flex flex-col overflow-hidden animate-in fade-in duration-300">
       <header className="h-16 border-b bg-background/80 backdrop-blur-md px-6 flex items-center justify-between shrink-0">
@@ -154,7 +180,6 @@ export const DevicePage: React.FC = () => {
           <ThemeToggle />
         </div>
       </header>
-
       {tab === 'chat' ? (
         <div className="flex-1 flex flex-col min-h-0 bg-background/40">
           <div ref={scrollRef} className="flex-1 overflow-y-auto p-6 space-y-6">
@@ -169,12 +194,10 @@ export const DevicePage: React.FC = () => {
               messages.map((msg, i) => {
                 const isLocal = msg.deviceId === localDevice?.deviceId
                 const isFile = msg.type === 'FILE_META'
-
                 // Date separator logic
                 const currentDate = formatChatDate(msg.timestamp)
                 const prevDate = i > 0 ? formatChatDate(messages[i - 1].timestamp) : null
                 const showSeparator = currentDate !== prevDate
-
                 return (
                   <React.Fragment key={msg.id || i}>
                     {showSeparator && (
@@ -187,24 +210,55 @@ export const DevicePage: React.FC = () => {
                       </div>
                     )}
                     <div className={cn('flex flex-col', isLocal ? 'items-end' : 'items-start')}>
-                      <div
-                        className={cn(
-                          'max-w-[85%] rounded-2xl px-4 py-3 shadow-sm',
-                          isLocal
-                            ? 'bg-primary text-primary-foreground rounded-tr-none'
-                            : 'bg-card border border-border/50 rounded-tl-none'
-                        )}
-                      >
-                        {!isFile ? (
-                          <p className="text-sm leading-relaxed whitespace-pre-wrap wrap-break-word">
-                            {typeof msg.payload === 'string'
-                              ? msg.payload
-                              : JSON.stringify(msg.payload)}
-                          </p>
-                        ) : (
-                          <FileChatBubble msg={msg} isLocal={isLocal} />
-                        )}
-                      </div>
+                      <ContextMenu>
+                        <ContextMenuTrigger asChild>
+                          <div
+                            className={cn(
+                              'max-w-[85%] rounded-2xl px-4 py-3 shadow-sm cursor-default',
+                              isLocal
+                                ? 'bg-primary text-primary-foreground rounded-tr-none'
+                                : 'bg-card border border-border/50 rounded-tl-none'
+                            )}
+                          >
+                            {!isFile ? (
+                              <p className="text-sm leading-relaxed whitespace-pre-wrap break-words select-text">
+                                {typeof msg.payload === 'string'
+                                  ? msg.payload
+                                  : JSON.stringify(msg.payload)}
+                              </p>
+                            ) : (
+                              <FileChatBubble msg={msg} isLocal={isLocal} />
+                            )}
+                          </div>
+                        </ContextMenuTrigger>
+                        <ContextMenuContent className="w-48">
+                          {!isFile && (
+                            <ContextMenuItem
+                              onClick={() => handleCopy(msg.payload as string)}
+                              className="gap-2"
+                            >
+                              <Copy className="w-4 h-4" />
+                              Copy Message
+                            </ContextMenuItem>
+                          )}
+                          <ContextMenuItem className="gap-2">
+                            <Reply className="w-4 h-4" />
+                            Reply
+                          </ContextMenuItem>
+                          <ContextMenuItem className="gap-2">
+                            <Forward className="w-4 h-4" />
+                            Forward
+                          </ContextMenuItem>
+                          <ContextMenuSeparator />
+                          <ContextMenuItem
+                            onClick={() => msg.id && handleDelete(msg.id)}
+                            className="gap-2 text-destructive focus:text-destructive"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                            Delete Message
+                          </ContextMenuItem>
+                        </ContextMenuContent>
+                      </ContextMenu>
                       <div className="flex items-center gap-1.5 mt-1 px-1">
                         <span className="text-[10px] text-muted-foreground font-medium">
                           {new Date(msg.timestamp || 0).toLocaleTimeString([], {
@@ -242,12 +296,19 @@ export const DevicePage: React.FC = () => {
                 <Paperclip className="w-5 h-5" />
               </button>
               <div className="flex-1 relative">
-                <Input
+                <Textarea
+                  autoFocus
                   placeholder="Type a message..."
-                  className="py-3 px-4 h-11 rounded-xl text-md shadow-xs"
+                  className="py-3 px-4 min-h-11 max-h-32 rounded-xl text-md shadow-xs resize-none overflow-y-auto"
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault()
+                      handleSend()
+                    }
+                  }}
+                  rows={1}
                 />
               </div>
               <Button
@@ -266,7 +327,6 @@ export const DevicePage: React.FC = () => {
     </div>
   )
 }
-
 const TransferView: React.FC<{ device: Device }> = ({ device }) => {
   const { addMessage } = useStore()
   const transfers = useStore(
@@ -274,7 +334,6 @@ const TransferView: React.FC<{ device: Device }> = ({ device }) => {
       Object.values(state.transfers).filter((t) => t.deviceId === device.deviceId)
     )
   )
-
   const handleSelectFile = async (): Promise<void> => {
     const path = await window.api.selectFile()
     if (path) {
@@ -282,7 +341,6 @@ const TransferView: React.FC<{ device: Device }> = ({ device }) => {
       addMessage(device.deviceId, sentMsg)
     }
   }
-
   return (
     <div className="flex-1 overflow-y-auto p-6 space-y-8 bg-background/50">
       <div
@@ -309,11 +367,9 @@ const TransferView: React.FC<{ device: Device }> = ({ device }) => {
             Browse Files
           </Button>
         </div>
-
         {/* Decorative corner element */}
         <div className="absolute -top-12 -right-12 w-24 h-24 bg-primary/5 rounded-full blur-2xl group-hover:bg-primary/10 transition-colors" />
       </div>
-
       <div className="space-y-6">
         <div className="flex items-center gap-4">
           <h3 className="text-xs font-bold uppercase tracking-[0.2em] text-muted-foreground/50 whitespace-nowrap">
@@ -321,7 +377,6 @@ const TransferView: React.FC<{ device: Device }> = ({ device }) => {
           </h3>
           <Separator className="flex-1 opacity-10" />
         </div>
-
         {transfers.length === 0 ? (
           <div className="text-center py-20 bg-muted/5 rounded-3xl border border-dashed border-border/40">
             <div className="w-16 h-16 bg-muted/20 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -333,7 +388,6 @@ const TransferView: React.FC<{ device: Device }> = ({ device }) => {
           <div className="grid gap-4">
             {[...transfers].reverse().map((transfer) => {
               const remainsCompleted = transfer.status === 'completed'
-
               return (
                 <Card
                   key={transfer.fileId}
@@ -345,7 +399,7 @@ const TransferView: React.FC<{ device: Device }> = ({ device }) => {
                   className={cn(
                     'bg-card/40 border-border/40 overflow-hidden group transition-all rounded-2xl',
                     remainsCompleted &&
-                      'cursor-pointer hover:border-primary/50 hover:bg-primary/5 hover:shadow-lg active:scale-[0.98]'
+                    'cursor-pointer hover:border-primary/50 hover:bg-primary/5 hover:shadow-lg active:scale-[0.98]'
                   )}
                 >
                   <CardContent className="p-5 flex items-center gap-5">

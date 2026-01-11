@@ -23,6 +23,7 @@ interface AppState {
   setOnboardingComplete: (complete: boolean) => void
   setDiscoveredDevices: (devices: Device[]) => void
   clearMessages: (deviceId?: string) => void
+  deleteMessage: (deviceId: string, messageId: string) => void
   clearTransfers: () => void
   updateMessageStatus: (
     deviceId: string,
@@ -170,6 +171,18 @@ export const useStore = create<AppState>()(
             return { messages: newMessages }
           }
           return { messages: {} }
+        }),
+
+      deleteMessage: (deviceId, messageId) =>
+        set((state) => {
+          const deviceMessages = state.messages[deviceId] || []
+          const updatedMessages = deviceMessages.filter((m) => m.id !== messageId)
+          return {
+            messages: {
+              ...state.messages,
+              [deviceId]: updatedMessages
+            }
+          }
         }),
       clearTransfers: () => set({ transfers: {} })
     }),

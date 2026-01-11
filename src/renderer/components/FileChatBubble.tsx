@@ -88,7 +88,7 @@ export const FileChatBubble: React.FC<{ msg: NetworkMessage; isLocal: boolean }>
         <div className="flex-1 min-w-0">
           <p
             className={cn(
-              'text-sm font-medium wrap-break-word',
+              'text-sm font-medium break-words',
               isLocal ? 'text-primary-foreground' : 'text-foreground'
             )}
           >
