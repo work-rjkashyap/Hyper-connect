@@ -21,6 +21,7 @@ import {
 import { Input } from '@/renderer/components/ui/input'
 import { Button } from '@/renderer/components/ui/button'
 import { Label } from '@/renderer/components/ui/label'
+import { Avatar, AvatarFallback, AvatarImage } from '@/renderer/components/ui/avatar'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -142,24 +143,28 @@ export const SettingsPage: React.FC = () => {
                 className="relative group cursor-pointer"
                 onClick={() => document.getElementById('settings-avatar-input')?.click()}
               >
-                <div className="w-20 h-20 rounded-full border border-border/50 overflow-hidden bg-secondary flex items-center justify-center">
-                  {profileImage ? (
-                    <img src={profileImage} alt="Profile" className="w-full h-full object-cover" />
-                  ) : (
+                <Avatar className="w-20 h-20 border border-border/50">
+                  <AvatarImage
+                    src={profileImage || undefined}
+                    alt="Profile"
+                    className="object-cover"
+                  />
+                  <AvatarFallback className="bg-secondary">
                     <User className="w-10 h-10 text-muted-foreground" />
-                  )}
-                  <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity rounded-full">
-                    <Camera className="w-6 h-6 text-white" />
-                  </div>
+                  </AvatarFallback>
+                </Avatar>
+                <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity rounded-full pointer-events-none">
+                  <Camera className="w-6 h-6 text-white" />
                 </div>
-                <input
-                  id="settings-avatar-input"
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={handleImageChange}
-                />
               </div>
+              <input
+                id="settings-avatar-input"
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handleImageChange}
+              />
+
               <div className="flex-1 w-full space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="display-name">Display Name</Label>

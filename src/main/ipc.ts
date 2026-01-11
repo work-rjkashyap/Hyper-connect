@@ -228,6 +228,29 @@ export function setupIpc(mainWindow: BrowserWindow): void {
   tcpServer.on('message', handleIncomingMessage)
   connectionManager.on('message', handleIncomingMessage)
 
+  // Window Controls
+  ipcMain.on('window-minimize', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.minimize()
+    }
+  })
+
+  ipcMain.on('window-maximize', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      if (mainWindow.isMaximized()) {
+        mainWindow.unmaximize()
+      } else {
+        mainWindow.maximize()
+      }
+    }
+  })
+
+  ipcMain.on('window-close', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.close()
+    }
+  })
+
   // Cleanup event listeners when window is destroyed
   mainWindow.on('closed', () => {
     discoveryManager.removeListener('deviceFound', onDeviceFound)

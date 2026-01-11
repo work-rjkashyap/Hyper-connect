@@ -1,6 +1,5 @@
 @import 'tailwindcss';
 @custom-variant dark (&:is(.dark *));
-
 @layer base {
   * {
     @apply border-border outline-ring/50;
@@ -10,44 +9,36 @@
       color 0.3s ease,
       box-shadow 0.3s ease;
   }
-
   body {
     @apply bg-background text-foreground antialiased;
     font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
     letter-spacing: var(--tracking-normal);
   }
-
   /* Custom Scrollbar */
   ::-webkit-scrollbar {
     width: 6px;
     height: 6px;
   }
-
   ::-webkit-scrollbar-track {
     background: transparent;
   }
-
   ::-webkit-scrollbar-thumb {
     @apply bg-muted-foreground/20 rounded-full;
   }
-
   ::-webkit-scrollbar-thumb:hover {
     @apply bg-muted-foreground/40;
   }
 }
-
 @utility glass {
   background: color-mix(in oklch, var(--background), transparent 20%);
   backdrop-filter: blur(12px);
   border: 1px solid color-mix(in oklch, var(--border), transparent 40%);
 }
-
 @utility glass-dark {
   background: color-mix(in oklch, var(--card), transparent 30%);
   backdrop-filter: blur(16px);
   border: 1px solid color-mix(in oklch, var(--border), transparent 50%);
 }
-
 @theme inline {
   --font-sans: var(--font-sans);
   --font-mono: var(--font-mono);
@@ -91,7 +82,6 @@
   --radius-3xl: calc(var(--radius) + 12px);
   --radius-4xl: calc(var(--radius) + 16px);
 }
-
 :root {
   --background: oklch(0.98 0.005 240);
   --foreground: oklch(0.15 0.02 240);
@@ -112,9 +102,8 @@
   --border: oklch(0.9 0.01 240);
   --input: oklch(0.9 0.01 240);
   --ring: oklch(0.56 0.21 240);
-  --radius: 1rem;
+  --radius: 0.6rem;
 }
-
 .dark {
   --background: oklch(0.12 0.02 240);
   --foreground: oklch(0.95 0.01 240);
@@ -136,12 +125,10 @@
   --input: oklch(0.23 0.03 240);
   --ring: oklch(0.65 0.17 240);
 }
-
 @layer base {
   * {
-    @apply border-border outline-ring/50;
+    @apply border-border outline-ring/10;
   }
-
   body {
     @apply bg-background text-foreground;
   }

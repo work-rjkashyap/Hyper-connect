@@ -34,6 +34,11 @@ const api = {
   deleteRemoteMessage: (deviceId: string, messageId: string): Promise<void> =>
     ipcRenderer.invoke('delete-remote-message', deviceId, messageId),
 
+  // Window Controls
+  minimizeWindow: (): void => ipcRenderer.send('window-minimize'),
+  maximizeWindow: (): void => ipcRenderer.send('window-maximize'),
+  closeWindow: (): void => ipcRenderer.send('window-close'),
+
   // Event Listeners
   onDeviceDiscovered: (callback: (device: Device) => void): (() => void) => {
     console.log('[Preload] Registering onDeviceDiscovered listener')

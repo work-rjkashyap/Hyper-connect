@@ -5,8 +5,8 @@ export interface IApi {
   getDeviceInfo: () => Promise<DeviceInfo>
   updateDisplayName: (name: string) => Promise<DeviceInfo>
   getDiscoveredDevices: () => Promise<Device[]>
-  sendMessage: (deviceId: string, payload: string) => Promise<NetworkMessage>
-  sendFile: (deviceId: string, filePath: string) => Promise<NetworkMessage>
+  sendMessage: (deviceId: string, payload: string, replyTo?: string) => Promise<NetworkMessage>
+  sendFile: (deviceId: string, filePath: string, replyTo?: string) => Promise<NetworkMessage>
   acceptFile: (fileId: string) => Promise<void>
   rejectFile: (fileId: string) => Promise<void>
   selectFile: () => Promise<string | null>
@@ -28,6 +28,9 @@ export interface IApi {
   updateProfile: (name?: string, image?: string) => Promise<DeviceInfo>
   markAsRead: (deviceId: string, messageId: string) => Promise<void>
   deleteRemoteMessage: (deviceId: string, messageId: string) => Promise<void>
+  minimizeWindow: () => void
+  maximizeWindow: () => void
+  closeWindow: () => void
   onMessageStatusUpdated: (
     callback: (data: { deviceId: string; messageId: string; status: 'delivered' | 'read' }) => void
   ) => () => void

@@ -20,6 +20,9 @@ export interface IApi {
   setAutoAccept: (autoAccept: boolean) => Promise<boolean>
   markAsRead: (deviceId: string, messageId: string) => Promise<void>
   deleteRemoteMessage: (deviceId: string, messageId: string) => Promise<void>
+  minimizeWindow: () => void
+  maximizeWindow: () => void
+  closeWindow: () => void
 
   onDeviceDiscovered: (callback: (device: Device) => void) => void
   onDeviceLost: (callback: (deviceId: string) => void) => void

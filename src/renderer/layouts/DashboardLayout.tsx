@@ -7,6 +7,8 @@ import { ThemeToggle } from '../components/ui/theme-toggle'
 import { cn } from '../lib/utils'
 import logoLight from '../assets/logo_light.png'
 import logoDark from '../assets/logo_dark.png'
+import { WindowControls } from '../components/WindowControls'
+
 export const DashboardLayout: React.FC = () => {
   const { discoveredDevices, unreadCounts, localDevice, clearUnreadCount } = useStore(
     useShallow((state) => ({
@@ -20,6 +22,8 @@ export const DashboardLayout: React.FC = () => {
   const location = useLocation()
   const navigate = useNavigate()
   const isSettings = location.pathname === '/settings'
+  const isMac = navigator.userAgent.includes('Mac')
+
   // basic check for device route
   const activeDeviceId = location.pathname.startsWith('/device/')
     ? location.pathname.split('/device/')[1]
@@ -36,7 +40,8 @@ export const DashboardLayout: React.FC = () => {
     }
   }
   return (
-    <div className="flex h-screen bg-background overflow-hidden">
+    <div className="flex h-screen bg-background overflow-hidden relative">
+      {!isMac && <WindowControls className="absolute top-0 right-0 z-50 text-foreground" />}
       {/* Sidebar */}
       <div className="w-[260px] border-r bg-card/50 flex flex-col shrink-0">
         <div

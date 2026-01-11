@@ -32,6 +32,8 @@ import { ThemeToggle } from '../components/ui/theme-toggle'
 import { Card, CardContent } from '../components/ui/card'
 import { FileChatBubble } from '../components/FileChatBubble'
 import { Textarea } from '../components/ui/textarea'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
+import { Avatar, AvatarFallback, AvatarImage } from '../components/ui/avatar'
 const EMPTY_MESSAGES: NetworkMessage[] = []
 const REMOTE_DELETE_LIMIT = 15 * 60 * 1000 // 15 minutes
 export const DevicePage: React.FC = () => {
@@ -186,20 +188,24 @@ export const DevicePage: React.FC = () => {
     return <Navigate to="/" replace />
   }
   return (
-    <div className="flex-1 flex flex-col overflow-hidden animate-in fade-in duration-300">
-      <header className="h-16 border-b bg-background/80 backdrop-blur-md px-6 flex items-center justify-between shrink-0">
+    <Tabs
+      defaultValue="chat"
+      value={tab}
+      onValueChange={(v) => setTab(v as 'chat' | 'files')}
+      className="flex-1 flex flex-col overflow-hidden animate-in fade-in duration-300"
+    >
+      <div className="h-16 border-b bg-background/80 backdrop-blur-md px-6 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-4">
-          <div className="w-10 h-10 rounded-full border border-border/10 overflow-hidden bg-secondary flex items-center justify-center shrink-0 shadow-sm">
-            {device.profileImage ? (
-              <img
-                src={device.profileImage}
-                alt={device.displayName}
-                className="w-full h-full object-cover"
-              />
-            ) : (
+          <Avatar className="w-10 h-10 border border-border/10 shadow-sm">
+            <AvatarImage
+              src={device.profileImage}
+              alt={device.displayName}
+              className="object-cover"
+            />
+            <AvatarFallback className="bg-secondary">
               <User className="w-5 h-5 text-muted-foreground" />
-            )}
-          </div>
+            </AvatarFallback>
+          </Avatar>
           <div className="flex flex-col">
             <h2 className="text-lg font-bold truncate leading-tight">{device.displayName}</h2>
             <p
@@ -219,255 +225,247 @@ export const DevicePage: React.FC = () => {
           </div>
         </div>
         <div className="flex items-center gap-4">
-          <div className="flex bg-secondary p-1 rounded-xl">
-            <button
-              onClick={() => setTab('chat')}
-              className={cn(
-                'px-4 py-1.5 text-xs font-bold uppercase tracking-wider rounded-lg transition-all',
-                tab === 'chat'
-                  ? 'bg-background shadow-sm text-primary'
-                  : 'text-muted-foreground hover:text-foreground'
-              )}
+          <TabsList className="bg-secondary p-1 rounded-xl h-auto shrink-0">
+            <TabsTrigger
+              value="chat"
+              className="px-4 py-1.5 text-xs font-bold uppercase tracking-wider rounded-lg data-[state=active]:bg-background data-[state=active]:text-primary data-[state=active]:shadow-sm transition-all"
             >
               Messages
-            </button>
-            <button
-              onClick={() => setTab('files')}
-              className={cn(
-                'px-4 py-1.5 text-xs font-bold uppercase tracking-wider rounded-lg transition-all',
-                tab === 'files'
-                  ? 'bg-background shadow-sm text-primary'
-                  : 'text-muted-foreground hover:text-foreground'
-              )}
+            </TabsTrigger>
+            <TabsTrigger
+              value="files"
+              className="px-4 py-1.5 text-xs font-bold uppercase tracking-wider rounded-lg data-[state=active]:bg-background data-[state=active]:text-primary data-[state=active]:shadow-sm transition-all"
             >
               Files
-            </button>
-          </div>
+            </TabsTrigger>
+          </TabsList>
           <Separator orientation="vertical" className="h-6" />
           <ThemeToggle />
         </div>
-      </header>
-      {tab === 'chat' ? (
-        <div className="flex-1 flex flex-col min-h-0 bg-background/40">
-          <div ref={scrollRef} className="flex-1 overflow-y-auto p-6 space-y-6">
-            {messages.length === 0 ? (
-              <div className="flex-1 flex flex-col items-center justify-center opacity-40 space-y-3 h-full">
-                <div className="p-4 bg-muted rounded-full">
-                  <Send className="w-8 h-8 text-muted-foreground" />
-                </div>
-                <p className="text-sm font-medium">No messages yet. Say hello!</p>
+      </div>
+      <TabsContent
+        value="chat"
+        className="flex-1 flex flex-col min-h-0 bg-background/40 mt-0 data-[state=active]:flex"
+      >
+        <div ref={scrollRef} className="flex-1 overflow-y-auto p-6 space-y-6">
+          {messages.length === 0 ? (
+            <div className="flex-1 flex flex-col items-center justify-center opacity-40 space-y-3 h-full">
+              <div className="p-4 bg-muted rounded-full">
+                <Send className="w-8 h-8 text-muted-foreground" />
               </div>
-            ) : (
-              messages
-                .filter((m) => !pendingDeletes.has(m.id!))
-                .map((msg, i, filtered) => {
-                  const isLocal = msg.deviceId === localDevice?.deviceId
-                  const isFile = msg.type === 'FILE_META'
-                  // Date separator logic
-                  const currentDate = formatChatDate(msg.timestamp)
-                  const prevDate = i > 0 ? formatChatDate(filtered[i - 1].timestamp) : null
-                  const showSeparator = currentDate !== prevDate
-                  return (
-                    <React.Fragment key={msg.id || i}>
-                      {showSeparator && (
-                        <div className="flex items-center gap-4 py-4">
-                          <Separator className="flex-1 opacity-10" />
-                          <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/40 whitespace-nowrap">
-                            {currentDate}
-                          </span>
-                          <Separator className="flex-1 opacity-10" />
-                        </div>
-                      )}
-                      <div className={cn('flex flex-col', isLocal ? 'items-end' : 'items-start')}>
-                        <ContextMenu>
-                          <ContextMenuTrigger asChild>
-                            <div
-                              id={msg.id ? `msg-${msg.id}` : undefined}
-                              className={cn(
-                                'max-w-[85%] rounded-2xl px-4 py-3 shadow-sm cursor-default',
-                                isLocal
-                                  ? 'bg-primary text-primary-foreground rounded-tr-none'
-                                  : 'bg-card border border-border/50 rounded-tl-none'
-                              )}
-                            >
-                              {msg.replyTo && (
-                                <div
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    const el = document.getElementById(`msg-${msg.replyTo}`)
-                                    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
-                                  }}
-                                  className={cn(
-                                    'mb-2 p-2 rounded-lg text-[11px] border-l-2 overflow-hidden cursor-pointer hover:opacity-80 transition-opacity',
-                                    isLocal
-                                      ? 'bg-black/20 border-primary-foreground/50 text-primary-foreground/80'
-                                      : 'bg-muted border-primary/50 text-muted-foreground'
-                                  )}
-                                >
-                                  {(() => {
-                                    const repliedMsg = messages.find((m) => m.id === msg.replyTo)
-                                    if (!repliedMsg) {
-                                      return (
-                                        <p className="italic opacity-50">
-                                          Original message not found
-                                        </p>
-                                      )
-                                    }
-                                    return (
-                                      <>
-                                        <p className="font-bold opacity-70 mb-0.5">
-                                          {repliedMsg.deviceId === localDevice?.deviceId
-                                            ? 'You'
-                                            : device.displayName}
-                                        </p>
-                                        <p className="line-clamp-2">
-                                          {repliedMsg.type === 'FILE_META'
-                                            ? `📎 ${(repliedMsg.payload as FileMetadata).name}`
-                                            : (repliedMsg.payload as string)}
-                                        </p>
-                                      </>
-                                    )
-                                  })()}
-                                </div>
-                              )}
-                              {!isFile ? (
-                                <p className="text-sm leading-relaxed whitespace-pre-wrap wrap-break-word select-text">
-                                  {typeof msg.payload === 'string'
-                                    ? msg.payload
-                                    : JSON.stringify(msg.payload)}
-                                </p>
-                              ) : (
-                                <FileChatBubble msg={msg} isLocal={isLocal} />
-                              )}
-                            </div>
-                          </ContextMenuTrigger>
-                          <ContextMenuContent className="w-48">
-                            <ContextMenuItem
-                              onClick={() => setReplyingTo(msg)}
-                              className="flex items-center gap-2"
-                            >
-                              <Reply className="w-4 h-4" />
-                              <span>Reply</span>
-                            </ContextMenuItem>
-                            <ContextMenuItem
-                              onClick={() => setForwardingMessage(msg)}
-                              className="flex items-center gap-2"
-                            >
-                              <Forward className="w-4 h-4" />
-                              <span>Forward</span>
-                            </ContextMenuItem>
-                            {!isFile && (
-                              <ContextMenuItem
-                                onClick={() => handleCopy(msg.payload as string)}
-                                className="flex items-center gap-2"
-                              >
-                                <Copy className="w-4 h-4" />
-                                <span>Copy Text</span>
-                              </ContextMenuItem>
-                            )}
-                            <ContextMenuSeparator />
-                            <ContextMenuItem
-                              onClick={() => handleDelete(msg)}
-                              className="text-destructive focus:text-destructive flex items-center gap-2"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                              <span>Delete Message</span>
-                            </ContextMenuItem>
-                          </ContextMenuContent>
-                        </ContextMenu>
-                        <div className="flex items-center gap-1.5 mt-1 px-1">
-                          <span className="text-[10px] text-muted-foreground font-medium">
-                            {new Date(msg.timestamp || 0).toLocaleTimeString([], {
-                              hour: '2-digit',
-                              minute: '2-digit'
-                            })}
-                          </span>
-                          {isLocal && (
-                            <div className="flex items-center">
-                              {msg.status === 'sent' && (
-                                <Check className="w-3 h-3 text-muted-foreground/50" />
-                              )}
-                              {msg.status === 'delivered' && (
-                                <CheckCheck className="w-3 h-3 text-muted-foreground/50" />
-                              )}
-                              {msg.status === 'read' && (
-                                <CheckCheck className="w-3 h-3 text-blue-500" />
-                              )}
-                            </div>
-                          )}
-                        </div>
+              <p className="text-sm font-medium">No messages yet. Say hello!</p>
+            </div>
+          ) : (
+            messages
+              .filter((m) => !pendingDeletes.has(m.id!))
+              .map((msg, i, filtered) => {
+                const isLocal = msg.deviceId === localDevice?.deviceId
+                const isFile = msg.type === 'FILE_META'
+                // Date separator logic
+                const currentDate = formatChatDate(msg.timestamp)
+                const prevDate = i > 0 ? formatChatDate(filtered[i - 1].timestamp) : null
+                const showSeparator = currentDate !== prevDate
+                return (
+                  <React.Fragment key={msg.id || i}>
+                    {showSeparator && (
+                      <div className="flex items-center gap-4 py-4">
+                        <Separator className="flex-1 opacity-10" />
+                        <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/40 whitespace-nowrap">
+                          {currentDate}
+                        </span>
+                        <Separator className="flex-1 opacity-10" />
                       </div>
-                    </React.Fragment>
-                  )
-                })
-            )}
-          </div>
-          <div className="p-4 bg-background border-t shrink-0 relative z-20">
-            {replyingTo && (
-              <div className="max-w-4xl mx-auto mb-2 flex items-center gap-3 bg-secondary/50 p-2.5 rounded-xl border border-border/50 animate-in slide-in-from-bottom-2 duration-200">
-                <div className="w-1 bg-primary self-stretch rounded-full opacity-50" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-[10px] font-bold text-primary uppercase tracking-wider mb-0.5">
-                    Replying to{' '}
-                    {replyingTo.deviceId === localDevice?.deviceId ? 'you' : device.displayName}
-                  </p>
-                  <p className="text-sm text-muted-foreground truncate">
-                    {replyingTo.payload as string}
-                  </p>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7 rounded-full hover:bg-secondary"
-                  onClick={() => setReplyingTo(null)}
-                >
-                  <X className="w-4 h-4" />
-                </Button>
-              </div>
-            )}
-            <div className="flex gap-2 max-w-4xl mx-auto items-center">
-              <button
-                type="button"
-                onClick={handleFileSelect}
-                className="p-2.5 hover:bg-secondary rounded-xl text-muted-foreground hover:text-primary transition-all hover:scale-105 active:scale-95"
-              >
-                <Paperclip className="w-5 h-5" />
-              </button>
-              <div className="flex-1 relative">
-                <Textarea
-                  autoFocus
-                  placeholder="Type a message..."
-                  className="py-3 px-4 min-h-11 max-h-32 rounded-xl text-md shadow-xs resize-none overflow-y-auto"
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault()
-                      handleSend()
-                    }
-                  }}
-                  rows={1}
-                />
+                    )}
+                    <div className={cn('flex flex-col', isLocal ? 'items-end' : 'items-start')}>
+                      <ContextMenu>
+                        <ContextMenuTrigger asChild>
+                          <div
+                            id={msg.id ? `msg-${msg.id}` : undefined}
+                            className={cn(
+                              'max-w-[85%] rounded-2xl px-4 py-3 shadow-sm cursor-default',
+                              isLocal
+                                ? 'bg-primary text-primary-foreground rounded-tr-none'
+                                : 'bg-card border border-border/50 rounded-tl-none'
+                            )}
+                          >
+                            {msg.replyTo && (
+                              <div
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  const el = document.getElementById(`msg-${msg.replyTo}`)
+                                  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                                }}
+                                className={cn(
+                                  'mb-2 p-2 rounded-lg text-[11px] border-l-2 overflow-hidden cursor-pointer hover:opacity-80 transition-opacity',
+                                  isLocal
+                                    ? 'bg-black/20 border-primary-foreground/50 text-primary-foreground/80'
+                                    : 'bg-muted border-primary/50 text-muted-foreground'
+                                )}
+                              >
+                                {(() => {
+                                  const repliedMsg = messages.find((m) => m.id === msg.replyTo)
+                                  if (!repliedMsg) {
+                                    return (
+                                      <p className="italic opacity-50">
+                                        Original message not found
+                                      </p>
+                                    )
+                                  }
+                                  return (
+                                    <>
+                                      <p className="font-bold opacity-70 mb-0.5">
+                                        {repliedMsg.deviceId === localDevice?.deviceId
+                                          ? 'You'
+                                          : device.displayName}
+                                      </p>
+                                      <p className="line-clamp-2">
+                                        {repliedMsg.type === 'FILE_META'
+                                          ? `📎 ${(repliedMsg.payload as FileMetadata).name}`
+                                          : (repliedMsg.payload as string)}
+                                      </p>
+                                    </>
+                                  )
+                                })()}
+                              </div>
+                            )}
+                            {!isFile ? (
+                              <p className="text-sm leading-relaxed whitespace-pre-wrap wrap-break-word select-text">
+                                {typeof msg.payload === 'string'
+                                  ? msg.payload
+                                  : JSON.stringify(msg.payload)}
+                              </p>
+                            ) : (
+                              <FileChatBubble msg={msg} isLocal={isLocal} />
+                            )}
+                          </div>
+                        </ContextMenuTrigger>
+                        <ContextMenuContent className="w-48">
+                          <ContextMenuItem
+                            onClick={() => setReplyingTo(msg)}
+                            className="flex items-center gap-2"
+                          >
+                            <Reply className="w-4 h-4" />
+                            <span>Reply</span>
+                          </ContextMenuItem>
+                          <ContextMenuItem
+                            onClick={() => setForwardingMessage(msg)}
+                            className="flex items-center gap-2"
+                          >
+                            <Forward className="w-4 h-4" />
+                            <span>Forward</span>
+                          </ContextMenuItem>
+                          {!isFile && (
+                            <ContextMenuItem
+                              onClick={() => handleCopy(msg.payload as string)}
+                              className="flex items-center gap-2"
+                            >
+                              <Copy className="w-4 h-4" />
+                              <span>Copy Text</span>
+                            </ContextMenuItem>
+                          )}
+                          <ContextMenuSeparator />
+                          <ContextMenuItem
+                            onClick={() => handleDelete(msg)}
+                            className="text-destructive focus:text-destructive flex items-center gap-2"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                            <span>Delete Message</span>
+                          </ContextMenuItem>
+                        </ContextMenuContent>
+                      </ContextMenu>
+                      <div className="flex items-center gap-1.5 mt-1 px-1">
+                        <span className="text-[10px] text-muted-foreground font-medium">
+                          {new Date(msg.timestamp || 0).toLocaleTimeString([], {
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          })}
+                        </span>
+                        {isLocal && (
+                          <div className="flex items-center">
+                            {msg.status === 'sent' && (
+                              <Check className="w-3 h-3 text-muted-foreground/50" />
+                            )}
+                            {msg.status === 'delivered' && (
+                              <CheckCheck className="w-3 h-3 text-muted-foreground/50" />
+                            )}
+                            {msg.status === 'read' && (
+                              <CheckCheck className="w-3 h-3 text-blue-500" />
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </React.Fragment>
+                )
+              })
+          )}
+        </div>
+        <div className="p-4 bg-background border-t shrink-0 relative z-20">
+          {replyingTo && (
+            <div className="max-w-4xl mx-auto mb-2 flex items-center gap-3 bg-secondary/50 p-2.5 rounded-xl border border-border/50 animate-in slide-in-from-bottom-2 duration-200">
+              <div className="w-1 bg-primary self-stretch rounded-full opacity-50" />
+              <div className="flex-1 min-w-0">
+                <p className="text-[10px] font-bold text-primary uppercase tracking-wider mb-0.5">
+                  Replying to{' '}
+                  {replyingTo.deviceId === localDevice?.deviceId ? 'you' : device.displayName}
+                </p>
+                <p className="text-sm text-muted-foreground truncate">
+                  {replyingTo.payload as string}
+                </p>
               </div>
               <Button
+                variant="ghost"
                 size="icon"
-                className="h-11 w-11 rounded-xl shadow-lg shadow-primary/20 hover:scale-105 active:scale-95 transition-all"
-                onClick={handleSend}
+                className="h-7 w-7 rounded-full hover:bg-secondary"
+                onClick={() => setReplyingTo(null)}
               >
-                <Send className="w-5 h-5" />
+                <X className="w-4 h-4" />
               </Button>
             </div>
+          )}
+          <div className="flex gap-2 max-w-4xl mx-auto items-center">
+            <button
+              type="button"
+              onClick={handleFileSelect}
+              className="p-2.5 hover:bg-secondary rounded-xl text-muted-foreground hover:text-primary transition-all hover:scale-105 active:scale-95"
+            >
+              <Paperclip className="w-5 h-5" />
+            </button>
+            <div className="flex-1 relative">
+              <Textarea
+                autoFocus
+                placeholder="Type a message..."
+                className="py-3 px-4 min-h-11 max-h-32 rounded-xl text-md shadow-xs resize-none overflow-y-auto"
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault()
+                    handleSend()
+                  }
+                }}
+                rows={1}
+              />
+            </div>
+            <Button
+              size="icon"
+              className="h-11 w-11 rounded-xl shadow-lg shadow-primary/20 hover:scale-105 active:scale-95 transition-all"
+              onClick={handleSend}
+            >
+              <Send className="w-5 h-5" />
+            </Button>
           </div>
         </div>
-      ) : (
+      </TabsContent>
+      <TabsContent value="files" className="mt-0 flex-1 flex flex-col min-h-0">
         <TransferView device={device} />
-      )}
+      </TabsContent>
       <ForwardDialog
         isOpen={!!forwardingMessage}
         onOpenChange={(open) => !open && setForwardingMessage(null)}
         onForward={handleForward}
       />
-    </div>
+    </Tabs>
   )
 }
 const TransferView: React.FC<{ device: Device }> = ({ device }) => {
@@ -542,7 +540,7 @@ const TransferView: React.FC<{ device: Device }> = ({ device }) => {
                   className={cn(
                     'bg-card/40 border-border/40 overflow-hidden group transition-all rounded-2xl',
                     remainsCompleted &&
-                    'cursor-pointer hover:border-primary/50 hover:bg-primary/5 hover:shadow-lg active:scale-[0.98]'
+                      'cursor-pointer hover:border-primary/50 hover:bg-primary/5 hover:shadow-lg active:scale-[0.98]'
                   )}
                 >
                   <CardContent className="p-5 flex items-center gap-5">

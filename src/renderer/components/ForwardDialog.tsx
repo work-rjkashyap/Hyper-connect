@@ -1,5 +1,6 @@
 import React from 'react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from './ui/dialog'
+import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar'
 import { useStore } from '../store/useStore'
 import { User, Send } from 'lucide-react'
 import { Button } from './ui/button'
@@ -35,17 +36,16 @@ export const ForwardDialog: React.FC<ForwardDialogProps> = ({
                 className="flex items-center justify-between p-3 rounded-xl hover:bg-secondary transition-colors group"
               >
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center overflow-hidden">
-                    {device.profileImage ? (
-                      <img
-                        src={device.profileImage}
-                        alt={device.displayName}
-                        className="w-full h-full object-cover"
-                      />
-                    ) : (
+                  <Avatar className="h-10 w-10">
+                    <AvatarImage
+                      src={device.profileImage}
+                      alt={device.displayName}
+                      className="object-cover"
+                    />
+                    <AvatarFallback className="bg-primary/10">
                       <User className="w-5 h-5 text-primary" />
-                    )}
-                  </div>
+                    </AvatarFallback>
+                  </Avatar>
                   <div>
                     <p className="font-medium text-sm">{device.displayName}</p>
                     <p className="text-xs text-muted-foreground">{device.platform}</p>
