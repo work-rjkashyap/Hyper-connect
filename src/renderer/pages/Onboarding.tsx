@@ -13,6 +13,7 @@ import { Button } from '../components/ui/button'
 import { useStore } from '../store/useStore'
 import { ThemeToggle } from '../components/ui/theme-toggle'
 import { Field, FieldGroup, FieldLabel } from '../components/ui/field'
+import { processProfileImage } from '../lib/image'
 export const Onboarding: React.FC = () => {
   const [name, setName] = useState('')
   const [profileImage, setProfileImage] = useState<string | null>(null)
@@ -32,42 +33,17 @@ export const Onboarding: React.FC = () => {
     }
     loadDefaultName()
   }, [])
-  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>): void => {
+  const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>): Promise<void> => {
     const file = e.target.files?.[0]
     if (!file) return
 
-    const reader = new FileReader()
-    reader.onload = (event) => {
-      const img = new Image()
-      img.onload = () => {
-        const canvas = document.createElement('canvas')
-        const MAX_WIDTH = 256
-        const MAX_HEIGHT = 256
-        let width = img.width
-        let height = img.height
-
-        if (width > height) {
-          if (width > MAX_WIDTH) {
-            height *= MAX_WIDTH / width
-            width = MAX_WIDTH
-          }
-        } else {
-          if (height > MAX_HEIGHT) {
-            width *= MAX_HEIGHT / height
-            height = MAX_HEIGHT
-          }
-        }
-
-        canvas.width = width
-        canvas.height = height
-        const ctx = canvas.getContext('2d')
-        ctx?.drawImage(img, 0, 0, width, height)
-        const base64 = canvas.toDataURL('image/jpeg', 0.8)
-        setProfileImage(base64)
-      }
-      img.src = event.target?.result as string
+    try {
+      const base64 = await processProfileImage(file)
+      setProfileImage(base64)
+    } catch (error) {
+      console.error('Image processing failed:', error)
+      alert(error instanceof Error ? error.message : 'Failed to process image')
     }
-    reader.readAsDataURL(file)
   }
 
   const handleContinue = async (): Promise<void> => {

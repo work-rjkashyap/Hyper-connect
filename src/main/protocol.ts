@@ -53,56 +53,63 @@ export class ConnectionManager extends EventEmitter {
 
         socket.write(JSON.stringify(helloSecure) + '\n')
 
-        // Internal handler for the handshake response
-        const onHandshakeData = (data: Buffer): void => {
-          try {
-            const line = data.toString().split('\n')[0]
-            if (!line) return
-            const message: NetworkMessage = JSON.parse(line)
+        // Internal handler for the handshake response with buffering
+        let handshakeBuffer = Buffer.alloc(0)
+        const onHandshakeData = (chunk: Buffer): void => {
+          handshakeBuffer = Buffer.concat([handshakeBuffer, chunk])
 
-            if (
-              message.type === 'HELLO_SECURE' &&
-              (message.payload as { publicKey: string })?.publicKey
-            ) {
-              const payload = message.payload as {
-                publicKey: string
-                displayName?: string
-                profileImage?: string
+          let offset: number
+          while ((offset = handshakeBuffer.indexOf('\n')) !== -1) {
+            const line = handshakeBuffer.slice(0, offset).toString().trim()
+            handshakeBuffer = handshakeBuffer.slice(offset + 1)
+
+            if (!line) continue
+
+            try {
+              const message: NetworkMessage = JSON.parse(line)
+
+              if (
+                message.type === 'HELLO_SECURE' &&
+                (message.payload as { publicKey: string })?.publicKey
+              ) {
+                const payload = message.payload as {
+                  publicKey: string
+                  displayName?: string
+                  profileImage?: string
+                }
+                // 3. Compute shared secret and derive session key
+                const sharedSecret = computeSharedSecret(privateKey, payload.publicKey)
+                const sessionKey = deriveSessionKey(sharedSecret)
+
+                storeSession(device.deviceId, { sessionKey, deviceId: device.deviceId })
+                this.activeConnections.set(device.deviceId, socket)
+
+                // Update device info with received profile image
+                if (payload.profileImage) {
+                  device.profileImage = payload.profileImage
+                }
+                if (payload.displayName) {
+                  device.displayName = payload.displayName
+                }
+
+                console.log(`[Protocol] Secure session established with ${device.deviceId}`)
+
+                socket.removeListener('data', onHandshakeData)
+
+                // Pass any leftover data to the main listener
+                this.setupDataListener(socket, device.deviceId, handshakeBuffer)
+
+                this.emit('connected', device.deviceId, socket, device)
+                resolve(socket)
+                return
               }
-              // 3. Compute shared secret and derive session key
-              const sharedSecret = computeSharedSecret(privateKey, payload.publicKey)
-              const sessionKey = deriveSessionKey(sharedSecret)
-
-              storeSession(device.deviceId, { sessionKey, deviceId: device.deviceId })
-              this.activeConnections.set(device.deviceId, socket)
-
-              // Update device info with received profile image
-              if (payload.profileImage) {
-                device.profileImage = payload.profileImage
-              }
-              if (payload.displayName) {
-                device.displayName = payload.displayName
-              }
-
-              console.log(`[Protocol] Secure session established with ${device.deviceId}`)
-
-              socket.removeListener('data', onHandshakeData)
-              this.setupDataListener(socket, device.deviceId)
-
-              this.emit('connected', device.deviceId, socket, device)
-              resolve(socket)
-            } else {
-              reject(new Error('Invalid handshake response'))
-              socket.destroy()
+            } catch (e) {
+              console.error('[Protocol] Handshake chunk parse failed:', e)
             }
-          } catch (e) {
-            console.error('[Protocol] Handshake failed:', e)
-            reject(e)
-            socket.destroy()
           }
         }
 
-        socket.once('data', onHandshakeData)
+        socket.on('data', onHandshakeData)
       })
 
       // Set a 5-second connection timeout
@@ -134,35 +141,53 @@ export class ConnectionManager extends EventEmitter {
     })
   }
 
-  private setupDataListener(socket: net.Socket, deviceId: string): void {
-    let buffer = ''
-    socket.on('data', (data) => {
-      buffer += data.toString()
-      const lines = buffer.split('\n')
-      buffer = lines.pop() || ''
+  private setupDataListener(
+    socket: net.Socket,
+    deviceId: string,
+    initialBuffer: Buffer = Buffer.alloc(0)
+  ): void {
+    let buffer = initialBuffer
 
-      for (const line of lines) {
-        if (!line.trim()) continue
-        try {
-          const rawMessage = JSON.parse(line)
-
-          if (isEncryptedMessage(rawMessage)) {
-            const session = getSession(deviceId)
-            if (session) {
-              const decrypted = decryptMessage(rawMessage, session.sessionKey)
-              this.emit('message', decrypted, socket, true)
-            } else {
-              console.error(`[Protocol] No session key for device ${deviceId}`)
-            }
-          } else {
-            // Unencrypted message
-            this.emit('message', rawMessage, socket, false)
-          }
-        } catch (e) {
-          console.error('Failed to parse incoming message:', e)
+    const processBufferedData = (): void => {
+      let offset: number
+      while ((offset = buffer.indexOf('\n')) !== -1) {
+        const line = buffer.slice(0, offset).toString().trim()
+        buffer = buffer.slice(offset + 1)
+        if (line) {
+          this.processLine(line, socket, deviceId)
         }
       }
+    }
+
+    // Process initial data
+    processBufferedData()
+
+    socket.on('data', (chunk) => {
+      buffer = Buffer.concat([buffer, chunk])
+      processBufferedData()
     })
+  }
+
+  private processLine(line: string, socket: net.Socket, deviceId: string): void {
+    if (!line.trim()) return
+    try {
+      const rawMessage = JSON.parse(line)
+
+      if (isEncryptedMessage(rawMessage)) {
+        const session = getSession(deviceId)
+        if (session) {
+          const decrypted = decryptMessage(rawMessage, session.sessionKey)
+          this.emit('message', decrypted, socket, true)
+        } else {
+          console.error(`[Protocol] No session key for device ${deviceId}`)
+        }
+      } else {
+        // Unencrypted message
+        this.emit('message', rawMessage, socket, false)
+      }
+    } catch (e) {
+      console.error('Failed to parse incoming message:', e)
+    }
   }
 
   sendMessage(deviceId: string, message: NetworkMessage): void {

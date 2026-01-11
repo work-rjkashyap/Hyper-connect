@@ -57,13 +57,13 @@ export class TCPServer extends EventEmitter {
     let buffer = Buffer.alloc(0)
     let authenticatedDeviceId: string | null = null
 
-    socket.on('data', (data) => {
+    socket.on('data', (chunk) => {
       if (isRawStream) {
-        this.emit('raw-data', socket, data)
+        this.emit('raw-data', socket, chunk)
         return
       }
 
-      buffer = Buffer.concat([buffer, data])
+      buffer = Buffer.concat([buffer, chunk])
 
       // Check for raw stream header: "FILE_STREAM:"
       if (buffer.length >= 12 && buffer.toString('utf8', 0, 12) === 'FILE_STREAM:') {
@@ -74,45 +74,44 @@ export class TCPServer extends EventEmitter {
       }
 
       // NDJSON / Multi-line JSON support
-      const str = buffer.toString()
-      const lines = str.split('\n')
+      let offset: number
+      while ((offset = buffer.indexOf('\n')) !== -1) {
+        const line = buffer.slice(0, offset).toString().trim()
+        buffer = buffer.slice(offset + 1)
 
-      if (lines.length > 1) {
-        buffer = Buffer.from(lines.pop() || '')
-        for (const line of lines) {
-          if (!line.trim()) continue
-          try {
-            const rawMessage = JSON.parse(line)
+        if (!line) continue
 
-            // Handle Handshake
-            if (rawMessage.type === 'HELLO_SECURE') {
-              this.handleSecureHandshake(socket, rawMessage).then((deviceId) => {
-                authenticatedDeviceId = deviceId
-              })
-              continue
-            }
+        try {
+          const rawMessage = JSON.parse(line)
 
-            // Handle Encrypted Messages
-            if (isEncryptedMessage(rawMessage)) {
-              if (authenticatedDeviceId) {
-                const session = getSession(authenticatedDeviceId)
-                if (session) {
-                  const decrypted = decryptMessage(rawMessage, session.sessionKey)
-                  this.emit('message', decrypted, socket, true)
-                } else {
-                  console.error(
-                    `[Server] No session key for authenticated device ${authenticatedDeviceId}`
-                  )
-                }
+          // Handle Handshake
+          if (rawMessage.type === 'HELLO_SECURE') {
+            this.handleSecureHandshake(socket, rawMessage).then((deviceId) => {
+              authenticatedDeviceId = deviceId
+            })
+            continue
+          }
+
+          // Handle Encrypted Messages
+          if (isEncryptedMessage(rawMessage)) {
+            if (authenticatedDeviceId) {
+              const session = getSession(authenticatedDeviceId)
+              if (session) {
+                const decrypted = decryptMessage(rawMessage, session.sessionKey)
+                this.emit('message', decrypted, socket, true)
               } else {
-                console.warn('[Server] Received encrypted message before authentication')
+                console.error(
+                  `[Server] No session key for authenticated device ${authenticatedDeviceId}`
+                )
               }
             } else {
-              this.emit('message', rawMessage, socket, false)
+              console.warn('[Server] Received encrypted message before authentication')
             }
-          } catch (e) {
-            console.error('Failed to parse incoming message:', e)
+          } else {
+            this.emit('message', rawMessage, socket, false)
           }
+        } catch (e) {
+          console.error('Failed to parse incoming message:', e)
         }
       }
     })
