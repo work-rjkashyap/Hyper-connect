@@ -200,6 +200,7 @@ export class ConnectionManager extends EventEmitter {
       this.sendMessage(device.deviceId, pingMsg)
     } catch (e) {
       console.error(`[Protocol] Failed to ping ${device.deviceId}:`, e)
+      throw e
     }
   }
 

@@ -136,13 +136,15 @@ export const DashboardLayout: React.FC = () => {
                         )}
                       >
                         {device.profileImage ? (
-                          <img src={device.profileImage} alt={device.displayName} className="w-full h-full object-cover" />
+                          <img
+                            src={device.profileImage}
+                            alt={device.displayName}
+                            className="w-full h-full object-cover"
+                          />
+                        ) : device.platform === 'darwin' ? (
+                          <Laptop className="w-5 h-5" />
                         ) : (
-                          device.platform === 'darwin' ? (
-                            <Laptop className="w-5 h-5" />
-                          ) : (
-                            <Monitor className="w-5 h-5" />
-                          )
+                          <Monitor className="w-5 h-5" />
                         )}
                       </div>
                       <div className="text-left flex-1 min-w-0">

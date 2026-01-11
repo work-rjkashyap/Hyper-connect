@@ -24,6 +24,11 @@ interface AppState {
   setDiscoveredDevices: (devices: Device[]) => void
   clearMessages: (deviceId?: string) => void
   clearTransfers: () => void
+  updateMessageStatus: (
+    deviceId: string,
+    messageId: string,
+    status: 'sent' | 'delivered' | 'read'
+  ) => void
 }
 
 export const useStore = create<AppState>()(
@@ -84,16 +89,59 @@ export const useStore = create<AppState>()(
       addMessage: (deviceId, message) =>
         set((state) => {
           const deviceMessages = state.messages[deviceId] || []
-          // Avoid duplicate messages by checking ID
-          if (deviceMessages.some((m) => m.id === message.id)) {
+          // Check if message already exists
+          const existingIndex = deviceMessages.findIndex((m) => m.id === message.id)
+
+          if (existingIndex !== -1) {
+            // Update status if new status is "higher"
+            const existingMessage = deviceMessages[existingIndex]
+            const statusOrder = { sending: 0, sent: 1, delivered: 2, read: 3 }
+            const currentStatus = existingMessage.status || 'sent'
+            const newStatus = message.status || 'sent'
+
+            if (statusOrder[newStatus] > statusOrder[currentStatus]) {
+              const updatedMessages = [...deviceMessages]
+              updatedMessages[existingIndex] = { ...existingMessage, status: newStatus }
+              return {
+                messages: {
+                  ...state.messages,
+                  [deviceId]: updatedMessages
+                }
+              }
+            }
             return state
           }
+
           return {
             messages: {
               ...state.messages,
-              [deviceId]: [...deviceMessages, message]
+              [deviceId]: [...deviceMessages, { ...message, status: message.status || 'sent' }]
             }
           }
+        }),
+
+      updateMessageStatus: (deviceId, messageId, status) =>
+        set((state) => {
+          const deviceMessages = state.messages[deviceId] || []
+          const existingIndex = deviceMessages.findIndex((m) => m.id === messageId)
+
+          if (existingIndex === -1) return state
+
+          const existingMessage = deviceMessages[existingIndex]
+          const statusOrder = { sending: 0, sent: 1, delivered: 2, read: 3 }
+          const currentStatus = existingMessage.status || 'sent'
+
+          if (statusOrder[status] > statusOrder[currentStatus]) {
+            const updatedMessages = [...deviceMessages]
+            updatedMessages[existingIndex] = { ...existingMessage, status }
+            return {
+              messages: {
+                ...state.messages,
+                [deviceId]: updatedMessages
+              }
+            }
+          }
+          return state
         }),
 
       updateTransfer: (progress) =>

@@ -123,6 +123,17 @@ export function setupIpc(mainWindow: BrowserWindow): void {
     }
   })
 
+  ipcMain.handle('mark-as-read', async (_, deviceId: string, messageId: string) => {
+    const ack: NetworkMessage = {
+      type: 'MESSAGE_READ',
+      deviceId: getDeviceInfo().deviceId,
+      ackId: messageId,
+      timestamp: Date.now(),
+      status: 'read'
+    }
+    connectionManager.sendMessage(deviceId, ack)
+  })
+
   // Forward events to renderer with safe sending
   const onDeviceFound = (device: Device): void => {
     console.log('[IPC] Device found, sending to renderer:', device)
@@ -170,6 +181,25 @@ export function setupIpc(mainWindow: BrowserWindow): void {
       fileTransferManager.handleAccept(message)
     } else if (message.type === 'FILE_REJECT') {
       fileTransferManager.handleReject(message)
+    } else if (message.type === 'MESSAGE_DELIVERED' || message.type === 'MESSAGE_READ') {
+      sendToRenderer('message-status-updated', {
+        deviceId: message.deviceId,
+        messageId: message.ackId,
+        status: message.type === 'MESSAGE_DELIVERED' ? 'delivered' : 'read'
+      })
+      return
+    }
+
+    if (message.type === 'MESSAGE') {
+      // Send delivery ack
+      const ack: NetworkMessage = {
+        type: 'MESSAGE_DELIVERED',
+        deviceId: getDeviceInfo().deviceId,
+        ackId: message.id,
+        timestamp: Date.now(),
+        status: 'delivered'
+      }
+      connectionManager.sendMessage(message.deviceId, ack)
     }
 
     sendToRenderer('message-received', message)

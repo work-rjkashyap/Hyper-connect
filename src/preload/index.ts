@@ -29,6 +29,8 @@ const api = {
   getAutoAccept: (): Promise<boolean> => ipcRenderer.invoke('get-auto-accept'),
   setAutoAccept: (autoAccept: boolean): Promise<boolean> =>
     ipcRenderer.invoke('set-auto-accept', autoAccept),
+  markAsRead: (deviceId: string, messageId: string): Promise<void> =>
+    ipcRenderer.invoke('mark-as-read', deviceId, messageId),
 
   // Event Listeners
   onDeviceDiscovered: (callback: (device: Device) => void): (() => void) => {
@@ -80,6 +82,18 @@ const api = {
     ipcRenderer.on('navigate-to-device', listener)
     return (): void => {
       ipcRenderer.removeListener('navigate-to-device', listener)
+    }
+  },
+  onMessageStatusUpdated: (
+    callback: (data: { deviceId: string; messageId: string; status: 'delivered' | 'read' }) => void
+  ): (() => void) => {
+    const listener = (
+      _: unknown,
+      data: { deviceId: string; messageId: string; status: 'delivered' | 'read' }
+    ): void => callback(data)
+    ipcRenderer.on('message-status-updated', listener)
+    return (): void => {
+      ipcRenderer.removeListener('message-status-updated', listener)
     }
   }
 }

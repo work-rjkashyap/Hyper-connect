@@ -25,6 +25,11 @@ export interface IApi {
   setDownloadPath: (path: string) => Promise<string>
   getAutoAccept: () => Promise<boolean>
   setAutoAccept: (autoAccept: boolean) => Promise<boolean>
+  updateProfile: (name?: string, image?: string) => Promise<DeviceInfo>
+  markAsRead: (deviceId: string, messageId: string) => Promise<void>
+  onMessageStatusUpdated: (
+    callback: (data: { deviceId: string; messageId: string; status: 'delivered' | 'read' }) => void
+  ) => () => void
 }
 
 declare module '*.png' {

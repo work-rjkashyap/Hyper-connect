@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { useParams, Navigate } from 'react-router-dom'
 import { useShallow } from 'zustand/react/shallow'
-import { FileUp, Paperclip, Send, User } from 'lucide-react'
+import { FileUp, Paperclip, Send, User, Check, CheckCheck } from 'lucide-react'
 import { useStore } from '../store/useStore'
 import { cn, formatFileSize, formatChatDate } from '../lib/utils'
 import { NetworkMessage, Device } from '../../shared/messageTypes'
@@ -58,15 +58,22 @@ export const DevicePage: React.FC = () => {
     useEffect(() => {
         if (tab === 'chat') {
             scrollToBottom()
+            // Mark visible unread messages as read
+            const unreadIncoming = messages.filter(
+                (m) => m.deviceId !== localDevice?.deviceId && m.status !== 'read'
+            )
+            unreadIncoming.forEach((msg) => {
+                if (msg.id) window.api.markAsRead(device.deviceId, msg.id)
+            })
         }
-    }, [messages, tab])
+    }, [messages, tab, device.deviceId, localDevice?.deviceId])
 
     if (!device) {
         return <Navigate to="/" replace />
     }
 
     const handleSend = async (): Promise<void> => {
-        if (!input.trim()) return
+        if (!input.trim() || !device) return
         try {
             const sentMsg = await window.api.sendMessage(device.deviceId, input)
             addMessage(device.deviceId, sentMsg)
@@ -77,6 +84,7 @@ export const DevicePage: React.FC = () => {
     }
 
     const handleFileSelect = async (): Promise<void> => {
+        if (!device) return
         const path = await window.api.selectFile()
         if (path) {
             const sentMsg = await window.api.sendFile(device.deviceId, path)
@@ -193,12 +201,27 @@ export const DevicePage: React.FC = () => {
                                                     <FileChatBubble msg={msg} isLocal={isLocal} />
                                                 )}
                                             </div>
-                                            <span className="text-[10px] text-muted-foreground mt-1.5 px-1 font-medium">
-                                                {new Date(msg.timestamp || 0).toLocaleTimeString([], {
-                                                    hour: '2-digit',
-                                                    minute: '2-digit'
-                                                })}
-                                            </span>
+                                            <div className="flex items-center gap-1.5 mt-1 px-1">
+                                                <span className="text-[10px] text-muted-foreground font-medium">
+                                                    {new Date(msg.timestamp || 0).toLocaleTimeString([], {
+                                                        hour: '2-digit',
+                                                        minute: '2-digit'
+                                                    })}
+                                                </span>
+                                                {isLocal && (
+                                                    <div className="flex items-center">
+                                                        {msg.status === 'sent' && (
+                                                            <Check className="w-3 h-3 text-muted-foreground/50" />
+                                                        )}
+                                                        {msg.status === 'delivered' && (
+                                                            <CheckCheck className="w-3 h-3 text-muted-foreground/50" />
+                                                        )}
+                                                        {msg.status === 'read' && (
+                                                            <CheckCheck className="w-3 h-3 text-blue-500" />
+                                                        )}
+                                                    </div>
+                                                )}
+                                            </div>
                                         </div>
                                     </React.Fragment>
                                 )

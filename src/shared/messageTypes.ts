@@ -24,6 +24,8 @@ export interface NetworkMessage {
     | 'HELLO_SECURE'
     | 'ENCRYPTED_MESSAGE'
     | 'MESSAGE'
+    | 'MESSAGE_DELIVERED'
+    | 'MESSAGE_READ'
     | 'FILE_META'
     | 'FILE_ACCEPT'
     | 'FILE_REJECT'
@@ -34,7 +36,9 @@ export interface NetworkMessage {
   deviceId: string
   payload?: unknown
   id?: string
+  ackId?: string
   timestamp?: number
+  status?: 'sending' | 'sent' | 'delivered' | 'read'
 }
 
 export interface FileMetadata {

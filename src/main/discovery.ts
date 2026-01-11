@@ -109,6 +109,7 @@ export class DiscoveryManager extends EventEmitter {
           await connectionManager.ping(device)
           // Update lastSeen
           device.lastSeen = Date.now()
+          console.log(`[Heartbeat] Device ${device.displayName} is alive`)
         } catch {
           console.log(`[Heartbeat] Device ${device.displayName} is unreachable, marking offline.`)
           device.isOnline = false

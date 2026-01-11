@@ -19,7 +19,8 @@ const AppContent: React.FC = () => {
     removeDiscoveredDevice,
     addMessage,
     updateTransfer,
-    setDiscoveredDevices
+    setDiscoveredDevices,
+    updateMessageStatus
   } = useStore()
   const navigate = useNavigate()
   const notifiedDevices = useRef<Set<string>>(new Set())
@@ -94,6 +95,9 @@ const AppContent: React.FC = () => {
       state.setSelectedDeviceId(deviceId)
       state.clearUnreadCount(deviceId)
     })
+    const unsubStatus = window.api.onMessageStatusUpdated((data) => {
+      updateMessageStatus(data.deviceId, data.messageId, data.status)
+    })
     return () => {
       unsubDiscovered()
       unsubLost()
@@ -101,6 +105,7 @@ const AppContent: React.FC = () => {
       unsubFile()
       unsubProgress()
       unsubNavigate()
+      unsubStatus()
     }
   }, [
     setLocalDevice,
@@ -109,6 +114,7 @@ const AppContent: React.FC = () => {
     removeDiscoveredDevice,
     addMessage,
     updateTransfer,
+    updateMessageStatus,
     navigate
   ])
   if (!onboardingComplete) {

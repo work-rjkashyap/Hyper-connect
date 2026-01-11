@@ -13,12 +13,16 @@ function createWindow(): void {
     height: 800,
     show: false,
     title: '',
+    transparent: true,
+    frame: false, // optional: removes window frame
+    titleBarStyle: process.platform === 'darwin' ? 'hidden' : 'default',
+    backgroundColor: '#00000000', // Fully transparent
     autoHideMenuBar: true,
-    titleBarStyle: 'default',
     ...(process.platform === 'linux' ? { icon } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
-      sandbox: false
+      sandbox: false,
+      nodeIntegration: true
     }
   })
   mainWindow.on('ready-to-show', () => {

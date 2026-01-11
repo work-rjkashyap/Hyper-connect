@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react'
-import logoDark from '../assets/logo_dark.png'
 import { User, Camera } from 'lucide-react'
 import {
   Card,
@@ -8,11 +7,11 @@ import {
   CardFooter,
   CardHeader,
   CardTitle
-} from '@/renderer/components/ui/card'
-import { Input } from '@/renderer/components/ui/input'
-import { Button } from '@/renderer/components/ui/button'
-import { useStore } from '@/renderer/store/useStore'
-import { ThemeToggle } from '@/renderer/components/ui/theme-toggle'
+} from '../components/ui/card'
+import { Input } from '../components/ui/input'
+import { Button } from '../components/ui/button'
+import { useStore } from '../store/useStore'
+import { ThemeToggle } from '../components/ui/theme-toggle'
 import { Field, FieldGroup, FieldLabel } from '../components/ui/field'
 export const Onboarding: React.FC = () => {
   const [name, setName] = useState('')
@@ -93,11 +92,17 @@ export const Onboarding: React.FC = () => {
       <Card className="w-full max-w-md border border-border/50 shadow-2xl glass animate-in zoom-in-95 duration-500 relative z-20">
         <CardHeader className="text-center space-y-4">
           <div className="mx-auto flex flex-col items-center space-y-6">
-            <div className="w-24 h-24 relative group cursor-pointer" onClick={() => document.getElementById('avatar-input')?.click()}>
-              <div className="absolute inset-0 bg-primary/20 rounded-full blur-xl animate-pulse group-hover:bg-primary/30 transition-colors" />
-              <div className="relative w-full h-full bg-white dark:bg-slate-900 rounded-full p-1 shadow-lg flex items-center justify-center border border-border/10 overflow-hidden">
+            <div
+              className="w-24 h-24 relative group cursor-pointer"
+              onClick={() => document.getElementById('avatar-input')?.click()}
+            >
+              <div className="w-full h-full rounded-full border-2 border-primary/20 p-1 group-hover:border-primary/50 transition-colors bg-background flex items-center justify-center overflow-hidden">
                 {profileImage ? (
-                  <img src={profileImage} alt="Profile" className="w-full h-full object-cover rounded-full" />
+                  <img
+                    src={profileImage}
+                    alt="Profile"
+                    className="w-full h-full object-cover rounded-full"
+                  />
                 ) : (
                   <User className="w-12 h-12 text-muted-foreground" />
                 )}
