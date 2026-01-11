@@ -41,7 +41,6 @@ export const DashboardLayout: React.FC = () => {
   }
   return (
     <div className="flex h-screen bg-background overflow-hidden relative">
-      {!isMac && <WindowControls className="absolute top-0 right-0 z-50 text-foreground" />}
       {/* Sidebar */}
       <div className="w-[260px] border-r bg-card/50 flex flex-col shrink-0">
         <div
@@ -236,7 +235,17 @@ export const DashboardLayout: React.FC = () => {
         </div>
       </div>
       {/* Main Content Area */}
-      <div className="flex-1 flex flex-col min-w-0 bg-secondary/20">
+      <div
+        className={cn('flex-1 flex flex-col min-w-0 bg-secondary/20 relative', !isMac && 'pt-8')}
+      >
+        {!isMac && (
+          <div
+            className="absolute top-0 left-0 right-0 h-8 flex items-center justify-end px-2"
+            style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
+          >
+            <WindowControls />
+          </div>
+        )}
         <Outlet />
       </div>
     </div>
