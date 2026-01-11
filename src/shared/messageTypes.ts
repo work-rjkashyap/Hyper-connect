@@ -26,6 +26,7 @@ export interface NetworkMessage {
     | 'MESSAGE'
     | 'MESSAGE_DELIVERED'
     | 'MESSAGE_READ'
+    | 'MESSAGE_DELETE'
     | 'FILE_META'
     | 'FILE_ACCEPT'
     | 'FILE_REJECT'

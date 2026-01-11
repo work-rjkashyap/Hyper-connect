@@ -134,6 +134,16 @@ export function setupIpc(mainWindow: BrowserWindow): void {
     connectionManager.sendMessage(deviceId, ack)
   })
 
+  ipcMain.handle('delete-remote-message', async (_, deviceId: string, messageId: string) => {
+    const message: NetworkMessage = {
+      type: 'MESSAGE_DELETE',
+      deviceId: getDeviceInfo().deviceId,
+      ackId: messageId,
+      timestamp: Date.now()
+    }
+    connectionManager.sendMessage(deviceId, message)
+  })
+
   // Forward events to renderer with safe sending
   const onDeviceFound = (device: Device): void => {
     console.log('[IPC] Device found, sending to renderer:', device)
@@ -186,6 +196,12 @@ export function setupIpc(mainWindow: BrowserWindow): void {
         deviceId: message.deviceId,
         messageId: message.ackId,
         status: message.type === 'MESSAGE_DELIVERED' ? 'delivered' : 'read'
+      })
+      return
+    } else if (message.type === 'MESSAGE_DELETE') {
+      sendToRenderer('remote-message-deleted', {
+        deviceId: message.deviceId,
+        messageId: message.ackId
       })
       return
     }

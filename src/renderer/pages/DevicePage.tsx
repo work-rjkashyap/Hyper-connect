@@ -31,6 +31,7 @@ import { Card, CardContent } from '../components/ui/card'
 import { FileChatBubble } from '../components/FileChatBubble'
 import { Textarea } from '../components/ui/textarea'
 const EMPTY_MESSAGES: NetworkMessage[] = []
+const REMOTE_DELETE_LIMIT = 15 * 60 * 1000 // 15 minutes
 export const DevicePage: React.FC = () => {
   const { deviceId } = useParams()
   const {
@@ -50,6 +51,7 @@ export const DevicePage: React.FC = () => {
       deleteMessage: state.deleteMessage
     }))
   )
+  const [pendingDeletes, setPendingDeletes] = useState<Set<string>>(new Set())
   const device = discoveredDevices.find((d) => d.deviceId === deviceId)
   useEffect(() => {
     if (deviceId) {
@@ -87,9 +89,6 @@ export const DevicePage: React.FC = () => {
       })
     }
   }, [messages, tab, device, localDevice?.deviceId, scrollToBottom])
-  if (!device) {
-    return <Navigate to="/" replace />
-  }
   const handleSend = async (): Promise<void> => {
     if (!input.trim() || !device) return
     try {
@@ -112,11 +111,59 @@ export const DevicePage: React.FC = () => {
     navigator.clipboard.writeText(text)
     toast.success('Copied to clipboard')
   }
-  const handleDelete = (msgId: string): void => {
-    if (deviceId) {
-      deleteMessage(deviceId, msgId)
-      toast.success('Message deleted')
-    }
+  const executeDelete = useCallback(
+    async (msg: NetworkMessage): Promise<void> => {
+      if (!deviceId || !msg.id) return
+      // Final store delete
+      deleteMessage(deviceId, msg.id)
+      setPendingDeletes((prev) => {
+        const next = new Set(prev)
+        next.delete(msg.id!)
+        return next
+      })
+      // Remote delete logic
+      const isLocal = msg.deviceId === localDevice?.deviceId
+      const isWithinTime = Date.now() - (msg.timestamp || 0) < REMOTE_DELETE_LIMIT
+      if (isLocal && isWithinTime) {
+        try {
+          await window.api.deleteRemoteMessage(deviceId, msg.id)
+        } catch (e) {
+          console.error('[DevicePage] Remote delete failed:', e)
+        }
+      }
+    },
+    [deviceId, deleteMessage, localDevice?.deviceId]
+  )
+  const handleDelete = useCallback(
+    (msg: NetworkMessage): void => {
+      if (!deviceId || !msg.id) return
+      const msgId = msg.id
+      setPendingDeletes((prev) => new Set(prev).add(msgId))
+      let isUndone = false
+      toast.message('Message deleted', {
+        duration: 5000,
+        action: {
+          label: 'Undo',
+          onClick: () => {
+            isUndone = true
+            setPendingDeletes((prev) => {
+              const next = new Set(prev)
+              next.delete(msgId)
+              return next
+            })
+          }
+        },
+        onAutoClose: () => {
+          if (!isUndone) {
+            executeDelete(msg)
+          }
+        }
+      })
+    },
+    [deviceId, executeDelete]
+  )
+  if (!device) {
+    return <Navigate to="/" replace />
   }
   return (
     <div className="flex-1 flex flex-col overflow-hidden animate-in fade-in duration-300">
@@ -191,99 +238,101 @@ export const DevicePage: React.FC = () => {
                 <p className="text-sm font-medium">No messages yet. Say hello!</p>
               </div>
             ) : (
-              messages.map((msg, i) => {
-                const isLocal = msg.deviceId === localDevice?.deviceId
-                const isFile = msg.type === 'FILE_META'
-                // Date separator logic
-                const currentDate = formatChatDate(msg.timestamp)
-                const prevDate = i > 0 ? formatChatDate(messages[i - 1].timestamp) : null
-                const showSeparator = currentDate !== prevDate
-                return (
-                  <React.Fragment key={msg.id || i}>
-                    {showSeparator && (
-                      <div className="flex items-center gap-4 py-4">
-                        <Separator className="flex-1 opacity-10" />
-                        <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/40 whitespace-nowrap">
-                          {currentDate}
-                        </span>
-                        <Separator className="flex-1 opacity-10" />
-                      </div>
-                    )}
-                    <div className={cn('flex flex-col', isLocal ? 'items-end' : 'items-start')}>
-                      <ContextMenu>
-                        <ContextMenuTrigger asChild>
-                          <div
-                            className={cn(
-                              'max-w-[85%] rounded-2xl px-4 py-3 shadow-sm cursor-default',
-                              isLocal
-                                ? 'bg-primary text-primary-foreground rounded-tr-none'
-                                : 'bg-card border border-border/50 rounded-tl-none'
-                            )}
-                          >
-                            {!isFile ? (
-                              <p className="text-sm leading-relaxed whitespace-pre-wrap break-words select-text">
-                                {typeof msg.payload === 'string'
-                                  ? msg.payload
-                                  : JSON.stringify(msg.payload)}
-                              </p>
-                            ) : (
-                              <FileChatBubble msg={msg} isLocal={isLocal} />
-                            )}
-                          </div>
-                        </ContextMenuTrigger>
-                        <ContextMenuContent className="w-48">
-                          {!isFile && (
-                            <ContextMenuItem
-                              onClick={() => handleCopy(msg.payload as string)}
-                              className="gap-2"
+              messages
+                .filter((m) => !pendingDeletes.has(m.id!))
+                .map((msg, i, filtered) => {
+                  const isLocal = msg.deviceId === localDevice?.deviceId
+                  const isFile = msg.type === 'FILE_META'
+                  // Date separator logic
+                  const currentDate = formatChatDate(msg.timestamp)
+                  const prevDate = i > 0 ? formatChatDate(filtered[i - 1].timestamp) : null
+                  const showSeparator = currentDate !== prevDate
+                  return (
+                    <React.Fragment key={msg.id || i}>
+                      {showSeparator && (
+                        <div className="flex items-center gap-4 py-4">
+                          <Separator className="flex-1 opacity-10" />
+                          <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/40 whitespace-nowrap">
+                            {currentDate}
+                          </span>
+                          <Separator className="flex-1 opacity-10" />
+                        </div>
+                      )}
+                      <div className={cn('flex flex-col', isLocal ? 'items-end' : 'items-start')}>
+                        <ContextMenu>
+                          <ContextMenuTrigger asChild>
+                            <div
+                              className={cn(
+                                'max-w-[85%] rounded-2xl px-4 py-3 shadow-sm cursor-default',
+                                isLocal
+                                  ? 'bg-primary text-primary-foreground rounded-tr-none'
+                                  : 'bg-card border border-border/50 rounded-tl-none'
+                              )}
                             >
-                              <Copy className="w-4 h-4" />
-                              Copy Message
+                              {!isFile ? (
+                                <p className="text-sm leading-relaxed whitespace-pre-wrap break-words select-text">
+                                  {typeof msg.payload === 'string'
+                                    ? msg.payload
+                                    : JSON.stringify(msg.payload)}
+                                </p>
+                              ) : (
+                                <FileChatBubble msg={msg} isLocal={isLocal} />
+                              )}
+                            </div>
+                          </ContextMenuTrigger>
+                          <ContextMenuContent className="w-48">
+                            {!isFile && (
+                              <ContextMenuItem
+                                onClick={() => handleCopy(msg.payload as string)}
+                                className="gap-2"
+                              >
+                                <Copy className="w-4 h-4" />
+                                Copy Message
+                              </ContextMenuItem>
+                            )}
+                            <ContextMenuItem className="gap-2">
+                              <Reply className="w-4 h-4" />
+                              Reply
                             </ContextMenuItem>
+                            <ContextMenuItem className="gap-2">
+                              <Forward className="w-4 h-4" />
+                              Forward
+                            </ContextMenuItem>
+                            <ContextMenuSeparator />
+                            <ContextMenuItem
+                              onClick={() => handleDelete(msg)}
+                              className="text-destructive focus:text-destructive flex items-center gap-2"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                              <span>Delete Message</span>
+                            </ContextMenuItem>
+                          </ContextMenuContent>
+                        </ContextMenu>
+                        <div className="flex items-center gap-1.5 mt-1 px-1">
+                          <span className="text-[10px] text-muted-foreground font-medium">
+                            {new Date(msg.timestamp || 0).toLocaleTimeString([], {
+                              hour: '2-digit',
+                              minute: '2-digit'
+                            })}
+                          </span>
+                          {isLocal && (
+                            <div className="flex items-center">
+                              {msg.status === 'sent' && (
+                                <Check className="w-3 h-3 text-muted-foreground/50" />
+                              )}
+                              {msg.status === 'delivered' && (
+                                <CheckCheck className="w-3 h-3 text-muted-foreground/50" />
+                              )}
+                              {msg.status === 'read' && (
+                                <CheckCheck className="w-3 h-3 text-blue-500" />
+                              )}
+                            </div>
                           )}
-                          <ContextMenuItem className="gap-2">
-                            <Reply className="w-4 h-4" />
-                            Reply
-                          </ContextMenuItem>
-                          <ContextMenuItem className="gap-2">
-                            <Forward className="w-4 h-4" />
-                            Forward
-                          </ContextMenuItem>
-                          <ContextMenuSeparator />
-                          <ContextMenuItem
-                            onClick={() => msg.id && handleDelete(msg.id)}
-                            className="gap-2 text-destructive focus:text-destructive"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                            Delete Message
-                          </ContextMenuItem>
-                        </ContextMenuContent>
-                      </ContextMenu>
-                      <div className="flex items-center gap-1.5 mt-1 px-1">
-                        <span className="text-[10px] text-muted-foreground font-medium">
-                          {new Date(msg.timestamp || 0).toLocaleTimeString([], {
-                            hour: '2-digit',
-                            minute: '2-digit'
-                          })}
-                        </span>
-                        {isLocal && (
-                          <div className="flex items-center">
-                            {msg.status === 'sent' && (
-                              <Check className="w-3 h-3 text-muted-foreground/50" />
-                            )}
-                            {msg.status === 'delivered' && (
-                              <CheckCheck className="w-3 h-3 text-muted-foreground/50" />
-                            )}
-                            {msg.status === 'read' && (
-                              <CheckCheck className="w-3 h-3 text-blue-500" />
-                            )}
-                          </div>
-                        )}
+                        </div>
                       </div>
-                    </div>
-                  </React.Fragment>
-                )
-              })
+                    </React.Fragment>
+                  )
+                })
             )}
           </div>
           <div className="p-4 bg-background border-t shrink-0 relative z-20">
@@ -399,7 +448,7 @@ const TransferView: React.FC<{ device: Device }> = ({ device }) => {
                   className={cn(
                     'bg-card/40 border-border/40 overflow-hidden group transition-all rounded-2xl',
                     remainsCompleted &&
-                    'cursor-pointer hover:border-primary/50 hover:bg-primary/5 hover:shadow-lg active:scale-[0.98]'
+                      'cursor-pointer hover:border-primary/50 hover:bg-primary/5 hover:shadow-lg active:scale-[0.98]'
                   )}
                 >
                   <CardContent className="p-5 flex items-center gap-5">

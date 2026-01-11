@@ -10,7 +10,7 @@ export interface EncryptedMessage {
 /**
  * Encrypts a JSON-serializable object using AES-256-GCM.
  */
-export function encryptMessage(data: any, sessionKey: Buffer): EncryptedMessage {
+export function encryptMessage(data: unknown, sessionKey: Buffer): EncryptedMessage {
   const iv = randomBytes(12)
   const cipher = createCipheriv('aes-256-gcm', sessionKey, iv)
 
@@ -30,7 +30,7 @@ export function encryptMessage(data: any, sessionKey: Buffer): EncryptedMessage 
  * Decrypts an encrypted message using AES-256-GCM.
  * Throws an error if decryption or parsing fails.
  */
-export function decryptMessage(msg: EncryptedMessage, sessionKey: Buffer): any {
+export function decryptMessage(msg: EncryptedMessage, sessionKey: Buffer): unknown {
   try {
     const iv = Buffer.from(msg.iv, 'base64')
     const tag = Buffer.from(msg.tag, 'base64')
@@ -50,14 +50,16 @@ export function decryptMessage(msg: EncryptedMessage, sessionKey: Buffer): any {
 /**
  * Type guard for EncryptedMessage
  */
-export function isEncryptedMessage(msg: any): msg is EncryptedMessage {
-  return msg && msg.type === 'ENCRYPTED_MESSAGE' && msg.iv && msg.tag && msg.payload
+export function isEncryptedMessage(msg: unknown): msg is EncryptedMessage {
+  if (typeof msg !== 'object' || msg === null) return false
+  const m = msg as Record<string, unknown>
+  return m.type === 'ENCRYPTED_MESSAGE' && !!m.iv && !!m.tag && !!m.payload
 }
 
 /**
  * Checks if a message type contains sensitive user data that MUST be encrypted.
  */
 export function isSensitiveMessageType(type: string): boolean {
-  const sensitiveTypes = ['MESSAGE', 'FILE_META', 'FILE_ACCEPT', 'FILE_REJECT']
+  const sensitiveTypes = ['MESSAGE', 'FILE_META', 'FILE_ACCEPT', 'FILE_REJECT', 'MESSAGE_DELETE']
   return sensitiveTypes.includes(type)
 }

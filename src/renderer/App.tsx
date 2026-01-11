@@ -98,6 +98,9 @@ const AppContent: React.FC = () => {
     const unsubStatus = window.api.onMessageStatusUpdated((data) => {
       updateMessageStatus(data.deviceId, data.messageId, data.status)
     })
+    const unsubDelete = window.api.onRemoteMessageDeleted((data) => {
+      useStore.getState().deleteMessage(data.deviceId, data.messageId)
+    })
     return () => {
       unsubDiscovered()
       unsubLost()
@@ -106,6 +109,7 @@ const AppContent: React.FC = () => {
       unsubProgress()
       unsubNavigate()
       unsubStatus()
+      unsubDelete()
     }
   }, [
     setLocalDevice,

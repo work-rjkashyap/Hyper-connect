@@ -27,8 +27,12 @@ export interface IApi {
   setAutoAccept: (autoAccept: boolean) => Promise<boolean>
   updateProfile: (name?: string, image?: string) => Promise<DeviceInfo>
   markAsRead: (deviceId: string, messageId: string) => Promise<void>
+  deleteRemoteMessage: (deviceId: string, messageId: string) => Promise<void>
   onMessageStatusUpdated: (
     callback: (data: { deviceId: string; messageId: string; status: 'delivered' | 'read' }) => void
+  ) => () => void
+  onRemoteMessageDeleted: (
+    callback: (data: { deviceId: string; messageId: string }) => void
   ) => () => void
 }
 

@@ -31,6 +31,8 @@ const api = {
     ipcRenderer.invoke('set-auto-accept', autoAccept),
   markAsRead: (deviceId: string, messageId: string): Promise<void> =>
     ipcRenderer.invoke('mark-as-read', deviceId, messageId),
+  deleteRemoteMessage: (deviceId: string, messageId: string): Promise<void> =>
+    ipcRenderer.invoke('delete-remote-message', deviceId, messageId),
 
   // Event Listeners
   onDeviceDiscovered: (callback: (device: Device) => void): (() => void) => {
@@ -94,6 +96,16 @@ const api = {
     ipcRenderer.on('message-status-updated', listener)
     return (): void => {
       ipcRenderer.removeListener('message-status-updated', listener)
+    }
+  },
+  onRemoteMessageDeleted: (
+    callback: (data: { deviceId: string; messageId: string }) => void
+  ): (() => void) => {
+    const listener = (_: unknown, data: { deviceId: string; messageId: string }): void =>
+      callback(data)
+    ipcRenderer.on('remote-message-deleted', listener)
+    return (): void => {
+      ipcRenderer.removeListener('remote-message-deleted', listener)
     }
   }
 }
