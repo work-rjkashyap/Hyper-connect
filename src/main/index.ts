@@ -48,11 +48,24 @@ app.whenReady().then(async () => {
   })
   createWindow()
   // Initialize services - IMPORTANT: Setup IPC BEFORE starting discovery!
+  console.log('Setting up IPC...')
   setupIpc(mainWindow) // Set up IPC listeners first
-  const deviceInfo = getDeviceInfo()
-  const port = await tcpServer.start()
-  discoveryManager.startDiscovery(deviceInfo, port) // Now safe to start discovery
-  discoveryManager.startHeartbeat() // Start the presence heartbeat check
+
+  try {
+    const deviceInfo = getDeviceInfo()
+    console.log('Got device info, starting TCP server...')
+    const port = await tcpServer.start()
+    console.log(`TCP server started on port ${port}, executing startDiscovery...`)
+
+    discoveryManager.startDiscovery(deviceInfo, port) // Now safe to start discovery
+    console.log('Discovery started.')
+
+    discoveryManager.startHeartbeat() // Start the presence heartbeat check
+    console.log('Heartbeat started.')
+  } catch (error) {
+    console.error('Failed to start services:', error)
+  }
+
   app.on('activate', function () {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })

@@ -25,13 +25,13 @@ mac:
   icon: resources/icon.png
   entitlementsInherit: build/entitlements.mac.plist
   extendInfo:
-    - NSCameraUsageDescription: Application requests access to the device's camera.
-    - NSMicrophoneUsageDescription: Application requests access to the device's microphone.
-    - NSDocumentsFolderUsageDescription: Application requests access to the user's Documents folder.
-    - NSDownloadsFolderUsageDescription: Application requests access to the user's Downloads folder.
-    - NSLocalNetworkUsageDescription: HyperConnect needs local network access to discover and communicate with other devices on your network.
-    - NSBonjourServices:
-        - _hyperconnect._tcp
+    NSCameraUsageDescription: Application requests access to the device's camera.
+    NSMicrophoneUsageDescription: Application requests access to the device's microphone.
+    NSDocumentsFolderUsageDescription: Application requests access to the user's Documents folder.
+    NSDownloadsFolderUsageDescription: Application requests access to the user's Downloads folder.
+    NSLocalNetworkUsageDescription: HyperConnect needs local network access to discover and communicate with other devices on your network.
+    NSBonjourServices:
+      - _hyperconnect._tcp
   notarize: false
 dmg:
   artifactName: ${name}-${version}.${ext}
