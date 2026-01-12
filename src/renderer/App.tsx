@@ -6,11 +6,13 @@ import { Toaster } from './components/ui/sonner'
 import { toast } from 'sonner'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { NetworkMessage, FileMetadata } from '../shared/messageTypes'
-// Layouts and Pages
 import { DashboardLayout } from './layouts/DashboardLayout'
 import { DevicePage } from './pages/DevicePage'
 import { SettingsPage } from './pages/SettingsPage'
 import { WelcomePage } from './pages/WelcomePage'
+import { ConnectionToast } from './components/ui/ConnectionToast'
+import { MessageToast } from './components/ui/MessageToast'
+
 const AppContent: React.FC = () => {
   const {
     onboardingComplete,
@@ -24,6 +26,7 @@ const AppContent: React.FC = () => {
   } = useStore()
   const navigate = useNavigate()
   const notifiedDevices = useRef<Set<string>>(new Set())
+
   // Initialization and Event Listeners
   useEffect(() => {
     const init = async (): Promise<void> => {
@@ -34,26 +37,26 @@ const AppContent: React.FC = () => {
       setDiscoveredDevices(initialDevices)
     }
     init()
+
     const unsubDiscovered = window.api.onDeviceDiscovered((device) => {
       addDiscoveredDevice(device)
       if (!notifiedDevices.current.has(device.deviceId)) {
         notifiedDevices.current.add(device.deviceId)
-        toast.success(`${device.displayName} connected`, {
-          description: `${device.platform} • ${device.address}`,
-          duration: 3000
-        })
+        toast.custom(() => <ConnectionToast device={device} type="connected" />, { duration: 3000 })
       }
     })
+
     const unsubLost = window.api.onDeviceLost((deviceId) => {
       const device = useStore.getState().discoveredDevices.find((d) => d.deviceId === deviceId)
       removeDiscoveredDevice(deviceId)
       if (device) {
         notifiedDevices.current.delete(deviceId)
-        toast.error(`${device.displayName} went offline`, {
+        toast.custom(() => <ConnectionToast device={device} type="disconnected" />, {
           duration: 3000
         })
       }
     })
+
     const unsubMessage = window.api.onMessageReceived((message: NetworkMessage) => {
       const state = useStore.getState()
       if (message.type === 'MESSAGE' || message.type === 'FILE_META') {
@@ -72,35 +75,46 @@ const AppContent: React.FC = () => {
         const description = isFile
           ? (message.payload as FileMetadata).name
           : (message.payload as string)
-        toast(title, {
-          description,
-          action: {
-            label: 'View',
-            onClick: () => {
-              navigate(`/device/${message.deviceId}`)
-              state.setSelectedDeviceId(message.deviceId)
-              state.clearUnreadCount(message.deviceId)
-            }
-          }
-        })
+
+        toast.custom(
+          () => (
+            <MessageToast
+              title={title}
+              description={description}
+              isFile={isFile}
+              onClick={() => {
+                navigate(`/device/${message.deviceId}`)
+                state.setSelectedDeviceId(message.deviceId)
+                state.clearUnreadCount(message.deviceId)
+              }}
+            />
+          ),
+          { duration: 4000 }
+        )
       }
     })
+
     const unsubFile = window.api.onFileReceived(() => {
       // Logic handled in onMessageReceived
     })
+
     const unsubProgress = window.api.onFileTransferProgress((progress) => updateTransfer(progress))
+
     const unsubNavigate = window.api.onNavigateToDevice((deviceId) => {
       const state = useStore.getState()
       navigate(`/device/${deviceId}`)
       state.setSelectedDeviceId(deviceId)
       state.clearUnreadCount(deviceId)
     })
+
     const unsubStatus = window.api.onMessageStatusUpdated((data) => {
       updateMessageStatus(data.deviceId, data.messageId, data.status)
     })
+
     const unsubDelete = window.api.onRemoteMessageDeleted((data) => {
       useStore.getState().deleteMessage(data.deviceId, data.messageId)
     })
+
     return () => {
       unsubDiscovered()
       unsubLost()
@@ -121,9 +135,11 @@ const AppContent: React.FC = () => {
     updateMessageStatus,
     navigate
   ])
+
   if (!onboardingComplete) {
     return <Onboarding />
   }
+
   return (
     <Routes>
       <Route element={<DashboardLayout />}>
@@ -134,6 +150,7 @@ const AppContent: React.FC = () => {
     </Routes>
   )
 }
+
 export const App: React.FC = () => {
   return (
     <ErrorBoundary>
@@ -144,4 +161,5 @@ export const App: React.FC = () => {
     </ErrorBoundary>
   )
 }
+
 export default App

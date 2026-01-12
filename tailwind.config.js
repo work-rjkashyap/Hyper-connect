@@ -65,5 +65,6 @@ export default {
       }
     }
   },
-  plugins: [require('tailwindcss-animate')]
+  /* eslint-disable @typescript-eslint/no-require-imports */
+  plugins: /** @type {import('tailwindcss').Config} */ [require('tailwindcss-animate')]
 }

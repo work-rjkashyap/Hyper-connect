@@ -4,6 +4,10 @@ import { FileMetadata, NetworkMessage } from '../../shared/messageTypes'
 import { useStore } from '../store/useStore'
 import { cn, formatFileSize, getFileType } from '../lib/utils'
 import { Button } from './ui/button'
+import { Dialog, DialogContent, DialogTrigger } from './ui/dialog'
+
+const isImage = (name: string): boolean => /\.(jpg|jpeg|png|gif|webp|svg)$/i.test(name)
+const isVideo = (name: string): boolean => /\.(mp4|webm|mov|ogg)$/i.test(name)
 
 const AcceptRejectButtons: React.FC<{ fileId: string }> = ({ fileId }) => {
   const { updateTransfer } = useStore()
@@ -55,6 +59,52 @@ export const FileChatBubble: React.FC<{ msg: NetworkMessage; isLocal: boolean }>
   const status = transfer?.status || (isLocal ? 'active' : 'pending')
   const isCompleted = status === 'completed'
   const isActive = status === 'active'
+
+  const filePath = transfer?.path || (isLocal ? metadata.path : undefined)
+  const canPreview = filePath && (isImage(metadata.name) || isVideo(metadata.name))
+  const isReady = isLocal || isCompleted
+
+  if (canPreview && isReady) {
+    const fileUrl = `file://${filePath}`
+
+    if (isImage(metadata.name)) {
+      return (
+        <Dialog>
+          <DialogTrigger asChild>
+            <div
+              className={cn(
+                'rounded-xl overflow-hidden cursor-pointer border transition-all hover:opacity-90',
+                isLocal ? 'border-primary-foreground/20' : 'border-border'
+              )}
+            >
+              <img
+                src={fileUrl}
+                alt={metadata.name}
+                className="rounded w-auto max-h-75 object-contain"
+                loading="lazy"
+              />
+            </div>
+          </DialogTrigger>
+          <DialogContent className="max-w-[90vw] max-h-[90vh] p-0 overflow-hidden bg-transparent border-none shadow-none">
+            <img src={fileUrl} alt={metadata.name} className="w-full h-full object-contain" />
+          </DialogContent>
+        </Dialog>
+      )
+    }
+
+    if (isVideo(metadata.name)) {
+      return (
+        <div
+          className={cn(
+            'rounded-xl overflow-hidden border',
+            isLocal ? 'border-primary-foreground/20' : 'border-border'
+          )}
+        >
+          <video src={fileUrl} controls className="max-w-full max-h-[300px]" />
+        </div>
+      )
+    }
+  }
 
   return (
     <div className="space-y-3">
