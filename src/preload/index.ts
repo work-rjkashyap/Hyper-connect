@@ -2,6 +2,9 @@ import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 import { Device, NetworkMessage, FileTransferProgress, DeviceInfo } from '@shared/messageTypes'
 
+export type PermissionType = 'notification' | 'camera' | 'microphone' | 'screen'
+export type PermissionStatus = 'granted' | 'denied' | 'not-determined' | 'unknown'
+
 console.log('[Preload] Script loading...')
 
 const api = {
@@ -11,8 +14,13 @@ const api = {
   updateProfile: (name?: string, image?: string): Promise<DeviceInfo> =>
     ipcRenderer.invoke('update-profile', name, image),
   getDiscoveredDevices: (): Promise<Device[]> => ipcRenderer.invoke('get-discovered-devices'),
+  checkPermission: (type: PermissionType): Promise<PermissionStatus> =>
+    ipcRenderer.invoke('check-permission', type),
+  requestPermission: (type: PermissionType): Promise<boolean> =>
+    ipcRenderer.invoke('request-permission', type),
   sendMessage: (deviceId: string, payload: string, replyTo?: string): Promise<NetworkMessage> =>
     ipcRenderer.invoke('send-message', deviceId, payload, replyTo),
+
   sendFile: (deviceId: string, filePath: string, replyTo?: string): Promise<NetworkMessage> =>
     ipcRenderer.invoke('send-file', deviceId, filePath, replyTo),
   acceptFile: (fileId: string): Promise<void> => ipcRenderer.invoke('accept-file', fileId),

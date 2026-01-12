@@ -4,6 +4,8 @@ import { getDeviceInfo, updateProfile } from './identity'
 import { discoveryManager } from './discovery'
 import { tcpServer } from './tcpServer'
 import { connectionManager } from './protocol'
+import { permissionManager, PermissionType } from './permissions'
+
 import { NetworkMessage, Device } from '@shared/messageTypes'
 import { v4 as uuidv4 } from 'uuid'
 import { fileTransferManager } from './fileTransfer'
@@ -20,6 +22,14 @@ export function setupIpc(mainWindow: BrowserWindow): void {
       mainWindow.webContents.send(channel, ...args)
     }
   }
+
+  // Permissions
+  ipcMain.handle('check-permission', (_, type: PermissionType) =>
+    permissionManager.checkPermission(type)
+  )
+  ipcMain.handle('request-permission', (_, type: PermissionType) =>
+    permissionManager.requestPermission(type)
+  )
 
   // Device Info
   ipcMain.handle('get-device-info', () => getDeviceInfo())

@@ -1,6 +1,9 @@
 import { ElectronAPI } from '@electron-toolkit/preload'
 import { Device, NetworkMessage, FileTransferProgress, DeviceInfo } from '../shared/messageTypes'
 
+export type PermissionType = 'notification' | 'camera' | 'microphone' | 'screen'
+export type PermissionStatus = 'granted' | 'denied' | 'not-determined' | 'unknown'
+
 export interface IApi {
   getDeviceInfo: () => Promise<DeviceInfo>
   updateDisplayName: (name: string) => Promise<DeviceInfo>
@@ -25,8 +28,12 @@ export interface IApi {
   setDownloadPath: (path: string) => Promise<string>
   getAutoAccept: () => Promise<boolean>
   setAutoAccept: (autoAccept: boolean) => Promise<boolean>
+  setAutoAccept: (autoAccept: boolean) => Promise<boolean>
   updateProfile: (name?: string, image?: string) => Promise<DeviceInfo>
+  checkPermission: (type: PermissionType) => Promise<PermissionStatus>
+  requestPermission: (type: PermissionType) => Promise<boolean>
   markAsRead: (deviceId: string, messageId: string) => Promise<void>
+
   deleteRemoteMessage: (deviceId: string, messageId: string) => Promise<void>
   minimizeWindow: () => void
   maximizeWindow: () => void

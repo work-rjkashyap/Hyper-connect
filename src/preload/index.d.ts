@@ -1,11 +1,18 @@
 import { ElectronAPI } from '@electron-toolkit/preload'
 import { Device, NetworkMessage, FileTransferProgress, DeviceInfo } from '@shared/messageTypes'
 
+export type PermissionType = 'notification' | 'camera' | 'microphone' | 'screen'
+export type PermissionStatus = 'granted' | 'denied' | 'not-determined' | 'unknown'
+
 export interface IApi {
   getDeviceInfo: () => Promise<DeviceInfo>
   updateDisplayName: (name: string) => Promise<DeviceInfo>
+  updateProfile: (name?: string, image?: string) => Promise<DeviceInfo>
   getDiscoveredDevices: () => Promise<Device[]>
+  checkPermission: (type: PermissionType) => Promise<PermissionStatus>
+  requestPermission: (type: PermissionType) => Promise<boolean>
   sendMessage: (deviceId: string, payload: string, replyTo?: string) => Promise<NetworkMessage>
+
   sendFile: (deviceId: string, filePath: string, replyTo?: string) => Promise<NetworkMessage>
   acceptFile: (fileId: string) => Promise<void>
   rejectFile: (fileId: string) => Promise<void>
