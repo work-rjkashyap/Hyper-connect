@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.5](https://github.com/work-rjkashyap/Hyper-connect/compare/v1.0.4...v1.0.5) (2026-01-13)
+
+
+### Bug Fixes
+
+* shell type ([7eada0e](https://github.com/work-rjkashyap/Hyper-connect/commit/7eada0e0627ce836f9d0a76214dba3bde3b4b71e))
+
 ## [1.0.4](https://github.com/work-rjkashyap/Hyper-connect/compare/v1.0.3...v1.0.4) (2026-01-13)
 
 
