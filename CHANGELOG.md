@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.3](https://github.com/work-rjkashyap/Hyper-connect/compare/v1.0.2...v1.0.3) (2026-01-13)
+
+
+### Bug Fixes
+
+* build issue ([219b639](https://github.com/work-rjkashyap/Hyper-connect/commit/219b63968971c1b78565fce07a610f9a08f2e218))
+
 ## [1.0.2](https://github.com/work-rjkashyap/Hyper-connect/compare/v1.0.1...v1.0.2) (2026-01-13)
 
 
