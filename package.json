@@ -1,11 +1,11 @@
 {
   "name": "hyper-connect",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "An Electron application with React and TypeScript",
   "main": "./out/main/index.js",
   "author": "Rajeshwar Kashyap",
   "homepage": "https://electron-vite.org",
-   "build": {
+  "build": {
     "appId": "in.hyperconnect.app",
     "productName": "Hyper Connect",
     "directories": {
@@ -94,18 +94,27 @@
     "typescript": "^5.9.3",
     "vite": "^7.2.6"
   },
-    "win": {
-      "target": ["nsis", "portable"],
-      "icon": "build/icon.ico"
-    },
-    "mac": {
-      "target": ["dmg", "zip"],
-      "icon": "build/icon.icns",
-      "category": "public.app-category.utilities"
-    },
-    "linux": {
-      "target": ["AppImage", "deb"],
-      "icon": "build/icon.png",
-      "category": "Utility"
-    }
+  "win": {
+    "target": [
+      "nsis",
+      "portable"
+    ],
+    "icon": "build/icon.ico"
+  },
+  "mac": {
+    "target": [
+      "dmg",
+      "zip"
+    ],
+    "icon": "build/icon.icns",
+    "category": "public.app-category.utilities"
+  },
+  "linux": {
+    "target": [
+      "AppImage",
+      "deb"
+    ],
+    "icon": "build/icon.png",
+    "category": "Utility"
+  }
 }
