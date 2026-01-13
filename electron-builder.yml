@@ -15,7 +15,7 @@ files:
 asarUnpack:
   - resources/**
 win:
-  icon: build/icon.ico
+  icon: build/icon.png
   executableName: hyper-connect
   target:
     - nsis
@@ -26,7 +26,7 @@ nsis:
   uninstallDisplayName: ${productName}
   createDesktopShortcut: always
 mac:
-  icon: build/icon.icns
+  icon: build/icon.png
   target:
     - dmg
     - zip
