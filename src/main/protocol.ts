@@ -9,6 +9,7 @@ import {
   isEncryptedMessage,
   isSensitiveMessageType
 } from './crypto/messageCrypto'
+import { getDeviceInfo } from './identity'
 
 export class ConnectionManager extends EventEmitter {
   private activeConnections: Map<string, net.Socket> = new Map()
@@ -20,8 +21,6 @@ export class ConnectionManager extends EventEmitter {
       this.activeConnections.delete(device.deviceId)
       discardSession(device.deviceId)
     }
-
-    const { getDeviceInfo } = await import('./identity')
 
     return new Promise((resolve, reject) => {
       console.log(`[Protocol] Attempting to connect to ${device.address}:${device.port}...`)
@@ -218,7 +217,7 @@ export class ConnectionManager extends EventEmitter {
       await this.getConnection(device)
       const pingMsg: NetworkMessage = {
         type: 'PING',
-        deviceId: (await import('./identity')).getDeviceInfo().deviceId,
+        deviceId: getDeviceInfo().deviceId,
         id: 'ping',
         timestamp: Date.now()
       }

@@ -1,6 +1,7 @@
 import { Bonjour, Browser, Service } from 'bonjour-service'
 import { Device, DeviceInfo } from '@shared/messageTypes'
 import EventEmitter from 'events'
+import { connectionManager } from './protocol'
 
 export class DiscoveryManager extends EventEmitter {
   private bonjour: Bonjour
@@ -98,8 +99,6 @@ export class DiscoveryManager extends EventEmitter {
   }
 
   async startHeartbeat(): Promise<void> {
-    const { connectionManager } = await import('./protocol')
-
     setInterval(async () => {
       for (const [deviceId, device] of this.discoveredDevices) {
         if (!device.isOnline) continue
@@ -146,7 +145,6 @@ export class DiscoveryManager extends EventEmitter {
   }
 
   private async triggerHeartbeatOnce(): Promise<void> {
-    const { connectionManager } = await import('./protocol')
     for (const [deviceId, device] of this.discoveredDevices) {
       try {
         await connectionManager.ping(device)
