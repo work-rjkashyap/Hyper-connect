@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.8](https://github.com/work-rjkashyap/Hyper-connect/compare/v1.0.7...v1.0.8) (2026-01-13)
+
+
+### Miscellaneous
+
+* new image added ([071e9aa](https://github.com/work-rjkashyap/Hyper-connect/commit/071e9aac440bdbd60d0bdd060752db2e73e92df5))
+
 ## [1.0.7](https://github.com/work-rjkashyap/Hyper-connect/compare/v1.0.6...v1.0.7) (2026-01-13)
 
 
