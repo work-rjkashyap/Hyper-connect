@@ -13,11 +13,12 @@ jobs:
   release-please:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v3
       - uses: google-github-actions/release-please-action@v3
         id: release
         with:
           release-type: node
-          package-name: your-app-name
+          package-name: hyper-connect
           changelog-types: '[{"type":"feat","section":"Features","hidden":false},{"type":"fix","section":"Bug Fixes","hidden":false},{"type":"docs","section":"Documentation","hidden":false},{"type":"chore","section":"Miscellaneous","hidden":false}]'
 
       # Trigger build workflow when release is created
