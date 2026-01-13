@@ -5,20 +5,6 @@
   "main": "./out/main/index.js",
   "author": "Rajeshwar Kashyap",
   "homepage": "https://electron-vite.org",
-  "build": {
-    "appId": "in.hyperconnect.app",
-    "productName": "Hyper Connect",
-    "directories": {
-      "output": "dist"
-    },
-    "files": [
-      "**/*",
-      "!**/*.ts",
-      "!*.code-workspace",
-      "!.vscode",
-      "!README.md"
-    ]
-  },
   "scripts": {
     "format": "prettier --write .",
     "lint": "eslint --cache .",
@@ -93,28 +79,5 @@
     "tailwindcss": "^4.1.18",
     "typescript": "^5.9.3",
     "vite": "^7.2.6"
-  },
-  "win": {
-    "target": [
-      "nsis",
-      "portable"
-    ],
-    "icon": "build/icon.ico"
-  },
-  "mac": {
-    "target": [
-      "dmg",
-      "zip"
-    ],
-    "icon": "build/icon.icns",
-    "category": "public.app-category.utilities"
-  },
-  "linux": {
-    "target": [
-      "AppImage",
-      "deb"
-    ],
-    "icon": "build/icon.png",
-    "category": "Utility"
   }
 }

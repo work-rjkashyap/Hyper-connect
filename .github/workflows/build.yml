@@ -1,9 +1,6 @@
 name: Build and Release
 
 on:
-  push:
-    tags:
-      - 'v*'
   workflow_dispatch:
 
 jobs:
@@ -27,7 +24,14 @@ jobs:
         run: npm install
 
       - name: Build Electron App
-        run: npm run build
+        run: |
+          if [ "$RUNNER_OS" == "Windows" ]; then
+            npm run build:win
+          elif [ "$RUNNER_OS" == "macOS" ]; then
+            npm run build:mac
+          else
+            npm run build:linux
+          fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
