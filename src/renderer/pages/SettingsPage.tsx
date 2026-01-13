@@ -9,11 +9,7 @@ import {
     Database,
     FolderOpen,
     Camera,
-    Shield,
-    Check,
-    X,
-    AlertTriangle,
-    RefreshCw
+    Shield
 } from 'lucide-react'
 
 import { useStore } from '@/renderer/store/useStore'
@@ -42,63 +38,13 @@ import {
 import { Separator } from '@/renderer/components/ui/separator'
 import { Switch } from '@/renderer/components/ui/switch'
 import { processProfileImage } from '../lib/image'
-import { Badge } from '@/renderer/components/ui/badge'
 
-type PermissionType = 'notification' | 'camera' | 'microphone' | 'screen'
-type PermissionStatus = 'granted' | 'denied' | 'not-determined' | 'unknown'
 
-const PermissionItem: React.FC<{
-    label: string
-    description: string
-    status: PermissionStatus
-    onRequest: () => void
-    loading?: boolean
-}> = ({ label, description, status, onRequest, loading }) => {
-    const getStatusColor = (s: PermissionStatus) => {
-        switch (s) {
-            case 'granted':
-                return 'bg-green-500/10 text-green-500 border-green-500/20'
-            case 'denied':
-                return 'bg-red-500/10 text-red-500 border-red-500/20'
-            default:
-                return 'bg-secondary text-secondary-foreground'
-        }
-    }
 
-    const getStatusIcon = (s: PermissionStatus) => {
-        switch (s) {
-            case 'granted':
-                return <Check className="w-4 h-4" />
-            case 'denied':
-                return <X className="w-4 h-4" />
-            default:
-                return <AlertTriangle className="w-4 h-4" />
-        }
-    }
 
-    return (
-        <div className="flex items-center justify-between p-4 rounded-lg border bg-card">
-            <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                    <span className="font-medium">{label}</span>
-                    <Badge variant="outline" className={getStatusColor(status)}>
-                        <div className="flex items-center gap-1">
-                            {getStatusIcon(status)}
-                            <span className="capitalize">{status.replace('-', ' ')}</span>
-                        </div>
-                    </Badge>
-                </div>
-                <p className="text-sm text-muted-foreground">{description}</p>
-            </div>
-            {status !== 'granted' && (
-                <Button onClick={onRequest} disabled={loading} size="sm" variant="outline">
-                    {loading ? <div className="animate-spin mr-2"><RefreshCw className="w-3 h-3" /></div> : null}
-                    Request
-                </Button>
-            )}
-        </div>
-    )
-}
+
+
+
 
 export const SettingsPage: React.FC = () => {
     const { localDevice, setLocalDevice, clearMessages, clearTransfers } = useStore()
@@ -110,18 +56,8 @@ export const SettingsPage: React.FC = () => {
     const [autoAccept, setAutoAccept] = useState(false)
     const [profileImage, setProfileImage] = useState<string | null>(localDevice?.profileImage || null)
 
-    const [permissions, setPermissions] = useState<Record<PermissionType, PermissionStatus>>({
-        notification: 'unknown',
-        camera: 'unknown',
-        microphone: 'unknown',
-        screen: 'unknown'
-    })
-    const [loadingPermissions, setLoadingPermissions] = useState<Record<PermissionType, boolean>>({
-        notification: false,
-        camera: false,
-        microphone: false,
-        screen: false
-    })
+
+
 
     useEffect(() => {
         const loadSettings = async (): Promise<void> => {
@@ -136,26 +72,7 @@ export const SettingsPage: React.FC = () => {
                 setLoadingPath(false)
             }
         }
-
-        const checkAllPermissions = async () => {
-            const types: PermissionType[] = ['notification', 'camera', 'microphone', 'screen']
-            const results = await Promise.all(
-                types.map(async (type) => ({
-                    type,
-                    status: await window.api.checkPermission(type)
-                }))
-            )
-
-            const newPermissions = results.reduce((acc, { type, status }) => {
-                acc[type] = status
-                return acc
-            }, {} as Record<PermissionType, PermissionStatus>)
-
-            setPermissions(newPermissions)
-        }
-
         loadSettings()
-        checkAllPermissions()
     }, [])
 
     const handleUpdateProfile = async (): Promise<void> => {
@@ -220,20 +137,7 @@ export const SettingsPage: React.FC = () => {
         }
     }
 
-    const handleRequestPermission = async (type: PermissionType) => {
-        setLoadingPermissions(prev => ({ ...prev, [type]: true }))
-        try {
-            await window.api.requestPermission(type)
 
-            // Re-check status after request
-            const status = await window.api.checkPermission(type)
-            setPermissions(prev => ({ ...prev, [type]: status }))
-        } catch (error) {
-            console.error(`Failed to request ${type} permission:`, error)
-        } finally {
-            setLoadingPermissions(prev => ({ ...prev, [type]: false }))
-        }
-    }
 
     return (
         <div className="flex-1 overflow-y-auto w-full">
