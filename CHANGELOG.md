@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.4](https://github.com/work-rjkashyap/Hyper-connect/compare/v1.0.3...v1.0.4) (2026-01-13)
+
+
+### Bug Fixes
+
+* fix reduntent build issue ([11d8156](https://github.com/work-rjkashyap/Hyper-connect/commit/11d8156a39014c95a4e4b4bdfb5f3a34142150c1))
+
 ## [1.0.3](https://github.com/work-rjkashyap/Hyper-connect/compare/v1.0.2...v1.0.3) (2026-01-13)
 
 
