@@ -365,36 +365,7 @@ export const SettingsPage: React.FC = () => {
                         </div>
                         <CardDescription>Manage system permissions required for features</CardDescription>
                     </CardHeader>
-                    <CardContent className="space-y-4">
-                        <PermissionItem
-                            label="Notifications"
-                            description="Show desktop notifications for new messages and transfers"
-                            status={permissions.notification}
-                            onRequest={() => handleRequestPermission('notification')}
-                            loading={loadingPermissions.notification}
-                        />
-                        <PermissionItem
-                            label="Camera"
-                            description="Access camera for video calls and QR scanning"
-                            status={permissions.camera}
-                            onRequest={() => handleRequestPermission('camera')}
-                            loading={loadingPermissions.camera}
-                        />
-                        <PermissionItem
-                            label="Microphone"
-                            description="Access microphone for voice calls"
-                            status={permissions.microphone}
-                            onRequest={() => handleRequestPermission('microphone')}
-                            loading={loadingPermissions.microphone}
-                        />
-                        <PermissionItem
-                            label="Screen Recording"
-                            description="Allow screen sharing"
-                            status={permissions.screen}
-                            onRequest={() => handleRequestPermission('screen')}
-                            loading={loadingPermissions.screen}
-                        />
-                    </CardContent>
+
                 </Card>
 
                 {/* Data Management Section */}
