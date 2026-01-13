@@ -22,8 +22,8 @@ win:
     - portable
 nsis:
   artifactName: ${name}-${version}-setup.${ext}
-  shortcutName: ${productName}
-  uninstallDisplayName: ${productName}
+  shortcutName: Hyper Connect
+  uninstallDisplayName: Hyper Connect
   createDesktopShortcut: always
 mac:
   icon: build/icon.png
