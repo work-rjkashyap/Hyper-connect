@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.6](https://github.com/work-rjkashyap/Hyper-connect/compare/v1.0.5...v1.0.6) (2026-01-13)
+
+
+### Bug Fixes
+
+* update permission ([1ba0db6](https://github.com/work-rjkashyap/Hyper-connect/commit/1ba0db63e59ea6c8a527ebf4ecb42d88eea9514e))
+
 ## [1.0.5](https://github.com/work-rjkashyap/Hyper-connect/compare/v1.0.4...v1.0.5) (2026-01-13)
 
 
