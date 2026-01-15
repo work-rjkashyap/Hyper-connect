@@ -1,0 +1,169 @@
+---
+title: Development
+description: Learn the HyperConnect development workflow
+---
+
+# Development Workflow
+
+This guide covers the development workflow for HyperConnect, including running the app locally, building for production, and code quality tools.
+
+## Running the Application
+
+### Development Mode
+
+Start the application in development mode with hot-reload:
+
+```bash
+npm run dev
+```
+
+This command:
+
+- Starts the Electron main process
+- Launches the React renderer with hot module replacement (HMR)
+- Opens the application window automatically
+
+The app will reload automatically when you make changes to the code.
+
+### Preview Mode
+
+To preview the built application without creating distributable packages:
+
+```bash
+npm start
+```
+
+## Code Quality
+
+### Linting
+
+Run ESLint to check for code quality issues:
+
+```bash
+npm run lint
+```
+
+ESLint is configured to check:
+
+- TypeScript code in both main and renderer processes
+- React best practices and hooks rules
+- Code style consistency
+
+### Type Checking
+
+Verify TypeScript types across the entire codebase:
+
+```bash
+# Check all types
+npm run typecheck
+
+# Check main process only
+npm run typecheck:node
+
+# Check renderer process only
+npm run typecheck:web
+```
+
+### Code Formatting
+
+Format code using Prettier:
+
+```bash
+npm run format
+```
+
+This will format all files according to the project's Prettier configuration.
+
+## Building for Production
+
+### Build the Application
+
+Compile the application for production:
+
+```bash
+npm run build
+```
+
+This command:
+
+1. Runs type checking for both processes
+2. Builds the main process with electron-vite
+3. Builds the renderer process with Vite
+4. Outputs compiled files to the `out/` directory
+
+### Platform-Specific Builds
+
+Create distributable packages for specific platforms:
+
+```bash
+# macOS
+npm run build:mac
+
+# Windows
+npm run build:win
+
+# Linux
+npm run build:linux
+
+# All platforms
+npm run build:all
+```
+
+The distributable files will be created in the `dist/` directory.
+
+### Unpacked Build
+
+Create an unpacked build for testing without creating installers:
+
+```bash
+npm run build:unpack
+```
+
+## Project Scripts Reference
+
+| Script                | Description                            |
+| --------------------- | -------------------------------------- |
+| `npm run dev`         | Start development mode with hot-reload |
+| `npm start`           | Preview built application              |
+| `npm run build`       | Build application for production       |
+| `npm run lint`        | Run ESLint checks                      |
+| `npm run typecheck`   | Check TypeScript types                 |
+| `npm run format`      | Format code with Prettier              |
+| `npm run build:mac`   | Build for macOS                        |
+| `npm run build:win`   | Build for Windows                      |
+| `npm run build:linux` | Build for Linux                        |
+
+## Development Tips
+
+### Hot Reload
+
+The renderer process supports hot module replacement (HMR). Changes to React components will update instantly without restarting the app.
+
+The main process requires a full restart when modified. The dev server will automatically restart the Electron process.
+
+### Debugging
+
+#### Renderer Process
+
+Open DevTools in the Electron window:
+
+- **macOS**: `Cmd + Option + I`
+- **Windows/Linux**: `Ctrl + Shift + I`
+
+#### Main Process
+
+Use VSCode's built-in debugger or add `console.log()` statements. Logs appear in the terminal where you ran `npm run dev`.
+
+### State Persistence
+
+HyperConnect uses `electron-store` for persistent storage. During development, the store is saved to:
+
+- **macOS**: `~/Library/Application Support/hyper-connect/`
+- **Windows**: `%APPDATA%/hyper-connect/`
+- **Linux**: `~/.config/hyper-connect/`
+
+## Next Steps
+
+- [Architecture Overview](/docs/architecture/overview) - Understand the application structure
+- [Project Structure](/docs/architecture/project-structure) - Navigate the codebase
+- [Features](/docs/features/device-discovery) - Learn about core features

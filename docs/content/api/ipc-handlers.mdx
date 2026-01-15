@@ -1,0 +1,445 @@
+---
+title: IPC Handlers
+description: Inter-Process Communication API reference
+---
+
+# IPC Handlers
+
+HyperConnect uses Electron's IPC (Inter-Process Communication) to enable secure communication between the main and renderer processes. All IPC methods are exposed through the `window.api` object in the renderer.
+
+## Device Management
+
+### `getDevices()`
+
+Get list of all discovered and connected devices.
+
+**Returns:** `Promise<Device[]>`
+
+```typescript
+const devices = await window.api.getDevices()
+```
+
+**Response:**
+
+```typescript
+interface Device {
+  id: string
+  name: string
+  status: 'online' | 'offline' | 'connecting'
+  lastSeen: number
+}
+```
+
+### `connectToDevice(deviceId: string)`
+
+Establish a connection to a discovered device.
+
+**Parameters:**
+
+- `deviceId` - Unique device identifier
+
+**Returns:** `Promise<void>`
+
+```typescript
+await window.api.connectToDevice('device-123')
+```
+
+### `disconnectFromDevice(deviceId: string)`
+
+Disconnect from a connected device.
+
+**Parameters:**
+
+- `deviceId` - Device to disconnect from
+
+**Returns:** `Promise<void>`
+
+```typescript
+await window.api.disconnectFromDevice('device-123')
+```
+
+## Discovery
+
+### `startDiscovery()`
+
+Start the network discovery service.
+
+**Returns:** `Promise<void>`
+
+```typescript
+await window.api.startDiscovery()
+```
+
+### `stopDiscovery()`
+
+Stop the network discovery service.
+
+**Returns:** `Promise<void>`
+
+```typescript
+await window.api.stopDiscovery()
+```
+
+## Messaging
+
+### `sendMessage(deviceId: string, text: string, replyTo?: string)`
+
+Send a text message to a device.
+
+**Parameters:**
+
+- `deviceId` - Target device ID
+- `text` - Message content
+- `replyTo` - (Optional) ID of message being replied to
+
+**Returns:** `Promise<void>`
+
+```typescript
+// Send message
+await window.api.sendMessage('device-123', 'Hello!')
+
+// Reply to message
+await window.api.sendMessage('device-123', 'Thanks!', 'msg-456')
+```
+
+### `getMessages(deviceId: string)`
+
+Get message history with a device.
+
+**Parameters:**
+
+- `deviceId` - Device ID
+
+**Returns:** `Promise<NetworkMessage[]>`
+
+```typescript
+const messages = await window.api.getMessages('device-123')
+```
+
+**Response:**
+
+```typescript
+interface NetworkMessage {
+  id: string
+  text: string
+  timestamp: number
+  sender: string
+  receiver: string
+  type: 'TEXT' | 'FILE'
+  replyTo?: string
+  encrypted: boolean
+}
+```
+
+### `deleteMessage(deviceId: string, messageId: string)`
+
+Delete a message from history.
+
+**Parameters:**
+
+- `deviceId` - Device ID
+- `messageId` - Message ID to delete
+
+**Returns:** `Promise<void>`
+
+```typescript
+await window.api.deleteMessage('device-123', 'msg-456')
+```
+
+## File Transfer
+
+### `sendFile(deviceId: string, filePath: string, replyTo?: string)`
+
+Send a file to a device.
+
+**Parameters:**
+
+- `deviceId` - Target device ID
+- `filePath` - Absolute path to file
+- `replyTo` - (Optional) Message ID
+
+**Returns:** `Promise<string>` - Transfer ID
+
+```typescript
+const transferId = await window.api.sendFile('device-123', '/path/to/file.pdf')
+```
+
+### `selectFiles()`
+
+Open file picker dialog to select files.
+
+**Returns:** `Promise<{ path: string, name: string }[]>`
+
+```typescript
+const files = await window.api.selectFiles()
+for (const file of files) {
+  await window.api.sendFile(deviceId, file.path)
+}
+```
+
+### `cancelFileTransfer(transferId: string)`
+
+Cancel an ongoing file transfer.
+
+**Parameters:**
+
+- `transferId` - Transfer ID
+
+**Returns:** `Promise<void>`
+
+```typescript
+await window.api.cancelFileTransfer('transfer-789')
+```
+
+### `setDownloadPath(path: string)`
+
+Set default download location for received files.
+
+**Parameters:**
+
+- `path` - Directory path
+
+**Returns:** `Promise<void>`
+
+```typescript
+await window.api.setDownloadPath('/Users/username/Downloads')
+```
+
+### `getDownloadPath()`
+
+Get current download location.
+
+**Returns:** `Promise<string>`
+
+```typescript
+const path = await window.api.getDownloadPath()
+```
+
+## Settings
+
+### `getSettings()`
+
+Get application settings.
+
+**Returns:** `Promise<AppSettings>`
+
+```typescript
+const settings = await window.api.getSettings()
+```
+
+**Response:**
+
+```typescript
+interface AppSettings {
+  deviceName: string
+  theme: 'light' | 'dark' | 'system'
+  notifications: boolean
+  autoStart: boolean
+  downloadPath: string
+}
+```
+
+### `updateSettings(settings: Partial<AppSettings>)`
+
+Update application settings.
+
+**Parameters:**
+
+- `settings` - Settings to update
+
+**Returns:** `Promise<void>`
+
+```typescript
+await window.api.updateSettings({
+  theme: 'dark',
+  notifications: true
+})
+```
+
+### `setDeviceName(name: string)`
+
+Set the device name shown to other devices.
+
+**Parameters:**
+
+- `name` - New device name
+
+**Returns:** `Promise<void>`
+
+```typescript
+await window.api.setDeviceName('My MacBook')
+```
+
+## Events
+
+HyperConnect emits various events that the renderer can listen to.
+
+### `onDeviceDiscovered(callback)`
+
+Emitted when a new device is discovered.
+
+**Callback:** `(device: Device) => void`
+
+```typescript
+window.api.onDeviceDiscovered((device) => {
+  console.log('New device:', device.name)
+})
+```
+
+### `onDeviceConnected(callback)`
+
+Emitted when a device connection is established.
+
+**Callback:** `(deviceId: string) => void`
+
+```typescript
+window.api.onDeviceConnected((deviceId) => {
+  console.log('Connected to:', deviceId)
+})
+```
+
+### `onDeviceDisconnected(callback)`
+
+Emitted when a device disconnects.
+
+**Callback:** `(deviceId: string) => void`
+
+```typescript
+window.api.onDeviceDisconnected((deviceId) => {
+  console.log('Disconnected from:', deviceId)
+})
+```
+
+### `onMessageReceived(callback)`
+
+Emitted when a new message is received.
+
+**Callback:** `(message: NetworkMessage) => void`
+
+```typescript
+window.api.onMessageReceived((message) => {
+  console.log('New message:', message.text)
+})
+```
+
+### `onFileProgress(callback)`
+
+Emitted during file transfer with progress updates.
+
+**Callback:** `(event: FileProgressEvent) => void`
+
+```typescript
+window.api.onFileProgress((event) => {
+  console.log(`Progress: ${event.progress}%`)
+})
+```
+
+**Event:**
+
+```typescript
+interface FileProgressEvent {
+  id: string
+  progress: number // 0-100
+  speed: number // bytes/second
+  remaining: number // seconds
+}
+```
+
+### `onFileReceived(callback)`
+
+Emitted when a file transfer starts.
+
+**Callback:** `(file: FileMetadata) => void`
+
+```typescript
+window.api.onFileReceived((file) => {
+  console.log('Receiving:', file.name)
+})
+```
+
+### `onFileComplete(callback)`
+
+Emitted when a file transfer completes.
+
+**Callback:** `(event: { id: string, path: string }) => void`
+
+```typescript
+window.api.onFileComplete((event) => {
+  console.log('File saved to:', event.path)
+})
+```
+
+## Type Definitions
+
+All TypeScript type definitions are available in `src/preload/index.d.ts`:
+
+```typescript
+interface IApi {
+  // Device Management
+  getDevices(): Promise<Device[]>
+  connectToDevice(deviceId: string): Promise<void>
+  disconnectFromDevice(deviceId: string): Promise<void>
+
+  // Discovery
+  startDiscovery(): Promise<void>
+  stopDiscovery(): Promise<void>
+
+  // Messaging
+  sendMessage(deviceId: string, text: string, replyTo?: string): Promise<void>
+  getMessages(deviceId: string): Promise<NetworkMessage[]>
+  deleteMessage(deviceId: string, messageId: string): Promise<void>
+
+  // File Transfer
+  sendFile(deviceId: string, filePath: string, replyTo?: string): Promise<string>
+  selectFiles(): Promise<{ path: string; name: string }[]>
+  cancelFileTransfer(transferId: string): Promise<void>
+  setDownloadPath(path: string): Promise<void>
+  getDownloadPath(): Promise<string>
+
+  // Settings
+  getSettings(): Promise<AppSettings>
+  updateSettings(settings: Partial<AppSettings>): Promise<void>
+  setDeviceName(name: string): Promise<void>
+
+  // Events
+  onDeviceDiscovered(callback: (device: Device) => void): void
+  onDeviceConnected(callback: (deviceId: string) => void): void
+  onDeviceDisconnected(callback: (deviceId: string) => void): void
+  onMessageReceived(callback: (message: NetworkMessage) => void): void
+  onFileProgress(callback: (event: FileProgressEvent) => void): void
+  onFileReceived(callback: (file: FileMetadata) => void): void
+  onFileComplete(callback: (event: { id: string; path: string }) => void): void
+}
+
+declare global {
+  interface Window {
+    api: IApi
+  }
+}
+```
+
+## Error Handling
+
+All IPC methods return Promises that may reject with errors:
+
+```typescript
+try {
+  await window.api.sendMessage(deviceId, text)
+} catch (error) {
+  console.error('Failed to send message:', error)
+  // Handle error (show toast, retry, etc.)
+}
+```
+
+Common error types:
+
+- **Device not connected**: Attempting operation on disconnected device
+- **Encryption failed**: Unable to encrypt message/file
+- **Network error**: Connection lost during operation
+- **Invalid parameters**: Missing or invalid arguments
+
+## Next Steps
+
+- [Main Process API](/docs/api/main-process) - Explore main process implementation
+- [Messaging](/docs/features/messaging) - Learn about messaging features
+- [File Transfer](/docs/features/file-transfer) - Understand file sharing

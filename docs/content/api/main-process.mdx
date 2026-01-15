@@ -1,0 +1,455 @@
+---
+title: Main Process API
+description: Main process modules and implementation details
+---
+
+# Main Process API
+
+The main process contains the core logic for HyperConnect, including network discovery, TCP server, encryption, and file transfer.
+
+## Core Modules
+
+### Discovery Service
+
+**File:** `src/main/discovery.ts`
+
+Handles network device discovery using Bonjour/mDNS.
+
+**Key Functions:**
+
+```typescript
+// Start discovery service
+function startDiscovery(): void
+
+// Stop discovery service
+function stopDiscovery(): void
+
+// Handle discovered service
+function handleServiceUp(service: BonjourService): void
+
+// Handle service going offline
+function handleServiceDown(service: BonjourService): void
+```
+
+**Implementation:**
+
+```typescript
+import Bonjour from 'bonjour-service'
+
+const bonjour = new Bonjour()
+
+// Publish service
+bonjour.publish({
+  name: deviceName,
+  type: 'hyperconnect',
+  port: tcpPort,
+  txt: { id: deviceId, version: appVersion }
+})
+
+// Browse for services
+const browser = bonjour.find({ type: 'hyperconnect' })
+browser.on('up', handleServiceUp)
+browser.on('down', handleServiceDown)
+```
+
+### TCP Server
+
+**File:** `src/main/tcpServer.ts`
+
+Manages TCP connections between devices.
+
+**Key Functions:**
+
+```typescript
+// Start TCP server
+function startServer(port: number): Promise<void>
+
+// Stop TCP server
+function stopServer(): void
+
+// Connect to device
+function connectToDevice(host: string, port: number): Promise<void>
+
+// Send data to device
+function sendToDevice(deviceId: string, data: Buffer): Promise<void>
+
+// Handle incoming connection
+function handleConnection(socket: Socket): void
+
+// Handle incoming data
+function handleData(socket: Socket, data: Buffer): void
+```
+
+**Connection Management:**
+
+```typescript
+const connections = new Map<string, Socket>()
+
+function handleConnection(socket: Socket) {
+  socket.on('data', (data) => handleData(socket, data))
+  socket.on('close', () => handleDisconnect(socket))
+  socket.on('error', (error) => handleError(socket, error))
+}
+```
+
+### Protocol Handler
+
+**File:** `src/main/protocol.ts`
+
+Implements the network protocol for message exchange.
+
+**Message Types:**
+
+```typescript
+enum MessageType {
+  HANDSHAKE = 'HANDSHAKE',
+  ACK = 'ACK',
+  TEXT = 'TEXT',
+  FILE = 'FILE',
+  FILE_CHUNK = 'FILE_CHUNK',
+  PING = 'PING',
+  PONG = 'PONG'
+}
+```
+
+**Key Functions:**
+
+```typescript
+// Parse incoming message
+function parseMessage(data: Buffer): ProtocolMessage
+
+// Create protocol message
+function createMessage(type: MessageType, payload: any): Buffer
+
+// Handle message by type
+function handleMessage(message: ProtocolMessage, deviceId: string): void
+```
+
+**Protocol Structure:**
+
+```typescript
+interface ProtocolMessage {
+  type: MessageType
+  id: string
+  timestamp: number
+  payload: any
+  encrypted: boolean
+}
+```
+
+### File Transfer
+
+**File:** `src/main/fileTransfer.ts`
+
+Handles file sending and receiving with encryption.
+
+**Key Functions:**
+
+```typescript
+// Send file to device
+function sendFile(deviceId: string, filePath: string, replyTo?: string): Promise<string>
+
+// Receive file from device
+function receiveFile(deviceId: string, metadata: FileMetadata): Promise<string>
+
+// Handle file chunk
+function handleFileChunk(transferId: string, chunk: Buffer, index: number): void
+
+// Cancel transfer
+function cancelTransfer(transferId: string): void
+```
+
+**Transfer Management:**
+
+```typescript
+interface FileTransfer {
+  id: string
+  deviceId: string
+  filePath: string
+  metadata: FileMetadata
+  chunks: Buffer[]
+  progress: number
+  status: 'pending' | 'active' | 'complete' | 'failed'
+}
+
+const activeTransfers = new Map<string, FileTransfer>()
+```
+
+### Encryption
+
+**File:** `src/main/crypto/aes.ts`
+
+Provides AES-256-GCM encryption/decryption.
+
+**Key Functions:**
+
+```typescript
+// Encrypt data
+function encrypt(
+  data: Buffer,
+  key: Buffer
+): {
+  encrypted: Buffer
+  iv: Buffer
+  authTag: Buffer
+}
+
+// Decrypt data
+function decrypt(encrypted: Buffer, key: Buffer, iv: Buffer, authTag: Buffer): Buffer
+
+// Generate encryption key
+function generateKey(): Buffer
+
+// Derive key from password
+function deriveKey(password: string, salt: Buffer): Buffer
+```
+
+**Implementation:**
+
+```typescript
+import crypto from 'crypto'
+
+function encrypt(data: Buffer, key: Buffer) {
+  const iv = crypto.randomBytes(16)
+  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv)
+
+  const encrypted = Buffer.concat([cipher.update(data), cipher.final()])
+
+  const authTag = cipher.getAuthTag()
+
+  return { encrypted, iv, authTag }
+}
+```
+
+### Key Management
+
+**File:** `src/main/crypto/keys.ts`
+
+Manages encryption keys for device pairs.
+
+**Key Functions:**
+
+```typescript
+// Get or create shared key
+function getSharedKey(deviceId: string): Buffer
+
+// Store key for device
+function storeKey(deviceId: string, key: Buffer): void
+
+// Delete key for device
+function deleteKey(deviceId: string): void
+
+// Rotate key for device
+function rotateKey(deviceId: string): Buffer
+```
+
+**Storage:**
+
+```typescript
+import Store from 'electron-store'
+
+const keyStore = new Store({
+  name: 'keys',
+  encryptionKey: 'master-key' // Encrypted at rest
+})
+
+function getSharedKey(deviceId: string): Buffer {
+  let key = keyStore.get(`key-${deviceId}`)
+  if (!key) {
+    key = generateKey()
+    storeKey(deviceId, key)
+  }
+  return Buffer.from(key, 'hex')
+}
+```
+
+### Identity Management
+
+**File:** `src/main/identity.ts`
+
+Manages device identity and metadata.
+
+**Key Functions:**
+
+```typescript
+// Get device ID
+function getDeviceId(): string
+
+// Get device name
+function getDeviceName(): string
+
+// Set device name
+function setDeviceName(name: string): void
+
+// Get device info
+function getDeviceInfo(): DeviceInfo
+```
+
+**Device Info:**
+
+```typescript
+interface DeviceInfo {
+  id: string
+  name: string
+  platform: string
+  version: string
+  publicKey: string
+}
+```
+
+### Notifications
+
+**File:** `src/main/notifications.ts`
+
+Handles desktop notifications.
+
+**Key Functions:**
+
+```typescript
+// Show notification
+function showNotification(title: string, body: string, icon?: string): void
+
+// Show message notification
+function showMessageNotification(senderName: string, message: string): void
+
+// Show file notification
+function showFileNotification(senderName: string, fileName: string): void
+```
+
+**Implementation:**
+
+```typescript
+import { Notification } from 'electron'
+
+function showNotification(title: string, body: string) {
+  const notification = new Notification({
+    title,
+    body,
+    icon: appIcon,
+    silent: false
+  })
+
+  notification.on('click', () => {
+    // Focus app window
+    mainWindow?.show()
+  })
+
+  notification.show()
+}
+```
+
+### Permissions
+
+**File:** `src/main/permissions.ts`
+
+Handles macOS permissions (Local Network access).
+
+**Key Functions:**
+
+```typescript
+// Check if permission granted
+function hasLocalNetworkPermission(): Promise<boolean>
+
+// Request permission
+function requestLocalNetworkPermission(): Promise<boolean>
+
+// Show permission instructions
+function showPermissionInstructions(): void
+```
+
+## Data Storage
+
+HyperConnect uses `electron-store` for persistent storage:
+
+### Device Store
+
+```typescript
+const deviceStore = new Store({
+  name: 'devices',
+  defaults: {
+    devices: [],
+    lastSeen: {}
+  }
+})
+```
+
+### Message Store
+
+```typescript
+const messageStore = new Store({
+  name: 'messages',
+  defaults: {
+    messages: {}
+  }
+})
+```
+
+### Settings Store
+
+```typescript
+const settingsStore = new Store({
+  name: 'settings',
+  defaults: {
+    deviceName: os.hostname(),
+    theme: 'system',
+    notifications: true,
+    downloadPath: path.join(os.homedir(), 'Downloads', 'HyperConnect')
+  }
+})
+```
+
+## Event Emitters
+
+Main process modules use EventEmitter for internal communication:
+
+```typescript
+import { EventEmitter } from 'events'
+
+class DeviceManager extends EventEmitter {
+  emit(event: 'device-discovered', device: Device): boolean
+  emit(event: 'device-connected', deviceId: string): boolean
+  emit(event: 'device-disconnected', deviceId: string): boolean
+
+  on(event: 'device-discovered', listener: (device: Device) => void): this
+  on(event: 'device-connected', listener: (deviceId: string) => void): this
+  on(event: 'device-disconnected', listener: (deviceId: string) => void): this
+}
+```
+
+## Error Handling
+
+Consistent error handling across modules:
+
+```typescript
+class HyperConnectError extends Error {
+  constructor(
+    message: string,
+    public code: string,
+    public details?: any
+  ) {
+    super(message)
+    this.name = 'HyperConnectError'
+  }
+}
+
+// Usage
+throw new HyperConnectError('Failed to encrypt message', 'ENCRYPTION_ERROR', { deviceId, error })
+```
+
+## Logging
+
+Structured logging for debugging:
+
+```typescript
+import log from 'electron-log'
+
+log.info('Device discovered:', deviceId)
+log.error('Connection failed:', error)
+log.debug('Message sent:', messageId)
+```
+
+## Next Steps
+
+- [IPC Handlers](/docs/api/ipc-handlers) - Explore IPC API
+- [Architecture](/docs/architecture/overview) - Understand architecture
+- [Project Structure](/docs/architecture/project-structure) - Navigate codebase

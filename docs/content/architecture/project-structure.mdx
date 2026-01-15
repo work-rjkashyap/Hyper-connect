@@ -1,0 +1,266 @@
+---
+title: Project Structure
+description: Detailed overview of HyperConnect's codebase organization
+---
+
+# Project Structure
+
+Understanding the project structure will help you navigate the codebase and find what you need quickly.
+
+## Directory Layout
+
+```
+Hyper-connect/
+├── .github/              # GitHub-specific files
+│   └── workflows/        # CI/CD workflows (build & release)
+├── build/                # Build resources
+│   └── icon.png          # Application icon
+├── resources/            # Static assets for packaging
+├── src/                  # Source code
+│   ├── main/             # Main process (Node.js)
+│   ├── preload/          # Preload scripts (IPC bridge)
+│   ├── renderer/         # Renderer process (React UI)
+│   └── shared/           # Shared types and utilities
+├── out/                  # Build output (generated)
+├── dist/                 # Distribution packages (generated)
+└── docs/                 # Documentation site
+```
+
+## Source Code (`src/`)
+
+### Main Process (`src/main/`)
+
+The main process handles system-level operations and coordinates the application.
+
+```
+src/main/
+├── crypto/               # Encryption utilities
+│   ├── aes.ts            # AES encryption/decryption
+│   ├── keys.ts           # Key management
+│   └── utils.ts          # Crypto helpers
+├── discovery.ts          # Bonjour/mDNS device discovery
+├── fileTransfer.ts       # File transfer logic
+├── identity.ts           # Device identity management
+├── index.ts              # Main process entry point
+├── ipc.ts                # IPC handlers
+├── notifications.ts      # System notifications
+├── permissions.ts        # macOS permissions handling
+├── protocol.ts           # Network protocol implementation
+└── tcpServer.ts          # TCP server for device communication
+```
+
+#### Key Modules
+
+**`index.ts`**
+
+- Application entry point
+- Window creation and management
+- Application lifecycle events
+- Auto-updater initialization
+
+**`discovery.ts`**
+
+- Bonjour service initialization
+- Device advertisement
+- Network device discovery
+- Service browsing
+
+**`tcpServer.ts`**
+
+- TCP server setup
+- Connection handling
+- Message routing
+- Device state management
+
+**`ipc.ts`**
+
+- IPC handler registration
+- Bridge between main and renderer
+- API method implementations
+
+**`fileTransfer.ts`**
+
+- File sending/receiving
+- Progress tracking
+- Encryption/decryption
+- Chunk management
+
+**`crypto/`**
+
+- AES-256-GCM encryption
+- Key generation and storage
+- Secure key exchange
+- Message/file encryption
+
+### Preload (`src/preload/`)
+
+The preload script exposes a secure API to the renderer process.
+
+```
+src/preload/
+├── index.ts              # API exposure via contextBridge
+└── index.d.ts            # TypeScript definitions for window.api
+```
+
+**Key Responsibilities:**
+
+- Expose IPC methods to renderer
+- Type-safe API definitions
+- Security boundary enforcement
+
+### Renderer (`src/renderer/`)
+
+The renderer process contains the React-based user interface.
+
+```
+src/renderer/
+├── components/           # Reusable UI components
+│   ├── ui/               # Base UI components (shadcn-style)
+│   │   ├── button.tsx
+│   │   ├── dialog.tsx
+│   │   ├── input.tsx
+│   │   └── ...
+│   ├── ChatBubble.tsx    # Message display
+│   ├── ConnectionToast.tsx
+│   ├── DeviceCard.tsx    # Device list item
+│   └── ...
+├── pages/                # Application views
+│   ├── DevicePage.tsx    # Chat interface
+│   ├── HomePage.tsx      # Device list/discovery
+│   ├── OnboardingPage.tsx # Initial setup
+│   └── SettingsPage.tsx  # App settings
+├── store/                # Zustand state management
+│   ├── deviceStore.ts    # Device state
+│   ├── messageStore.ts   # Message state
+│   └── settingsStore.ts  # App settings
+├── App.tsx               # Root component with routing
+├── index.tsx             # Renderer entry point
+└── index.css             # Global styles
+```
+
+#### Component Organization
+
+**`components/ui/`**
+
+- Base UI components built with Radix UI
+- Styled with Tailwind CSS
+- Reusable across the application
+- Follows shadcn/ui patterns
+
+**`components/`**
+
+- Feature-specific components
+- Composed from base UI components
+- Business logic integration
+
+**`pages/`**
+
+- Top-level views/routes
+- Page-level state management
+- Route-specific layouts
+
+**`store/`**
+
+- Zustand stores for global state
+- Device management
+- Message history
+- User settings
+
+### Shared (`src/shared/`)
+
+Shared code used by both main and renderer processes.
+
+```
+src/shared/
+├── types.ts              # TypeScript type definitions
+└── constants.ts          # Shared constants
+```
+
+## Configuration Files
+
+### Build Configuration
+
+**`electron-builder.yml`**
+
+- Electron Builder configuration
+- Platform-specific build settings
+- File associations
+- macOS permissions (NSLocalNetworkUsageDescription)
+
+**`electron.vite.config.ts`**
+
+- Vite configuration for Electron
+- Build settings for main, preload, and renderer
+- Plugin configuration
+
+### TypeScript Configuration
+
+**`tsconfig.json`**
+
+- Base TypeScript configuration
+- Extends `@electron-toolkit/tsconfig`
+
+**`tsconfig.node.json`**
+
+- Configuration for main process
+- Node.js-specific settings
+
+**`tsconfig.web.json`**
+
+- Configuration for renderer process
+- DOM and React types
+
+### Code Quality
+
+**`eslint.config.mjs`**
+
+- ESLint configuration
+- React and TypeScript rules
+- Code style enforcement
+
+**`.prettierrc.yaml`**
+
+- Prettier configuration
+- Code formatting rules
+
+**`.editorconfig`**
+
+- Editor configuration
+- Consistent coding styles
+
+### Styling
+
+**`tailwind.config.js`**
+
+- Tailwind CSS configuration
+- Custom theme extensions
+- Plugin configuration
+
+**`postcss.config.js`**
+
+- PostCSS configuration
+- Tailwind CSS processing
+
+## Build Outputs
+
+### `out/` Directory
+
+Generated by electron-vite during build:
+
+- `main/` - Compiled main process code
+- `preload/` - Compiled preload scripts
+- `renderer/` - Compiled React application
+
+### `dist/` Directory
+
+Generated by electron-builder:
+
+- Platform-specific installers (.dmg, .exe, .AppImage)
+- Unpacked application files
+- Update files for auto-updater
+
+## Next Steps
+
+- [Architecture Overview](/docs/architecture/overview) - Understand the architecture
+- [Device Discovery](/docs/features/device-discovery) - Learn about discovery
+- [IPC Handlers](/docs/api/ipc-handlers) - Explore available APIs
