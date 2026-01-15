@@ -1,6 +1,7 @@
 {
   "compilerOptions": {
-    "target": "ES2020",
+    "baseUrl": ".",
+    "target": "ESNext",
     "lib": [
       "dom",
       "dom.iterable",
@@ -18,16 +19,19 @@
     "isolatedModules": true,
     "jsx": "react-jsx",
     "incremental": true,
+    "paths": {
+      "@/*": [
+        "./src/*"
+      ],
+      "fumadocs-mdx:collections/*": [
+        ".source/*"
+      ]
+    },
     "plugins": [
       {
         "name": "next"
       }
-    ],
-    "paths": {
-      "@/*": [
-        "./*"
-      ]
-    }
+    ]
   },
   "include": [
     "next-env.d.ts",
