@@ -1,35 +1,38 @@
-import { docs } from '@/source.config';
+import { source } from '@/lib/source';
+import defaultMdxComponents from 'fumadocs-ui/mdx';
 import { DocsPage, DocsBody } from 'fumadocs-ui/page';
 import { notFound } from 'next/navigation';
 
 export default async function Page({
     params,
 }: {
-    params: { slug?: string[] };
+    params: Promise<{ slug?: string[] }>;
 }) {
-    const page = docs.getPage(params.slug);
+    const { slug } = await params;
+    const page = source.getPage(slug);
     if (!page) notFound();
-
-    const MDX = page.data.body;
 
     return (
         <DocsPage toc={page.data.toc} full={page.data.full}>
             <DocsBody>
                 <h1>{page.data.title}</h1>
-                <MDX />
+                {page.data.description && <p className="text-lg text-muted-foreground">{page.data.description}</p>}
             </DocsBody>
         </DocsPage>
     );
 }
 
 export async function generateStaticParams() {
-    return docs.getPages().map((page) => ({
-        slug: page.slugs,
-    }));
+    return source.generateParams();
 }
 
-export function generateMetadata({ params }: { params: { slug?: string[] } }) {
-    const page = docs.getPage(params.slug);
+export async function generateMetadata({
+    params,
+}: {
+    params: Promise<{ slug?: string[] }>;
+}) {
+    const { slug } = await params;
+    const page = source.getPage(slug);
     if (!page) notFound();
 
     return {
