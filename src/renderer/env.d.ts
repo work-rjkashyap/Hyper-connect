@@ -4,9 +4,16 @@ import { Device, NetworkMessage, FileTransferProgress, DeviceInfo } from '../sha
 export type PermissionType = 'notification' | 'camera' | 'microphone' | 'screen'
 export type PermissionStatus = 'granted' | 'denied' | 'not-determined' | 'unknown'
 
+export interface NetworkInfo {
+  port: number
+  addresses: string[]
+  activeConnections: number
+}
+
 export interface IApi {
   getDeviceInfo: () => Promise<DeviceInfo>
   updateDisplayName: (name: string) => Promise<DeviceInfo>
+  getNetworkInfo: () => Promise<NetworkInfo>
   getDiscoveredDevices: () => Promise<Device[]>
   sendMessage: (deviceId: string, payload: string, replyTo?: string) => Promise<NetworkMessage>
   sendFile: (deviceId: string, filePath: string, replyTo?: string) => Promise<NetworkMessage>

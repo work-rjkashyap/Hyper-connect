@@ -23,7 +23,17 @@
     "dist": "npm run build:mac",
     "docs:dev": "cd docs && npm run dev",
     "docs:build": "cd docs && npm run build",
-    "docs:export": "cd docs && npm run export"
+    "docs:export": "cd docs && npm run export",
+    "prepare": "husky"
+  },
+  "lint-staged": {
+    "*.{ts,tsx}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{json,md,yml,yaml}": [
+      "prettier --write"
+    ]
   },
   "dependencies": {
     "@electron-toolkit/preload": "^3.0.2",
@@ -78,6 +88,8 @@
     "fumadocs-core": "^16.4.7",
     "fumadocs-mdx": "^14.2.5",
     "fumadocs-ui": "^16.4.7",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.2.7",
     "next": "^16.1.2",
     "postcss": "^8.5.6",
     "prettier": "^3.7.4",

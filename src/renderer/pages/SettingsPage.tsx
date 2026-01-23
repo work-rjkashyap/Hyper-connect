@@ -9,7 +9,6 @@ import {
   Database,
   FolderOpen,
   Camera,
-  Shield,
   Network,
   Server,
   Wifi
@@ -40,6 +39,7 @@ import {
 import { Separator } from '@/renderer/components/ui/separator'
 import { Switch } from '@/renderer/components/ui/switch'
 import { processProfileImage } from '../lib/image'
+import type { NetworkInfo } from '@/preload/index.d'
 export const SettingsPage: React.FC = () => {
   const { localDevice, setLocalDevice, clearMessages, clearTransfers } = useStore()
   const [name, setName] = useState(localDevice?.displayName || '')
@@ -49,7 +49,7 @@ export const SettingsPage: React.FC = () => {
   const [loadingPath, setLoadingPath] = useState(true)
   const [autoAccept, setAutoAccept] = useState(false)
   const [profileImage, setProfileImage] = useState<string | null>(localDevice?.profileImage || null)
-  const [networkInfo, setNetworkInfo] = useState<{ port: number; addresses: string[]; activeConnections: number } | null>(null)
+  const [networkInfo, setNetworkInfo] = useState<NetworkInfo | null>(null)
   useEffect(() => {
     const loadSettings = async (): Promise<void> => {
       try {
@@ -283,7 +283,9 @@ export const SettingsPage: React.FC = () => {
                         </div>
                       ))
                     ) : (
-                      <p className="text-sm text-muted-foreground">No network interfaces detected</p>
+                      <p className="text-sm text-muted-foreground">
+                        No network interfaces detected
+                      </p>
                     )}
                   </div>
                 </div>
@@ -293,7 +295,6 @@ export const SettingsPage: React.FC = () => {
             )}
           </CardContent>
         </Card>
-
         {/* Data Management Section */}
         <Card>
           <CardHeader>
