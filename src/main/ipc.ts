@@ -94,6 +94,29 @@ export function setupIpc(mainWindow: BrowserWindow): void {
     return autoAccept
   })
 
+  // Network Info
+  ipcMain.handle('get-network-info', async () => {
+    const os = await import('os')
+    const networkInterfaces = os.networkInterfaces()
+    const addresses: string[] = []
+
+    for (const iface of Object.values(networkInterfaces)) {
+      if (!iface) continue
+      for (const addr of iface) {
+        // IPv4, not loopback
+        if (addr.family === 'IPv4' && !addr.internal) {
+          addresses.push(addr.address)
+        }
+      }
+    }
+
+    return {
+      port: tcpServer.port,
+      addresses,
+      activeConnections: tcpServer['connections'].size
+    }
+  })
+
   // Discovery
   ipcMain.handle('get-discovered-devices', () => discoveryManager.getDiscoveredDevices())
   ipcMain.handle('rescan-devices', () => discoveryManager.rescan())

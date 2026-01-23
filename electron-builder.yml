@@ -27,11 +27,13 @@ nsis:
   createDesktopShortcut: always
 mac:
   icon: build/icon.png
+  # Use ad-hoc signing (no Apple Developer account required)
+  # Ad-hoc signature ensures all binaries are signed consistently
+  identity: null
   target:
     - dmg
     - zip
   category: public.app-category.utilities
-  entitlementsInherit: build/entitlements.mac.plist
   extendInfo:
     NSCameraUsageDescription: Application requests access to the device's camera.
     NSMicrophoneUsageDescription: Application requests access to the device's microphone.
@@ -40,7 +42,6 @@ mac:
     NSLocalNetworkUsageDescription: HyperConnect needs local network access to discover and communicate with other devices on your network.
     NSBonjourServices:
       - _hyperconnect._tcp
-  notarize: false
 dmg:
   artifactName: ${name}-${version}.${ext}
 linux:

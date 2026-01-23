@@ -13,6 +13,7 @@ const api = {
     ipcRenderer.invoke('update-display-name', name),
   updateProfile: (name?: string, image?: string): Promise<DeviceInfo> =>
     ipcRenderer.invoke('update-profile', name, image),
+  getNetworkInfo: () => ipcRenderer.invoke('get-network-info'),
   getDiscoveredDevices: (): Promise<Device[]> => ipcRenderer.invoke('get-discovered-devices'),
   checkPermission: (type: PermissionType): Promise<PermissionStatus> =>
     ipcRenderer.invoke('check-permission', type),

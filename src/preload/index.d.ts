@@ -4,10 +4,17 @@ import { Device, NetworkMessage, FileTransferProgress, DeviceInfo } from '@share
 export type PermissionType = 'notification' | 'camera' | 'microphone' | 'screen'
 export type PermissionStatus = 'granted' | 'denied' | 'not-determined' | 'unknown'
 
+export interface NetworkInfo {
+  port: number
+  addresses: string[]
+  activeConnections: number
+}
+
 export interface IApi {
   getDeviceInfo: () => Promise<DeviceInfo>
   updateDisplayName: (name: string) => Promise<DeviceInfo>
   updateProfile: (name?: string, image?: string) => Promise<DeviceInfo>
+  getNetworkInfo: () => Promise<NetworkInfo>
   getDiscoveredDevices: () => Promise<Device[]>
   checkPermission: (type: PermissionType) => Promise<PermissionStatus>
   requestPermission: (type: PermissionType) => Promise<boolean>
