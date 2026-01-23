@@ -1,0 +1,15 @@
+# Generated files
+docs/.source/
+
+# Build output
+dist/
+out/
+build/
+.next/
+
+# Dependencies
+node_modules/
+
+# Other
+*.config.js
+*.config.ts
