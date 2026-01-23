@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.2.0](https://github.com/work-rjkashyap/Hyper-connect/compare/v1.1.0...v1.2.0) (2026-01-23)
+
+
+### Features
+
+* add husky and lint-staged for commit message validation and code formatting ([cf37c15](https://github.com/work-rjkashyap/Hyper-connect/commit/cf37c156e682ef469cd38586f09656dea668f6a9))
+* add initial documentation structure with browser, dynamic, and server configurations ([df39e38](https://github.com/work-rjkashyap/Hyper-connect/commit/df39e387010ec0f18446f0344379de0af2d63308))
+* add network information retrieval and display in settings ([aeeaa47](https://github.com/work-rjkashyap/Hyper-connect/commit/aeeaa4700de81fce5c51508b33597e33c2c06837))
+* implement auto-update functionality ([0507cab](https://github.com/work-rjkashyap/Hyper-connect/commit/0507cabcefe36a3b8aab4ae7a0173528afedab32))
+
+
+### Bug Fixes
+
+* correct action reference in release-please workflow and clean up formatting ([b9201f6](https://github.com/work-rjkashyap/Hyper-connect/commit/b9201f6a15744f97a6526ec233fdca7f2872452a))
+* remove duplicate dependencies for react and react-dom in package.json ([3aa4b69](https://github.com/work-rjkashyap/Hyper-connect/commit/3aa4b69590d45400e35b4925acb4b199d58b08ab))
+* remove duplicate react and react-dom dependencies from package.json ([0f34601](https://github.com/work-rjkashyap/Hyper-connect/commit/0f3460146ac8ba8f718c2d4a6490190cf92f7543))
+* streamline commit message validation script by removing unnecessary lines ([334243b](https://github.com/work-rjkashyap/Hyper-connect/commit/334243bb0a6bee5849f9d1b746d30f5b89b0e72f))
+* update release-please action and checkout versions to v4 ([9ffa159](https://github.com/work-rjkashyap/Hyper-connect/commit/9ffa1594b8e230793c67a34d2b7ee98e9428e6f0))
+
 ## [1.1.0](https://github.com/work-rjkashyap/Hyper-connect/compare/v1.0.8...v1.1.0) (2026-01-13)
 
 
