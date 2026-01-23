@@ -6,6 +6,7 @@ import { getDeviceInfo } from './identity'
 import { tcpServer } from './tcpServer'
 import { discoveryManager } from './discovery'
 import { setupIpc } from './ipc'
+import { initAutoUpdater, checkForUpdates } from './autoUpdater'
 let mainWindow: BrowserWindow
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -62,6 +63,29 @@ app.whenReady().then(async () => {
 
     discoveryManager.startHeartbeat() // Start the presence heartbeat check
     console.log('Heartbeat started.')
+
+    // Initialize auto-updater
+    initAutoUpdater(mainWindow)
+    console.log('Auto-updater initialized.')
+
+    // Check for updates on startup (in production only)
+    if (!is.dev) {
+      setTimeout(() => {
+        checkForUpdates().catch((err) => {
+          console.error('Failed to check for updates on startup:', err)
+        })
+      }, 5000) // Wait 5 seconds after startup
+
+      // Check for updates every 4 hours
+      setInterval(
+        () => {
+          checkForUpdates().catch((err) => {
+            console.error('Failed to check for updates:', err)
+          })
+        },
+        4 * 60 * 60 * 1000
+      )
+    }
   } catch (error) {
     console.error('Failed to start services:', error)
   }

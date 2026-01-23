@@ -45,12 +45,27 @@ export interface IApi {
   minimizeWindow: () => void
   maximizeWindow: () => void
   closeWindow: () => void
+
+  // Auto-Update
+  checkForUpdates: () => Promise<void>
+  downloadUpdate: () => Promise<void>
+  quitAndInstall: () => Promise<void>
+  getAppVersion: () => Promise<string>
+
   onMessageStatusUpdated: (
     callback: (data: { deviceId: string; messageId: string; status: 'delivered' | 'read' }) => void
   ) => () => void
   onRemoteMessageDeleted: (
     callback: (data: { deviceId: string; messageId: string }) => void
   ) => () => void
+
+  // Auto-Update Event Listeners
+  onUpdateChecking: (callback: () => void) => () => void
+  onUpdateAvailable: (callback: (info: { version: string }) => void) => () => void
+  onUpdateNotAvailable: (callback: () => void) => () => void
+  onUpdateDownloadProgress: (callback: (progress: { percent: number }) => void) => () => void
+  onUpdateDownloaded: (callback: (info: { version: string }) => void) => () => void
+  onUpdateError: (callback: (error: string) => void) => () => void
 }
 
 declare module '*.png' {

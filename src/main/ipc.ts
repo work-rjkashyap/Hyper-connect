@@ -117,6 +117,27 @@ export function setupIpc(mainWindow: BrowserWindow): void {
     }
   })
 
+  // Auto-Update Handlers
+  ipcMain.handle('check-for-updates', async () => {
+    const { checkForUpdates } = await import('./autoUpdater')
+    await checkForUpdates()
+  })
+
+  ipcMain.handle('download-update', async () => {
+    const { downloadUpdate } = await import('./autoUpdater')
+    await downloadUpdate()
+  })
+
+  ipcMain.handle('quit-and-install', async () => {
+    const { quitAndInstall } = await import('./autoUpdater')
+    quitAndInstall()
+  })
+
+  ipcMain.handle('get-app-version', async () => {
+    const { app } = await import('electron')
+    return app.getVersion()
+  })
+
   // Discovery
   ipcMain.handle('get-discovered-devices', () => discoveryManager.getDiscoveredDevices())
   ipcMain.handle('rescan-devices', () => discoveryManager.rescan())

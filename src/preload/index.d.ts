@@ -1,5 +1,6 @@
 import { ElectronAPI } from '@electron-toolkit/preload'
 import { Device, NetworkMessage, FileTransferProgress, DeviceInfo } from '@shared/messageTypes'
+import { UpdateInfo, DownloadProgress } from '@shared/updateTypes'
 
 export type PermissionType = 'notification' | 'camera' | 'microphone' | 'screen'
 export type PermissionStatus = 'granted' | 'denied' | 'not-determined' | 'unknown'
@@ -38,11 +39,25 @@ export interface IApi {
   maximizeWindow: () => void
   closeWindow: () => void
 
+  // Auto-Update
+  checkForUpdates: () => Promise<void>
+  downloadUpdate: () => Promise<void>
+  quitAndInstall: () => Promise<void>
+  getAppVersion: () => Promise<string>
+
   onDeviceDiscovered: (callback: (device: Device) => void) => void
   onDeviceLost: (callback: (deviceId: string) => void) => void
   onMessageReceived: (callback: (message: NetworkMessage) => void) => void
   onFileReceived: (callback: (message: NetworkMessage) => void) => void
   onFileTransferProgress: (callback: (progress: FileTransferProgress) => void) => void
+
+  // Auto-Update Event Listeners
+  onUpdateChecking: (callback: () => void) => () => void
+  onUpdateAvailable: (callback: (info: UpdateInfo) => void) => () => void
+  onUpdateNotAvailable: (callback: () => void) => () => void
+  onUpdateDownloadProgress: (callback: (progress: DownloadProgress) => void) => () => void
+  onUpdateDownloaded: (callback: (info: UpdateInfo) => void) => () => void
+  onUpdateError: (callback: (error: string) => void) => () => void
 }
 
 declare global {

@@ -43,6 +43,12 @@ const api = {
   deleteRemoteMessage: (deviceId: string, messageId: string): Promise<void> =>
     ipcRenderer.invoke('delete-remote-message', deviceId, messageId),
 
+  // Auto-Update
+  checkForUpdates: (): Promise<void> => ipcRenderer.invoke('check-for-updates'),
+  downloadUpdate: (): Promise<void> => ipcRenderer.invoke('download-update'),
+  quitAndInstall: (): Promise<void> => ipcRenderer.invoke('quit-and-install'),
+  getAppVersion: (): Promise<string> => ipcRenderer.invoke('get-app-version'),
+
   // Window Controls
   minimizeWindow: (): void => ipcRenderer.send('window-minimize'),
   maximizeWindow: (): void => ipcRenderer.send('window-maximize'),
@@ -120,6 +126,50 @@ const api = {
     ipcRenderer.on('remote-message-deleted', listener)
     return (): void => {
       ipcRenderer.removeListener('remote-message-deleted', listener)
+    }
+  },
+
+  // Auto-Update Event Listeners
+  onUpdateChecking: (callback: () => void): (() => void) => {
+    const listener = (): void => callback()
+    ipcRenderer.on('update-checking', listener)
+    return (): void => {
+      ipcRenderer.removeListener('update-checking', listener)
+    }
+  },
+  onUpdateAvailable: (callback: (info: unknown) => void): (() => void) => {
+    const listener = (_: unknown, info: unknown): void => callback(info)
+    ipcRenderer.on('update-available', listener)
+    return (): void => {
+      ipcRenderer.removeListener('update-available', listener)
+    }
+  },
+  onUpdateNotAvailable: (callback: () => void): (() => void) => {
+    const listener = (): void => callback()
+    ipcRenderer.on('update-not-available', listener)
+    return (): void => {
+      ipcRenderer.removeListener('update-not-available', listener)
+    }
+  },
+  onUpdateDownloadProgress: (callback: (progress: unknown) => void): (() => void) => {
+    const listener = (_: unknown, progress: unknown): void => callback(progress)
+    ipcRenderer.on('update-download-progress', listener)
+    return (): void => {
+      ipcRenderer.removeListener('update-download-progress', listener)
+    }
+  },
+  onUpdateDownloaded: (callback: (info: unknown) => void): (() => void) => {
+    const listener = (_: unknown, info: unknown): void => callback(info)
+    ipcRenderer.on('update-downloaded', listener)
+    return (): void => {
+      ipcRenderer.removeListener('update-downloaded', listener)
+    }
+  },
+  onUpdateError: (callback: (error: string) => void): (() => void) => {
+    const listener = (_: unknown, error: string): void => callback(error)
+    ipcRenderer.on('update-error', listener)
+    return (): void => {
+      ipcRenderer.removeListener('update-error', listener)
     }
   }
 }
