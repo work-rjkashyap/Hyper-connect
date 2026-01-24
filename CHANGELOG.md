@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.0](https://github.com/work-rjkashyap/Hyper-connect/compare/v1.2.0...v1.3.0) (2026-01-24)
+
+
+### Features
+
+* Configure macOS code signing and notarization with entitlements, CI/CD integration, and a new setup guide. ([2600b0f](https://github.com/work-rjkashyap/Hyper-connect/commit/2600b0f0f08c1054aab78b275f4d727279abbd7c))
+
 ## [1.2.0](https://github.com/work-rjkashyap/Hyper-connect/compare/v1.1.0...v1.2.0) (2026-01-23)
 
 
