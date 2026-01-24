@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.0](https://github.com/work-rjkashyap/Hyper-connect/compare/v1.4.0...v1.5.0) (2026-01-24)
+
+
+### Features
+
+* Dynamically set release tag and name from `package.json` version and update release action to v2. ([ee49ac5](https://github.com/work-rjkashyap/Hyper-connect/commit/ee49ac5489e4ff1f171b2c7d9b64f5d043995ee0))
+
 ## [1.4.0](https://github.com/work-rjkashyap/Hyper-connect/compare/v1.3.0...v1.4.0) (2026-01-24)
 
 
