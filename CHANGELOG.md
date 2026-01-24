@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.0](https://github.com/work-rjkashyap/Hyper-connect/compare/v1.3.0...v1.4.0) (2026-01-24)
+
+
+### Features
+
+* Add auto-update feature and redesign documentation home page ([6617506](https://github.com/work-rjkashyap/Hyper-connect/commit/66175062faababd371bbcb0e39b5d8c367539b24))
+
 ## [1.3.0](https://github.com/work-rjkashyap/Hyper-connect/compare/v1.2.0...v1.3.0) (2026-01-24)
 
 
