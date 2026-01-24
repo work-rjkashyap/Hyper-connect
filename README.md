@@ -19,6 +19,9 @@ Hyper-connect is a modern Electron-based application designed for seamless devic
 ## ✨ Core Features
 
 - **Device Discovery**: Automated networking using Bonjour/mDNS.
+- **Real-time Messaging**: Send and receive messages with emoji support, replies, and threading.
+- **File Transfer**: Share files with drag-and-drop, progress tracking, and pause/resume support.
+- **Auto-Update**: Automatic update checking and installation with seamless background downloads.
 - **Onboarding Flow**: Smooth user experience for initial setup.
 - **Dynamic UI**: Responsive design with theme support (Light/Dark).
 - **Store Management**: Persistent local storage using `electron-store`.
