@@ -27,9 +27,14 @@ nsis:
   createDesktopShortcut: always
 mac:
   icon: build/icon.png
-  # Use ad-hoc signing (no Apple Developer account required)
-  # Ad-hoc signature ensures all binaries are signed consistently
+  # Code signing configuration
+  # When CSC_LINK and CSC_KEY_PASSWORD are set (via GitHub secrets), the app will be signed
+  # Otherwise, it will use ad-hoc signing (identity: null)
   identity: null
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
   target:
     - dmg
     - zip
