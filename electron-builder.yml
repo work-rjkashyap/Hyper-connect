@@ -27,6 +27,7 @@ nsis:
   createDesktopShortcut: always
 mac:
   icon: build/icon.png
+  artifactName: ${name}-${version}-${arch}-mac.${ext}
   # Code signing configuration
   # When CSC_LINK and CSC_KEY_PASSWORD are set (via GitHub secrets), the app will be signed
   # Otherwise, it will use ad-hoc signing (identity: null)
