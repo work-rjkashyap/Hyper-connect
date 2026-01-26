@@ -430,7 +430,9 @@ export const DevicePage: React.FC = () => {
                   {replyingTo.deviceId === localDevice?.deviceId ? 'you' : device.displayName}
                 </p>
                 <p className="text-sm text-muted-foreground truncate">
-                  {replyingTo.payload as string}
+                  {replyingTo.type === 'FILE_META'
+                    ? `📎 ${(replyingTo.payload as FileMetadata).name}`
+                    : (replyingTo.payload as string)}
                 </p>
               </div>
               <Button
