@@ -1,3 +1,124 @@
 @import 'tailwindcss';
+@variant dark (&:where(.dark, .dark *));
 @import 'fumadocs-ui/css/neutral.css';
 @import 'fumadocs-ui/css/preset.css';
+
+:root {
+    /* Zed Theme Colors - Light (Default) */
+    --zed-bg: #f7f7f2;
+    --zed-blue: #0751cf;
+    --zed-text-primary: #4c5461;
+    --zed-text-secondary: #6f7b90;
+    --zed-border: rgba(0, 0, 0, 0.1);
+    --zed-shadow-btn: 0px -2px 0px 0px inset rgba(0, 0, 0, 0.1);
+}
+
+[class='dark'] {
+    /* Zed Theme Colors - Dark */
+    --zed-bg: #151516;
+    --zed-blue: #4881d5;
+    --zed-text-primary: #e1e1e6;
+    --zed-text-secondary: #9ea3ae;
+    --zed-border: rgba(255, 255, 255, 0.1);
+    --zed-shadow-btn: 0px -2px 0px 0px inset rgba(0, 0, 0, 0.3);
+}
+
+body {
+    background-color: var(--zed-bg);
+    color: var(--zed-text-primary);
+    font-family: var(--font-sans);
+    transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+    font-family: var(--font-serif);
+}
+
+@keyframes shimmer {
+    0% {
+        transform: translateX(-100%);
+    }
+
+    100% {
+        transform: translateX(100%);
+    }
+}
+
+@keyframes gradient {
+    0% {
+        background-position: 0% 50%;
+    }
+
+    50% {
+        background-position: 100% 50%;
+    }
+
+    100% {
+        background-position: 0% 50%;
+    }
+}
+
+@keyframes beam-1 {
+
+    0%,
+    100% {
+        opacity: 0.2;
+        transform: translateY(-100%);
+    }
+
+    50% {
+        opacity: 0.8;
+        transform: translateY(0);
+    }
+}
+
+@keyframes beam-2 {
+
+    0%,
+    100% {
+        opacity: 0.3;
+        transform: translateY(-100%);
+    }
+
+    50% {
+        opacity: 0.6;
+        transform: translateY(0);
+    }
+}
+
+.animate-shimmer {
+    animation: shimmer 3s infinite;
+}
+
+.animate-gradient {
+    animation: gradient 8s ease infinite;
+}
+
+.animate-beam-1 {
+    animation: beam-1 4s ease-in-out infinite;
+}
+
+.animate-beam-2 {
+    animation: beam-2 5s ease-in-out infinite;
+    animation-delay: 0.5s;
+}
+
+.animate-beam-3 {
+    animation: beam-1 6s ease-in-out infinite;
+    animation-delay: 1s;
+}
+
+.animate-beam-4 {
+    animation: beam-2 4.5s ease-in-out infinite;
+    animation-delay: 1.5s;
+}
+
+.animate-beam-5 {
+    animation: beam-1 5.5s ease-in-out infinite;
+    animation-delay: 2s;
+}

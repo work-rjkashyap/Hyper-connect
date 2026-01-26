@@ -46,6 +46,9 @@ jobs:
         run: npm run build
         working-directory: ./docs
 
+      - name: Add .nojekyll file
+        run: touch ./docs/out/.nojekyll
+
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:

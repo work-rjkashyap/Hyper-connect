@@ -1,302 +1,167 @@
+import { Download, Github, Globe, Shield, Zap } from 'lucide-react'
 import Link from 'next/link'
-import {
-  Radio,
-  MessageSquare,
-  FolderUp,
-  Download,
-  Palette,
-  Shield,
-  Github,
-  BookOpen,
-  ArrowRight,
-  Sparkles
-} from 'lucide-react'
+import { ThemeToggle } from '@/components/theme-toggle'
 
-export default function HomePage(): React.JSX.Element {
+export default function HomePage(): React.ReactElement {
   return (
-    <div className="flex flex-col">
+    <div className="flex flex-col min-h-screen bg-[var(--zed-bg)] transition-colors duration-300">
+      <nav className="absolute top-0 right-0 p-6 z-50">
+        <ThemeToggle />
+      </nav>
+
       {/* Hero Section */}
-      <section className="relative py-20 md:py-32">
-        <div className="container mx-auto px-4">
-          <div className="max-w-4xl mx-auto text-center">
-            {/* Badge */}
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 mb-8">
-              <Sparkles className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
-              <span className="text-xs font-medium text-gray-700 dark:text-gray-300">
-                Cross-platform device communication
-              </span>
+      <section className="relative pt-32 pb-20 md:pt-48 md:pb-32 overflow-hidden px-6 text-center z-10">
+        <div className="absolute inset-0 -z-10 h-full w-full bg-[linear-gradient(to_right,#80808012_1px,transparent_1px),linear-gradient(to_bottom,#80808012_1px,transparent_1px)] bg-[size:24px_24px]"></div>
+        <div className="absolute left-0 right-0 top-0 -z-10 m-auto h-[310px] w-[310px] rounded-full bg-blue-400 opacity-20 blur-[100px] dark:opacity-10"></div>
+
+        <div className="max-w-4xl mx-auto flex flex-col items-center">
+          <h1 className="text-5xl md:text-7xl font-serif text-[var(--zed-text-primary)] mb-6 tracking-tight">
+            Hyper Connect
+          </h1>
+          <p className="text-xl md:text-2xl text-[var(--zed-text-secondary)] mb-10 max-w-2xl font-light leading-relaxed opacity-90">
+            Seamless communication and file sharing between devices on your local network. Fast,
+            secure, and purely peer-to-peer.
+          </p>
+
+          <div className="flex flex-col sm:flex-row gap-4 w-full justify-center">
+            <Link
+              href="/docs"
+              className="inline-flex items-center justify-center gap-2 px-8 py-3.5 rounded-md bg-[var(--zed-blue)] text-white font-medium shadow-[var(--zed-shadow-btn)] hover:opacity-90 transition-all text-lg"
+            >
+              <Download className="w-5 h-5" />
+              Download
+            </Link>
+            <a
+              href="https://github.com/work-rjkashyap/Hyper-connect"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center justify-center gap-2 px-8 py-3.5 rounded-md bg-[var(--zed-card-bg)] border border-[var(--zed-border)] text-[var(--zed-text-primary)] font-medium shadow-sm hover:opacity-90 transition-all text-lg"
+            >
+              <Github className="w-5 h-5" />
+              View on GitHub
+            </a>
+          </div>
+
+          <div className="mt-12 p-2 bg-[var(--zed-card-bg)] rounded-lg border border-[var(--zed-border)] shadow-xl max-w-3xl w-full rotate-1 hover:rotate-0 transition-transform duration-500">
+            <div className="flex items-center gap-2 px-4 py-2 border-b border-[var(--zed-border)] bg-[rgba(128,128,128,0.05)] rounded-t-lg">
+              <div className="flex gap-1.5">
+                <div className="w-3 h-3 rounded-full bg-red-400"></div>
+                <div className="w-3 h-3 rounded-full bg-yellow-400"></div>
+                <div className="w-3 h-3 rounded-full bg-green-400"></div>
+              </div>
+              <div className="text-xs text-[var(--zed-text-secondary)] font-mono flex-1 text-center">
+                hyper-connect — bash
+              </div>
             </div>
-
-            {/* Main Heading */}
-            <h1 className="text-5xl md:text-7xl lg:text-8xl font-bold tracking-tight mb-6 text-gray-900 dark:text-white">
-              Hyper Connect
-            </h1>
-
-            {/* Subheading */}
-            <p className="text-xl md:text-2xl text-gray-600 dark:text-gray-400 mb-12 max-w-2xl mx-auto font-light">
-              Seamless communication and file sharing between devices on your local network
-            </p>
-
-            {/* CTA Buttons */}
-            <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
-              <Link
-                href="/docs"
-                className="group inline-flex items-center gap-2 px-6 py-3 rounded-lg bg-gray-900 dark:bg-white text-white dark:text-gray-900 font-medium hover:bg-gray-800 dark:hover:bg-gray-100 transition-colors"
-              >
-                Get Started
-                <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
-              </Link>
-
-              <a
-                href="https://github.com/work-rjkashyap/Hyper-connect"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 px-6 py-3 rounded-lg border border-gray-200 dark:border-gray-800 text-gray-700 dark:text-gray-300 font-medium hover:border-gray-300 dark:hover:border-gray-700 transition-colors"
-              >
-                <Github className="w-4 h-4" />
-                View on GitHub
-              </a>
+            <div className="p-6 font-mono text-left text-sm md:text-base bg-[var(--zed-card-bg)] overflow-hidden text-[var(--zed-text-primary)]">
+              <span className="text-blue-600 dark:text-blue-400">➜</span>{' '}
+              <span className="text-purple-600 dark:text-purple-400">~</span> hyper-connect start
+              <br />
+              <span className="text-green-600 dark:text-green-400">✔</span> Discovery service
+              started on port 5353
+              <br />
+              <span className="text-green-600 dark:text-green-400">✔</span> Device &ldquo;MacBook
+              Pro&rdquo; found [192.168.1.15]
+              <br />
+              <span className="text-green-600 dark:text-green-400">✔</span> Device &ldquo;Windows
+              Desktop&rdquo; found [192.168.1.20]
+              <br />
+              <span className="text-blue-600 dark:text-blue-400">ℹ</span> Ready to transfer files...
             </div>
           </div>
         </div>
       </section>
 
-      {/* Bento Grid Features */}
-      <section className="py-20 bg-gray-50 dark:bg-gray-950">
-        <div className="container mx-auto px-4">
-          <div className="max-w-6xl mx-auto">
-            {/* Section Header */}
-            <div className="text-center mb-16">
-              <h2 className="text-3xl md:text-5xl font-bold mb-4 text-gray-900 dark:text-white">
-                Everything you need
-              </h2>
-              <p className="text-lg text-gray-600 dark:text-gray-400">
-                Built for modern device communication
+      {/* Features Grid */}
+      <section className="py-24 px-6 bg-[rgba(128,128,128,0.02)] border-t border-[var(--zed-border)]">
+        <div className="max-w-6xl mx-auto">
+          <div className="grid md:grid-cols-3 gap-12">
+            <div className="group">
+              <div className="mb-4 inline-flex p-3 rounded-lg bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 group-hover:scale-110 transition-transform">
+                <Zap className="w-6 h-6" />
+              </div>
+              <h3 className="text-xl font-bold mb-3 text-[var(--zed-text-primary)]">
+                Blazing Fast
+              </h3>
+              <p className="text-[var(--zed-text-secondary)] leading-relaxed">
+                Built with performance in mind. Transfer files at the speed of your local network
+                without any cloud bottlenecks.
               </p>
             </div>
 
-            {/* Bento Grid */}
-            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {/* Large Card - Device Discovery */}
-              <div className="md:col-span-2 p-8 rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 hover:border-gray-300 dark:hover:border-gray-700 transition-colors">
-                <div className="flex items-start gap-4">
-                  <div className="p-2 rounded-lg bg-blue-50 dark:bg-blue-950">
-                    <Radio className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-                  </div>
-                  <div>
-                    <h3 className="text-xl font-semibold mb-2 text-gray-900 dark:text-white">
-                      Automatic Device Discovery
-                    </h3>
-                    <p className="text-gray-600 dark:text-gray-400">
-                      Discover devices on your local network automatically using Bonjour/mDNS. No
-                      manual configuration required.
-                    </p>
-                  </div>
-                </div>
+            <div className="group">
+              <div className="mb-4 inline-flex p-3 rounded-lg bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400 group-hover:scale-110 transition-transform">
+                <Globe className="w-6 h-6" />
               </div>
+              <h3 className="text-xl font-bold mb-3 text-[var(--zed-text-primary)]">
+                Local Discovery
+              </h3>
+              <p className="text-[var(--zed-text-secondary)] leading-relaxed">
+                Automatically finds devices on your LAN using Bonjour/mDNS. No configuration or IP
+                typing required.
+              </p>
+            </div>
 
-              {/* Medium Card - Real-time Messaging */}
-              <div className="p-8 rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 hover:border-gray-300 dark:hover:border-gray-700 transition-colors">
-                <div className="p-2 rounded-lg bg-purple-50 dark:bg-purple-950 w-fit mb-4">
-                  <MessageSquare className="w-5 h-5 text-purple-600 dark:text-purple-400" />
-                </div>
-                <h3 className="text-xl font-semibold mb-2 text-gray-900 dark:text-white">
-                  Real-time Messaging
-                </h3>
-                <p className="text-gray-600 dark:text-gray-400">
-                  Send messages instantly with emoji support and threading.
-                </p>
+            <div className="group">
+              <div className="mb-4 inline-flex p-3 rounded-lg bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 group-hover:scale-110 transition-transform">
+                <Shield className="w-6 h-6" />
               </div>
-
-              {/* Medium Card - File Transfer */}
-              <div className="p-8 rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 hover:border-gray-300 dark:hover:border-gray-700 transition-colors">
-                <div className="p-2 rounded-lg bg-orange-50 dark:bg-orange-950 w-fit mb-4">
-                  <FolderUp className="w-5 h-5 text-orange-600 dark:text-orange-400" />
-                </div>
-                <h3 className="text-xl font-semibold mb-2 text-gray-900 dark:text-white">
-                  File Transfer
-                </h3>
-                <p className="text-gray-600 dark:text-gray-400">
-                  Share files with drag-and-drop and progress tracking.
-                </p>
-              </div>
-
-              {/* Large Card - Auto-Update */}
-              <div className="md:col-span-2 p-8 rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 hover:border-gray-300 dark:hover:border-gray-700 transition-colors">
-                <div className="flex items-start gap-4">
-                  <div className="p-2 rounded-lg bg-green-50 dark:bg-green-950">
-                    <Download className="w-5 h-5 text-green-600 dark:text-green-400" />
-                  </div>
-                  <div>
-                    <h3 className="text-xl font-semibold mb-2 text-gray-900 dark:text-white">
-                      Auto-Update System
-                    </h3>
-                    <p className="text-gray-600 dark:text-gray-400">
-                      Stay up-to-date with automatic update checking, background downloads, and
-                      seamless installation across all platforms.
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Small Card - Modern UI */}
-              <div className="p-8 rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 hover:border-gray-300 dark:hover:border-gray-700 transition-colors">
-                <div className="p-2 rounded-lg bg-indigo-50 dark:bg-indigo-950 w-fit mb-4">
-                  <Palette className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
-                </div>
-                <h3 className="text-xl font-semibold mb-2 text-gray-900 dark:text-white">
-                  Modern UI
-                </h3>
-                <p className="text-gray-600 dark:text-gray-400">
-                  Beautiful interface with dark mode and smooth animations.
-                </p>
-              </div>
-
-              {/* Small Card - Secure */}
-              <div className="p-8 rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 hover:border-gray-300 dark:hover:border-gray-700 transition-colors">
-                <div className="p-2 rounded-lg bg-teal-50 dark:bg-teal-950 w-fit mb-4">
-                  <Shield className="w-5 h-5 text-teal-600 dark:text-teal-400" />
-                </div>
-                <h3 className="text-xl font-semibold mb-2 text-gray-900 dark:text-white">
-                  Secure & Private
-                </h3>
-                <p className="text-gray-600 dark:text-gray-400">
-                  Local network only. No cloud servers required.
-                </p>
-              </div>
+              <h3 className="text-xl font-bold mb-3 text-[var(--zed-text-primary)]">
+                Secure by Design
+              </h3>
+              <p className="text-[var(--zed-text-secondary)] leading-relaxed">
+                Your data never leaves your local network. Direct peer-to-peer connection with
+                end-to-end encryption.
+              </p>
             </div>
           </div>
         </div>
       </section>
 
-      {/* Download Section */}
-      <section className="py-20">
-        <div className="container mx-auto px-4">
-          <div className="max-w-4xl mx-auto text-center">
-            <h2 className="text-3xl md:text-5xl font-bold mb-4 text-gray-900 dark:text-white">
-              Download for your platform
-            </h2>
-            <p className="text-lg text-gray-600 dark:text-gray-400 mb-12">
-              Available for macOS, Windows, and Linux
-            </p>
-
-            <div className="grid md:grid-cols-3 gap-4">
-              <a
-                href="https://github.com/work-rjkashyap/Hyper-connect/releases/latest"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="group p-6 rounded-xl border border-gray-200 dark:border-gray-800 hover:border-gray-300 dark:hover:border-gray-700 transition-colors"
-              >
-                <div className="text-4xl mb-3">🍎</div>
-                <h3 className="font-semibold mb-1 text-gray-900 dark:text-white">macOS</h3>
-                <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">Download DMG</p>
-                <div className="inline-flex items-center gap-1 text-sm text-gray-900 dark:text-white group-hover:gap-2 transition-all">
-                  Download
-                  <ArrowRight className="w-3.5 h-3.5" />
-                </div>
-              </a>
-
-              <a
-                href="https://github.com/work-rjkashyap/Hyper-connect/releases/latest"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="group p-6 rounded-xl border border-gray-200 dark:border-gray-800 hover:border-gray-300 dark:hover:border-gray-700 transition-colors"
-              >
-                <div className="text-4xl mb-3">🪟</div>
-                <h3 className="font-semibold mb-1 text-gray-900 dark:text-white">Windows</h3>
-                <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">Download Installer</p>
-                <div className="inline-flex items-center gap-1 text-sm text-gray-900 dark:text-white group-hover:gap-2 transition-all">
-                  Download
-                  <ArrowRight className="w-3.5 h-3.5" />
-                </div>
-              </a>
-
-              <a
-                href="https://github.com/work-rjkashyap/Hyper-connect/releases/latest"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="group p-6 rounded-xl border border-gray-200 dark:border-gray-800 hover:border-gray-300 dark:hover:border-gray-700 transition-colors"
-              >
-                <div className="text-4xl mb-3">🐧</div>
-                <h3 className="font-semibold mb-1 text-gray-900 dark:text-white">Linux</h3>
-                <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">Download AppImage</p>
-                <div className="inline-flex items-center gap-1 text-sm text-gray-900 dark:text-white group-hover:gap-2 transition-all">
-                  Download
-                  <ArrowRight className="w-3.5 h-3.5" />
-                </div>
-              </a>
-            </div>
+      {/* Tech Stack / Footer Lite */}
+      <section className="py-20 px-6 border-t border-[var(--zed-border)] bg-[var(--zed-bg)]">
+        <div className="max-w-4xl mx-auto text-center">
+          <h2 className="text-2xl font-serif font-bold mb-8 text-[var(--zed-text-primary)]">
+            Built for developers, by developers.
+          </h2>
+          <div className="flex flex-wrap justify-center gap-6 opacity-60 grayscale hover:grayscale-0 transition-all duration-500 text-[var(--zed-text-secondary)]">
+            <span className="font-semibold">Electron</span>
+            <span className="font-semibold">React</span>
+            <span className="font-semibold">TypeScript</span>
+            <span className="font-semibold">Tailwind</span>
+            <span className="font-semibold">Rust (Core)</span>
           </div>
         </div>
       </section>
 
-      {/* Tech Stack */}
-      <section className="py-20 bg-gray-50 dark:bg-gray-950">
-        <div className="container mx-auto px-4">
-          <div className="max-w-4xl mx-auto text-center">
-            <h2 className="text-2xl md:text-3xl font-bold mb-3 text-gray-900 dark:text-white">
-              Built with modern technologies
-            </h2>
-            <p className="text-gray-600 dark:text-gray-400 mb-12">
-              Powered by industry-leading frameworks
-            </p>
-
-            <div className="flex flex-wrap justify-center gap-3">
-              {[
-                'Electron',
-                'React',
-                'TypeScript',
-                'Tailwind CSS',
-                'Radix UI',
-                'Zustand',
-                'Electron Vite',
-                'electron-updater'
-              ].map((tech) => (
-                <div
-                  key={tech}
-                  className="px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-800 text-sm font-medium text-gray-700 dark:text-gray-300"
-                >
-                  {tech}
-                </div>
-              ))}
-            </div>
+      {/* Footer */}
+      <footer className="py-12 px-6 border-t border-[var(--zed-border)] bg-[var(--zed-card-bg)] text-sm">
+        <div className="max-w-6xl mx-auto flex flex-col md:flex-row justify-between items-center gap-6">
+          <div className="text-[var(--zed-text-secondary)]">
+            &copy; {new Date().getFullYear()} Hyper Connect. Open Source.
+          </div>
+          <div className="flex gap-8">
+            <Link
+              href="/docs"
+              className="text-[var(--zed-text-secondary)] hover:text-[var(--zed-blue)] transition-colors"
+            >
+              Documentation
+            </Link>
+            <a
+              href="https://github.com/work-rjkashyap/Hyper-connect"
+              className="text-[var(--zed-text-secondary)] hover:text-[var(--zed-blue)] transition-colors"
+            >
+              GitHub
+            </a>
+            <a
+              href="https://twitter.com"
+              className="text-[var(--zed-text-secondary)] hover:text-[var(--zed-blue)] transition-colors"
+            >
+              Twitter
+            </a>
           </div>
         </div>
-      </section>
-
-      {/* CTA Section */}
-      <section className="py-20">
-        <div className="container mx-auto px-4">
-          <div className="max-w-3xl mx-auto text-center">
-            <h2 className="text-3xl md:text-5xl font-bold mb-4 text-gray-900 dark:text-white">
-              Start building today
-            </h2>
-            <p className="text-lg text-gray-600 dark:text-gray-400 mb-8">
-              Get started with Hyper Connect and experience seamless device communication
-            </p>
-
-            <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <Link
-                href="/docs"
-                className="inline-flex items-center gap-2 px-6 py-3 rounded-lg bg-gray-900 dark:bg-white text-white dark:text-gray-900 font-medium hover:bg-gray-800 dark:hover:bg-gray-100 transition-colors"
-              >
-                <BookOpen className="w-4 h-4" />
-                Read Documentation
-              </Link>
-
-              <a
-                href="https://github.com/work-rjkashyap/Hyper-connect/releases"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 px-6 py-3 rounded-lg border border-gray-200 dark:border-gray-800 text-gray-700 dark:text-gray-300 font-medium hover:border-gray-300 dark:hover:border-gray-700 transition-colors"
-              >
-                View Releases
-                <ArrowRight className="w-4 h-4" />
-              </a>
-            </div>
-          </div>
-        </div>
-      </section>
+      </footer>
     </div>
   )
 }
