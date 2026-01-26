@@ -40,8 +40,8 @@ export function ShimmerButton({
       }
       className={cn(
         'group relative inline-flex items-center justify-center overflow-hidden rounded-lg px-6 py-3 font-medium transition-all',
-        'bg-[var(--background)] text-white',
-        'before:absolute before:inset-0 before:bg-gradient-to-r before:from-transparent before:via-white/20 before:to-transparent',
+        'bg-(--background) text-white',
+        'before:absolute before:inset-0 before:bg-linear-to-r before:from-transparent before:via-white/20 before:to-transparent',
         'before:translate-x-[-200%] before:animate-shimmer',
         'hover:scale-105 active:scale-95',
         className
