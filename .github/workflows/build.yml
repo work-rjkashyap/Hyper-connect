@@ -16,10 +16,10 @@ jobs:
 
     steps:
       - name: Check out Git repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Install Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: 22
 
@@ -62,11 +62,11 @@ jobs:
         shell: bash
         run: |
           if [ "$RUNNER_OS" == "Windows" ]; then
-            npm run build && npx electron-builder --win --publish always
+            npm run build && npx electron-builder --win --publish onTag
           elif [ "$RUNNER_OS" == "macOS" ]; then
-            npm run build && npx electron-builder --mac --publish always
+            npm run build && npx electron-builder --mac --publish onTag
           else
-            npm run build && npx electron-builder --linux --publish always
+            npm run build && npx electron-builder --linux --publish onTag
           fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
