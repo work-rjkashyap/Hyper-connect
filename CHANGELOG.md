@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.0](https://github.com/work-rjkashyap/Hyper-connect/compare/v1.5.0...v1.6.0) (2026-01-26)
+
+
+### Features
+
+* Add new UI components, theme toggle, and update Next.js config for deployment. ([ddcf86f](https://github.com/work-rjkashyap/Hyper-connect/commit/ddcf86f59462d94e4bb7b0b8b27d99ee069f332d))
+
 ## [1.5.0](https://github.com/work-rjkashyap/Hyper-connect/compare/v1.4.0...v1.5.0) (2026-01-24)
 
 
