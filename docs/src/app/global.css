@@ -1,3 +1,4 @@
+/* biome-ignore-all format: Tailwind 4 directives are not yet supported by Biome's CSS parser */
 @import 'tailwindcss';
 @variant dark (&:where(.dark, .dark *));
 @import 'fumadocs-ui/css/neutral.css';

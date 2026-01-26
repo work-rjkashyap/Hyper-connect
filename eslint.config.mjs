@@ -28,5 +28,11 @@ export default defineConfig(
       ...eslintPluginReactRefresh.configs.vite.rules
     }
   },
+  {
+    files: ['docs/**/*.{ts,tsx}'],
+    rules: {
+      'react-refresh/only-export-components': 'off'
+    }
+  },
   eslintConfigPrettier
 )

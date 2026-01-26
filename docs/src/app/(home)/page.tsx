@@ -80,10 +80,8 @@ export default function HomePage(): React.ReactElement {
               <div className="mb-4 inline-flex p-3 rounded-lg bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 group-hover:scale-110 transition-transform">
                 <Zap className="w-6 h-6" />
               </div>
-              <h3 className="text-xl font-bold mb-3 text-[var(--zed-text-primary)]">
-                Blazing Fast
-              </h3>
-              <p className="text-[var(--zed-text-secondary)] leading-relaxed">
+              <h3 className="text-xl font-bold mb-3 text-(--zed-text-primary)">Blazing Fast</h3>
+              <p className="text-(--zed-text-secondary) leading-relaxed">
                 Built with performance in mind. Transfer files at the speed of your local network
                 without any cloud bottlenecks.
               </p>
@@ -93,10 +91,8 @@ export default function HomePage(): React.ReactElement {
               <div className="mb-4 inline-flex p-3 rounded-lg bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400 group-hover:scale-110 transition-transform">
                 <Globe className="w-6 h-6" />
               </div>
-              <h3 className="text-xl font-bold mb-3 text-[var(--zed-text-primary)]">
-                Local Discovery
-              </h3>
-              <p className="text-[var(--zed-text-secondary)] leading-relaxed">
+              <h3 className="text-xl font-bold mb-3 text-(--zed-text-primary)">Local Discovery</h3>
+              <p className="text-(--zed-text-secondary) leading-relaxed">
                 Automatically finds devices on your LAN using Bonjour/mDNS. No configuration or IP
                 typing required.
               </p>
@@ -106,10 +102,8 @@ export default function HomePage(): React.ReactElement {
               <div className="mb-4 inline-flex p-3 rounded-lg bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 group-hover:scale-110 transition-transform">
                 <Shield className="w-6 h-6" />
               </div>
-              <h3 className="text-xl font-bold mb-3 text-[var(--zed-text-primary)]">
-                Secure by Design
-              </h3>
-              <p className="text-[var(--zed-text-secondary)] leading-relaxed">
+              <h3 className="text-xl font-bold mb-3 text-(--zed-text-primary)">Secure by Design</h3>
+              <p className="text-(--zed-text-secondary) leading-relaxed">
                 Your data never leaves your local network. Direct peer-to-peer connection with
                 end-to-end encryption.
               </p>

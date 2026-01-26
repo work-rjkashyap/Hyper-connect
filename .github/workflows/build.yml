@@ -58,15 +58,15 @@ jobs:
           # Clean up certificate file
           rm certificate.p12
 
-      - name: Build Electron App
+      - name: Build and Publish Electron App
         shell: bash
         run: |
           if [ "$RUNNER_OS" == "Windows" ]; then
-            npm run build:win
+            npm run build && npx electron-builder --win --publish always
           elif [ "$RUNNER_OS" == "macOS" ]; then
-            npm run build:mac
+            npm run build && npx electron-builder --mac --publish always
           else
-            npm run build:linux
+            npm run build && npx electron-builder --linux --publish always
           fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -77,26 +77,3 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-
-      - name: Get package version
-        id: package_version
-        run: echo "version=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
-
-      - name: Release
-        uses: softprops/action-gh-release@v2
-        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
-        with:
-          tag_name: v${{ steps.package_version.outputs.version }}
-          name: Release v${{ steps.package_version.outputs.version }}
-          draft: false
-          prerelease: false
-          files: |
-            dist/*.exe
-            dist/*.dmg
-            dist/*.AppImage
-            dist/*.deb
-            dist/*.zip
-            dist/*.yml
-          fail_on_unmatched_files: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
