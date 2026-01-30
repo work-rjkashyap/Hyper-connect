@@ -5,28 +5,57 @@
 @import 'fumadocs-ui/css/preset.css';
 
 :root {
-    /* Zed Theme Colors - Light (Default) */
+    /* Custom theme colors that integrate with Fumadocs */
     --zed-bg: #f7f7f2;
+    --zed-card-bg: #ffffff;
     --zed-blue: #0751cf;
     --zed-text-primary: #4c5461;
     --zed-text-secondary: #6f7b90;
     --zed-border: rgba(0, 0, 0, 0.1);
     --zed-shadow-btn: 0px -2px 0px 0px inset rgba(0, 0, 0, 0.1);
+
+    /* Override Fumadocs colors for consistency */
+    --color-fd-background: var(--zed-bg);
+    --color-fd-foreground: var(--zed-text-primary);
+    --color-fd-card: var(--zed-card-bg);
+    --color-fd-card-foreground: var(--zed-text-primary);
+    --color-fd-border: var(--zed-border);
+    --color-fd-primary: var(--zed-blue);
+    --color-fd-primary-foreground: #ffffff;
 }
 
-[class='dark'] {
-    /* Zed Theme Colors - Dark */
+.dark,
+[class='dark'],
+[data-theme='dark'] {
+    /* Dark mode colors */
     --zed-bg: #151516;
-    --zed-blue: #4881d5;
+    --zed-card-bg: #1c1c1e;
+    --zed-blue: #5b9aff;
     --zed-text-primary: #e1e1e6;
     --zed-text-secondary: #9ea3ae;
-    --zed-border: rgba(255, 255, 255, 0.1);
+    --zed-border: rgba(255, 255, 255, 0.08);
     --zed-shadow-btn: 0px -2px 0px 0px inset rgba(0, 0, 0, 0.3);
+
+    /* Override Fumadocs dark mode colors */
+    --color-fd-background: var(--zed-bg);
+    --color-fd-foreground: var(--zed-text-primary);
+    --color-fd-muted: #1c1c1e;
+    --color-fd-muted-foreground: var(--zed-text-secondary);
+    --color-fd-card: var(--zed-card-bg);
+    --color-fd-card-foreground: var(--zed-text-primary);
+    --color-fd-border: var(--zed-border);
+    --color-fd-primary: var(--zed-blue);
+    --color-fd-primary-foreground: #ffffff;
+    --color-fd-secondary: #252528;
+    --color-fd-secondary-foreground: var(--zed-text-primary);
+    --color-fd-accent: rgba(255, 255, 255, 0.06);
+    --color-fd-accent-foreground: var(--zed-text-primary);
+    --color-fd-ring: var(--zed-blue);
 }
 
 body {
-    background-color: var(--zed-bg);
-    color: var(--zed-text-primary);
+    background-color: var(--color-fd-background);
+    color: var(--color-fd-foreground);
     font-family: var(--font-sans);
     transition: background-color 0.3s ease, color 0.3s ease;
 }
@@ -38,6 +67,56 @@ h4,
 h5,
 h6 {
     font-family: var(--font-serif);
+    color: var(--color-fd-foreground);
+}
+
+/* Custom animations for the home page */
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(30px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes fadeInDown {
+    from {
+        opacity: 0;
+        transform: translateY(-20px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes fadeInLeft {
+    from {
+        opacity: 0;
+        transform: translateX(-30px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+@keyframes fadeInRight {
+    from {
+        opacity: 0;
+        transform: translateX(30px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
 }
 
 @keyframes shimmer {
@@ -64,34 +143,20 @@ h6 {
     }
 }
 
-@keyframes beam-1 {
+@keyframes blink {
 
     0%,
-    100% {
-        opacity: 0.2;
-        transform: translateY(-100%);
+    50% {
+        opacity: 1;
     }
 
-    50% {
-        opacity: 0.8;
-        transform: translateY(0);
+    51%,
+    100% {
+        opacity: 0;
     }
 }
 
-@keyframes beam-2 {
-
-    0%,
-    100% {
-        opacity: 0.3;
-        transform: translateY(-100%);
-    }
-
-    50% {
-        opacity: 0.6;
-        transform: translateY(0);
-    }
-}
-
+/* Utility classes */
 .animate-shimmer {
     animation: shimmer 3s infinite;
 }
@@ -100,26 +165,29 @@ h6 {
     animation: gradient 8s ease infinite;
 }
 
-.animate-beam-1 {
-    animation: beam-1 4s ease-in-out infinite;
+/* Smooth transitions for theme switching */
+* {
+    transition-property: background-color, border-color, color;
+    transition-duration: 0.3s;
+    transition-timing-function: ease;
 }
 
-.animate-beam-2 {
-    animation: beam-2 5s ease-in-out infinite;
-    animation-delay: 0.5s;
+/* Fix for theme toggle visibility */
+.fd-theme-toggle {
+    opacity: 1 !important;
+    visibility: visible !important;
 }
 
-.animate-beam-3 {
-    animation: beam-1 6s ease-in-out infinite;
-    animation-delay: 1s;
+/* Ensure proper text colors in components */
+.prose {
+    color: var(--color-fd-foreground);
 }
 
-.animate-beam-4 {
-    animation: beam-2 4.5s ease-in-out infinite;
-    animation-delay: 1.5s;
-}
-
-.animate-beam-5 {
-    animation: beam-1 5.5s ease-in-out infinite;
-    animation-delay: 2s;
+.prose h1,
+.prose h2,
+.prose h3,
+.prose h4,
+.prose h5,
+.prose h6 {
+    color: var(--color-fd-foreground);
 }
