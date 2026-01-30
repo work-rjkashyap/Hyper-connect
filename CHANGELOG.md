@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.0](https://github.com/work-rjkashyap/Hyper-connect/compare/v1.6.0...v1.7.0) (2026-01-30)
+
+
+### Features
+
+* Add frontend-design skill with comprehensive guidelines and license ([4c95a51](https://github.com/work-rjkashyap/Hyper-connect/commit/4c95a513ca4c75157535f542b00dfc8b613c4a5b))
+
 ## [1.6.0](https://github.com/work-rjkashyap/Hyper-connect/compare/v1.5.0...v1.6.0) (2026-01-26)
 
 
