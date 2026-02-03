@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.0](https://github.com/work-rjkashyap/Hyper-connect/compare/v1.7.0...v1.8.0) (2026-02-03)
+
+
+### Features
+
+* add new documentation for getting started, guides, and troubleshooting, update Fumadocs source configuration, remove old static assets, and adjust UI components. ([22696a5](https://github.com/work-rjkashyap/Hyper-connect/commit/22696a5cba7e2249064eca9e54b6c12d0d50571f))
+
 ## [1.7.0](https://github.com/work-rjkashyap/Hyper-connect/compare/v1.6.0...v1.7.0) (2026-01-30)
 
 
