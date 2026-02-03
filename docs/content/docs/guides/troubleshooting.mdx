@@ -1,0 +1,37 @@
+---
+title: Troubleshooting
+description: Common issues and how to fix them
+---
+
+If you encounter issues while using Hyper Connect, check the solutions below.
+
+## Device Discovery Issues
+
+### Devices not showing up
+
+- **Same Network**: Ensure both devices are connected to the same local network.
+- **Firewall**: Check if your firewall is blocking Hyper Connect. You may need to add an exception.
+- **VPN**: Dynamic discovery often fails when a VPN is active. Try disconnecting your VPN.
+
+### "Connection Refused"
+
+This usually happens when the port is being used by another application. Try restarting the app or changing the port in [Configuration](./configuration).
+
+## macOS "Damaged App" Error
+
+If you see a message saying **"Hyper Connect.app" is damaged and can't be opened**, it's often due to macOS Gatekeeper blocking unsigned apps.
+
+<Steps>
+  <Step>### Open Terminal Press `Cmd + Space` and type "Terminal".</Step>
+  <Step>
+    ### Run Quarantine Removal Type the following command and press Enter: ```bash xattr -cr
+    /Applications/Hyper\ Connect.app ```
+  </Step>
+  <Step>### Re-launch Try opening the app again.</Step>
+</Steps>
+
+## Slow File Transfers
+
+- **Wi-Fi Signal**: Ensure you have a strong connection.
+- **Background Apps**: Other apps using significant bandwidth (like torrents or streaming) may slow down the transfer.
+- **Cable is King**: For the fastest speeds, use an Ethernet cable between devices.
