@@ -1,44 +1,14 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState, useMemo } from 'react'
 import { useParams, Navigate } from 'react-router-dom'
 import { useShallow } from 'zustand/react/shallow'
-import FileUp from 'lucide-react/dist/esm/icons/file-up'
-import Paperclip from 'lucide-react/dist/esm/icons/paperclip'
-import Send from 'lucide-react/dist/esm/icons/send'
-import User from 'lucide-react/dist/esm/icons/user'
-import Check from 'lucide-react/dist/esm/icons/check'
-import CheckCheck from 'lucide-react/dist/esm/icons/check-check'
-import Copy from 'lucide-react/dist/esm/icons/copy'
-import Trash2 from 'lucide-react/dist/esm/icons/trash-2'
-import Reply from 'lucide-react/dist/esm/icons/reply'
-import Forward from 'lucide-react/dist/esm/icons/forward'
-import X from 'lucide-react/dist/esm/icons/x'
-import Smile from 'lucide-react/dist/esm/icons/smile'
-import ExternalLink from 'lucide-react/dist/esm/icons/external-link'
-const EmojiPicker = React.lazy(() => import('emoji-picker-react'))
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
-import { Popover, PopoverContent, PopoverTrigger } from '../components/ui/popover'
-import { ForwardDialog } from '../components/ForwardDialog'
 import { toast } from 'sonner'
+import { ForwardDialog } from '../components/ForwardDialog'
 import { StatusToast } from '../components/ui/StatusToast'
-import {
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuTrigger,
-  ContextMenuSeparator
-} from '../components/ui/context-menu'
+import { Tabs, TabsContent } from '../components/ui/tabs'
+import { ChatHeader, ChatMessage, ChatInput, ReplyPreview, TransferView } from '../components/chat'
 import { useStore } from '../store/useStore'
-import { cn, formatFileSize, formatChatDate } from '../lib/utils'
-import { NetworkMessage, Device, FileMetadata } from '../../shared/messageTypes'
-import { Button } from '../components/ui/button'
-import { Separator } from '../components/ui/separator'
-import { ThemeToggle } from '../components/ui/theme-toggle'
-import { Card, CardContent } from '../components/ui/card'
-import { FileChatBubble } from '../components/FileChatBubble'
-import { Textarea } from '../components/ui/textarea'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
-import { Avatar, AvatarFallback, AvatarImage } from '../components/ui/avatar'
+import { formatChatDate } from '../lib/utils'
+import type { NetworkMessage } from '../../shared/messageTypes'
 const EMPTY_MESSAGES: NetworkMessage[] = []
 const REMOTE_DELETE_LIMIT = 15 * 60 * 1000 // 15 minutes
 export const DevicePage: React.FC = () => {
@@ -62,10 +32,45 @@ export const DevicePage: React.FC = () => {
       theme: state.theme
     }))
   )
+  // Memoize device lookup for performance
+  const device = useMemo(
+    () => discoveredDevices.find((d) => d.deviceId === deviceId),
+    [discoveredDevices, deviceId]
+  )
+  // Memoize messages to prevent unnecessary re-renders
+  const messages = useStore(
+    useCallback(
+      (state) => (deviceId ? state.messages[deviceId] || EMPTY_MESSAGES : EMPTY_MESSAGES),
+      [deviceId]
+    )
+  )
   const [pendingDeletes, setPendingDeletes] = useState<Set<string>>(new Set())
   const [replyingTo, setReplyingTo] = useState<NetworkMessage | null>(null)
   const [forwardingMessage, setForwardingMessage] = useState<NetworkMessage | null>(null)
-  const device = discoveredDevices.find((d) => d.deviceId === deviceId)
+  const [tab, setTab] = useState<'chat' | 'files'>('chat')
+  const [input, setInput] = useState('')
+  const [isScrolledToBottom, setIsScrolledToBottom] = useState(true)
+  const scrollRef = useRef<HTMLDivElement>(null)
+  // Auto-scroll management with user control
+  const scrollToBottom = useCallback(
+    (force = false): void => {
+      if (scrollRef.current && (isScrolledToBottom || force)) {
+        scrollRef.current.scrollTo({
+          top: scrollRef.current.scrollHeight,
+          behavior: 'smooth'
+        })
+      }
+    },
+    [isScrolledToBottom]
+  )
+  // Track if user has scrolled away from bottom
+  const handleScroll = useCallback(() => {
+    if (!scrollRef.current) return
+    const { scrollTop, scrollHeight, clientHeight } = scrollRef.current
+    const isAtBottom = scrollHeight - scrollTop - clientHeight < 50
+    setIsScrolledToBottom(isAtBottom)
+  }, [])
+  // Device and messages effects
   useEffect(() => {
     if (deviceId) {
       setSelectedDeviceId(deviceId)
@@ -75,26 +80,12 @@ export const DevicePage: React.FC = () => {
       setSelectedDeviceId(null)
     }
   }, [deviceId, setSelectedDeviceId, clearUnreadCount])
-  const [tab, setTab] = useState<'chat' | 'files'>('chat')
-  const messages = useStore((state) =>
-    deviceId ? state.messages[deviceId] || EMPTY_MESSAGES : EMPTY_MESSAGES
-  )
-  const [input, setInput] = useState('')
-  const scrollRef = useRef<HTMLDivElement>(null)
-  const scrollToBottom = (): void => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTo({
-        top: scrollRef.current.scrollHeight,
-        behavior: 'smooth'
-      })
-    }
-  }
-  // Scroll to bottom when switching to chat tab or messages change
+  // Auto-scroll when new messages arrive or switching tabs
   useEffect(() => {
     if (tab === 'chat') {
       scrollToBottom()
     }
-  }, [messages, tab])
+  }, [messages, tab, scrollToBottom])
   // Mark unread messages as read when viewing chat
   useEffect(() => {
     if (tab !== 'chat' || !device || !localDevice) return
@@ -105,17 +96,33 @@ export const DevicePage: React.FC = () => {
       if (msg.id) window.api.markAsRead(device.deviceId, msg.id)
     })
   }, [messages, tab, device, localDevice])
-  const handleSend = async (): Promise<void> => {
+  // Optimized send handler with better error handling
+  const handleSend = useCallback(async (): Promise<void> => {
     if (!input.trim() || !device) return
+    const messageText = input.trim()
+    const replyId = replyingTo?.id
+    // Optimistic UI update
+    setInput('')
+    setReplyingTo(null)
     try {
-      const sentMsg = await window.api.sendMessage(device.deviceId, input, replyingTo?.id)
+      const sentMsg = await window.api.sendMessage(device.deviceId, messageText, replyId)
       addMessage(device.deviceId, sentMsg)
-      setInput('')
-      setReplyingTo(null)
-    } catch (e) {
-      console.error('[DevicePage] Send error:', e)
+      scrollToBottom(true)
+    } catch (error) {
+      console.error('[DevicePage] Send error:', error)
+      toast.custom((id) => (
+        <StatusToast
+          message="Failed to send message"
+          description="Please try again"
+          type="error"
+          id={id}
+        />
+      ))
+      // Restore input on error
+      setInput(messageText)
+      if (replyId) setReplyingTo(messages.find((m) => m.id === replyId) || null)
     }
-  }
+  }, [input, device, replyingTo, addMessage, messages, scrollToBottom])
   const handleForward = async (targetDeviceId: string): Promise<void> => {
     if (!forwardingMessage) return
     try {
@@ -130,21 +137,52 @@ export const DevicePage: React.FC = () => {
       toast.custom((id) => <StatusToast message="Failed to forward message" type="error" id={id} />)
     }
   }
-  const handleFileSelect = async (): Promise<void> => {
+  // Enhanced file selection with better UX
+  const handleFileSelect = useCallback(async (): Promise<void> => {
     if (!device) return
-    const path = await window.api.selectFile()
-    if (path) {
-      const sentMsg = await window.api.sendFile(device.deviceId, path, replyingTo?.id)
-      addMessage(device.deviceId, sentMsg)
-      setReplyingTo(null)
+    try {
+      const path = await window.api.selectFile()
+      if (path) {
+        const replyId = replyingTo?.id
+        setReplyingTo(null)
+        const sentMsg = await window.api.sendFile(device.deviceId, path, replyId)
+        addMessage(device.deviceId, sentMsg)
+        scrollToBottom(true)
+        toast.custom((id) => (
+          <StatusToast message="File sent successfully" type="success" id={id} />
+        ))
+      }
+    } catch (error) {
+      console.error('[DevicePage] File select error:', error)
+      toast.custom((id) => (
+        <StatusToast
+          message="Failed to send file"
+          description="Please try again"
+          type="error"
+          id={id}
+        />
+      ))
     }
-  }
+  }, [device, replyingTo, addMessage, scrollToBottom])
+  // Enhanced tab change with better UX
+  const handleTabChange = useCallback(
+    (value: string) => {
+      const newTab = value as 'chat' | 'files'
+      setTab(newTab)
+      // Clear reply when switching to files
+      if (newTab === 'files' && replyingTo) {
+        setReplyingTo(null)
+      }
+    },
+    [replyingTo]
+  )
   const handleCopy = useCallback((text: string): void => {
     navigator.clipboard.writeText(text)
     toast.custom((id) => <StatusToast message="Copied to clipboard" type="success" id={id} />)
   }, [])
   const handleReply = useCallback((msg: NetworkMessage): void => {
     setReplyingTo(msg)
+    setTab('chat') // Ensure we're on chat tab for replies
   }, [])
   const handleForwardClick = useCallback((msg: NetworkMessage): void => {
     setForwardingMessage(msg)
@@ -188,467 +226,204 @@ export const DevicePage: React.FC = () => {
           id={id}
         />
       ))
-      // Undo logic is a bit complex with custom toast without custom implementation of undo action in the toast itself.
-      // For now status toast doesn't support actions.
-      // I will execute delete immediately for now to consistent with other actions.
+      // Execute delete immediately for consistent UX
       executeDelete(msg)
     },
     [deviceId, executeDelete]
   )
   if (!device) {
-    return <Navigate to="/" replace />
+    return <Navigate to="/" replace aria-live="polite" />
   }
   return (
-    <Tabs
-      defaultValue="chat"
-      value={tab}
-      onValueChange={(v) => setTab(v as 'chat' | 'files')}
-      className="flex-1 flex flex-col overflow-hidden animate-in fade-in duration-300"
-    >
-      <div className="h-16 border-b bg-background/80 backdrop-blur-md px-6 flex items-center justify-between shrink-0">
-        <div className="flex items-center gap-4">
-          <Avatar className="w-10 h-10 border border-border/10 shadow-sm">
-            <AvatarImage
-              src={device.profileImage}
-              alt={device.displayName}
-              className="object-cover"
-            />
-            <AvatarFallback className="bg-secondary">
-              <User className="w-5 h-5 text-muted-foreground" />
-            </AvatarFallback>
-          </Avatar>
-          <div className="flex flex-col">
-            <h2 className="text-xl font-bold truncate leading-tight">{device.displayName}</h2>
-            <p
-              className={cn(
-                'text-xs flex items-center gap-1.5 font-medium',
-                device.isOnline ? 'text-success' : 'text-muted-foreground'
-              )}
-            >
-              <span
-                className={cn(
-                  'w-2 h-2 rounded-full',
-                  device.isOnline ? 'bg-success animate-pulse' : 'bg-muted-foreground'
-                )}
-              />
-              {device.isOnline ? 'Online' : 'Offline'}
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center gap-4">
-          <TabsList className="bg-secondary p-1 rounded-xl h-auto shrink-0">
-            <TabsTrigger
-              value="chat"
-              className="px-4 py-1.5 text-xs font-bold uppercase tracking-wider rounded-lg data-[state=active]:bg-background data-[state=active]:text-primary data-[state=active]:shadow-sm transition-all"
-            >
-              Messages
-            </TabsTrigger>
-            <TabsTrigger
-              value="files"
-              className="px-4 py-1.5 text-xs font-bold uppercase tracking-wider rounded-lg data-[state=active]:bg-background data-[state=active]:text-primary data-[state=active]:shadow-sm transition-all"
-            >
-              Files
-            </TabsTrigger>
-          </TabsList>
-          <Separator orientation="vertical" className="h-6" />
-          <ThemeToggle />
-        </div>
-      </div>
-      <TabsContent
-        value="chat"
-        className="flex-1 flex flex-col min-h-0 bg-background/40 mt-0 data-[state=active]:flex"
+    <main className="flex-1 flex flex-col overflow-hidden">
+      <Tabs
+        defaultValue="chat"
+        value={tab}
+        onValueChange={handleTabChange}
+        className="flex-1 flex flex-col overflow-hidden motion-safe:animate-in motion-safe:fade-in motion-safe:duration-300"
+        orientation="horizontal"
       >
-        <div ref={scrollRef} className="flex-1 overflow-y-auto p-6 space-y-6">
-          {messages.length === 0 ? (
-            <div className="flex-1 flex flex-col items-center justify-center opacity-40 space-y-3 h-full">
-              <div className="p-4 bg-muted rounded-full">
-                <Send className="w-8 h-8 text-muted-foreground" />
-              </div>
-              <p className="text-sm font-medium leading-relaxed">No messages yet. Say hello!</p>
-            </div>
-          ) : (
-            messages
-              .filter((m) => !pendingDeletes.has(m.id!))
-              .map((msg, i, filtered) => {
-                const isLocal = msg.deviceId === localDevice?.deviceId
-                const isFile = msg.type === 'FILE_META'
-                // Date separator logic
-                const currentDate = formatChatDate(msg.timestamp)
-                const prevDate = i > 0 ? formatChatDate(filtered[i - 1].timestamp) : null
-                const showSeparator = currentDate !== prevDate
-                return (
-                  <React.Fragment key={msg.id || i}>
-                    {showSeparator && (
-                      <div className="flex items-center gap-4 py-4">
-                        <Separator className="flex-1 opacity-10" />
-                        <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground/40 whitespace-nowrap">
-                          {currentDate}
-                        </span>
-                        <Separator className="flex-1 opacity-10" />
-                      </div>
-                    )}
-                    <div className={cn('flex flex-col', isLocal ? 'items-end' : 'items-start')}>
-                      <ContextMenu>
-                        <ContextMenuTrigger asChild>
-                          <div
-                            id={msg.id ? `msg-${msg.id}` : undefined}
-                            className={cn(
-                              'max-w-[85%] rounded-xl px-3 py-2 shadow-xs cursor-default',
-                              isLocal
-                                ? 'bg-primary text-primary-foreground rounded-tr-none'
-                                : 'bg-card border border-border/50 rounded-tl-none'
-                            )}
-                          >
-                            {msg.replyTo && (
-                              <div
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  const el = document.getElementById(`msg-${msg.replyTo}`)
-                                  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
-                                }}
-                                className={cn(
-                                  'mb-1 p-1.5 rounded-md text-xs border-l-2 overflow-hidden cursor-pointer hover:opacity-80 transition-opacity leading-snug',
-                                  isLocal
-                                    ? 'bg-black/20 border-primary-foreground/50 text-primary-foreground/80'
-                                    : 'bg-muted border-primary/50 text-muted-foreground'
-                                )}
-                              >
-                                {(() => {
-                                  const repliedMsg = messages.find((m) => m.id === msg.replyTo)
-                                  if (!repliedMsg) {
-                                    return (
-                                      <p className="italic opacity-50">
-                                        Original message not found
-                                      </p>
-                                    )
-                                  }
-                                  return (
-                                    <>
-                                      <p className="font-bold opacity-70 ">
-                                        {repliedMsg.deviceId === localDevice?.deviceId
-                                          ? 'You'
-                                          : device.displayName}
-                                      </p>
-                                      <p className="line-clamp-2">
-                                        {repliedMsg.type === 'FILE_META'
-                                          ? `📎 ${(repliedMsg.payload as FileMetadata).name}`
-                                          : (repliedMsg.payload as string)}
-                                      </p>
-                                    </>
-                                  )
-                                })()}
-                              </div>
-                            )}
-                            {!isFile ? (
-                              <div className="prose prose-sm dark:prose-invert max-w-none prose-p:my-1 prose-a:text-info prose-a:no-underline hover:prose-a:text-info/80 prose-a:transition-colors select-text">
-                                <ReactMarkdown
-                                  remarkPlugins={[remarkGfm]}
-                                  components={{
-                                    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-                                    a: ({ node: _node, children, ...props }) => (
-                                      <a
-                                        {...props}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="inline-flex items-baseline gap-0.5 hover:text-info/80 transition-colors"
-                                      >
-                                        {children}
-                                        <ExternalLink className="w-3 h-3 self-center opacity-70" />
-                                      </a>
-                                    )
-                                  }}
-                                >
-                                  {typeof msg.payload === 'string'
-                                    ? msg.payload
-                                    : JSON.stringify(msg.payload)}
-                                </ReactMarkdown>
-                              </div>
-                            ) : (
-                              <FileChatBubble msg={msg} isLocal={isLocal} />
-                            )}
-                          </div>
-                        </ContextMenuTrigger>
-                        <ContextMenuContent className="w-48">
-                          <ContextMenuItem
-                            onClick={() => handleReply(msg)}
-                            className="flex items-center gap-2"
-                          >
-                            <Reply className="w-4 h-4" />
-                            <span>Reply</span>
-                          </ContextMenuItem>
-                          <ContextMenuItem
-                            onClick={() => handleForwardClick(msg)}
-                            className="flex items-center gap-2"
-                          >
-                            <Forward className="w-4 h-4" />
-                            <span>Forward</span>
-                          </ContextMenuItem>
-                          {!isFile && (
-                            <ContextMenuItem
-                              onClick={() => handleCopy(msg.payload as string)}
-                              className="flex items-center gap-2"
-                            >
-                              <Copy className="w-4 h-4" />
-                              <span>Copy Text</span>
-                            </ContextMenuItem>
-                          )}
-                          <ContextMenuSeparator />
-                          <ContextMenuItem
-                            onClick={() => handleDelete(msg)}
-                            className="text-destructive focus:text-destructive flex items-center gap-2"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                            <span>Delete Message</span>
-                          </ContextMenuItem>
-                        </ContextMenuContent>
-                      </ContextMenu>
-                      <div className="flex items-center gap-1.5 mt-0.5 px-1">
-                        <span className="text-xs text-muted-foreground font-medium leading-none">
-                          {new Date(msg.timestamp || 0).toLocaleTimeString([], {
-                            hour: '2-digit',
-                            minute: '2-digit'
-                          })}
-                        </span>
-                        {isLocal && (
-                          <div className="flex items-center">
-                            {msg.status === 'sent' && (
-                              <Check className="w-3 h-3 text-muted-foreground/50" />
-                            )}
-                            {msg.status === 'delivered' && (
-                              <CheckCheck className="w-3 h-3 text-muted-foreground/50" />
-                            )}
-                            {msg.status === 'read' && <CheckCheck className="w-3 h-3 text-info" />}
-                          </div>
-                        )}
-                      </div>
+        <ChatHeader device={device} currentTab={tab} onTabChange={handleTabChange} />
+        <TabsContent
+          value="chat"
+          className="flex-1 flex flex-col min-h-0 bg-linear-to-b from-background to-background/95 mt-0 data-[state=active]:flex focus-visible:outline-none"
+          role="tabpanel"
+          aria-label="Chat messages"
+        >
+          <div
+            ref={scrollRef}
+            className="flex-1 overflow-y-auto px-4 py-4 space-y-2 scroll-smooth overscroll-behavior-contain"
+            onScroll={handleScroll}
+            role="log"
+            aria-live="polite"
+            aria-label="Conversation history"
+            style={{
+              scrollbarWidth: 'thin',
+              scrollbarColor: 'hsl(var(--muted)) transparent'
+            }}
+          >
+            {messages.length === 0 ? (
+              <div className="flex-1 flex flex-col items-center justify-center py-20 px-6">
+                <div className="relative mb-6">
+                  <div className="w-20 h-20 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4 ring-8 ring-primary/5">
+                    <div className="w-12 h-12 bg-primary rounded-full flex items-center justify-center shadow-lg">
+                      <svg
+                        className="w-6 h-6 text-primary-foreground"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                        aria-hidden="true"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
+                        />
+                      </svg>
                     </div>
-                  </React.Fragment>
-                )
-              })
-          )}
-        </div>
-        <div className="p-4 bg-background border-t shrink-0 relative z-20">
-          {replyingTo && (
-            <div className="max-w-4xl mx-auto mb-2 flex items-center gap-3 bg-secondary/50 p-2.5 rounded-xl border border-border/50 animate-in slide-in-from-bottom-2 duration-200">
-              <div className="w-1 bg-primary self-stretch rounded-full opacity-50" />
-              <div className="flex-1 min-w-0">
-                <p className="text-xs font-bold text-primary uppercase tracking-wide mb-0.5 leading-none">
-                  Replying to{' '}
-                  {replyingTo.deviceId === localDevice?.deviceId ? 'you' : device.displayName}
-                </p>
-                <p className="text-sm text-muted-foreground truncate leading-snug">
-                  {replyingTo.type === 'FILE_META'
-                    ? `📎 ${(replyingTo.payload as FileMetadata).name}`
-                    : (replyingTo.payload as string)}
-                </p>
+                  </div>
+                  <div className="absolute -top-2 -right-2 w-6 h-6 bg-success rounded-full border-2 border-background animate-pulse" />
+                </div>
+                <div className="text-center space-y-2 max-w-sm">
+                  <h3 className="text-lg font-semibold text-foreground">Start the conversation</h3>
+                  <p className="text-sm text-muted-foreground leading-relaxed">
+                    Send a message to{' '}
+                    <span className="font-medium text-foreground">{device.displayName}</span> to
+                    begin chatting
+                  </p>
+                </div>
               </div>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7 rounded-full hover:bg-secondary"
-                onClick={handleCancelReply}
-              >
-                <X className="w-4 h-4" />
-              </Button>
-            </div>
-          )}
-          <div className="flex gap-2 max-w-4xl mx-auto items-center">
-            <button
-              type="button"
-              onClick={handleFileSelect}
-              className="p-2.5 hover:bg-secondary rounded-xl text-muted-foreground hover:text-primary transition-all hover:scale-105 active:scale-95"
-            >
-              <Paperclip className="w-5 h-5" />
-            </button>
-            <Popover>
-              <PopoverTrigger asChild>
-                <button
-                  type="button"
-                  className="p-2.5 hover:bg-secondary rounded-xl text-muted-foreground hover:text-primary transition-all hover:scale-105 active:scale-95"
-                >
-                  <Smile className="w-5 h-5" />
-                </button>
-              </PopoverTrigger>
-              <PopoverContent className="w-auto p-0" side="top" align="start">
-                <React.Suspense
-                  fallback={
-                    <div className="w-full h-100 flex flex-col items-center justify-center p-8 text-muted-foreground bg-muted/30 rounded-lg border border-dashed">
-                      Loading...
-                    </div>
-                  }
-                >
-                  <EmojiPicker
-                    width={320}
-                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                    theme={theme as any}
-                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                    emojiStyle={'native' as any}
-                    searchDisabled={false}
-                    skinTonesDisabled
-                    previewConfig={{
-                      showPreview: true
-                    }}
-                    onEmojiClick={(emojiData) => setInput((prev) => prev + emojiData.emoji)}
-                  />
-                </React.Suspense>
-              </PopoverContent>
-            </Popover>
-            <div className="flex-1 relative">
-              <Textarea
-                autoFocus
-                placeholder="Type a message..."
-                className="py-3 px-4 min-h-11 max-h-32 rounded-xl text-md shadow-xs resize-none overflow-y-auto"
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault()
-                    handleSend()
-                  }
-                }}
-                rows={1}
-              />
-            </div>
-            <Button
-              size="icon"
-              className="h-11 w-11 rounded-xl shadow-lg shadow-primary/20 hover:scale-105 active:scale-95 transition-all"
-              onClick={handleSend}
-            >
-              <Send className="w-5 h-5" />
-            </Button>
+            ) : (
+              messages
+                .filter((m) => !pendingDeletes.has(m.id!))
+                .map((msg, i, filtered) => {
+                  const isLocal = msg.deviceId === localDevice?.deviceId
+                  const currentDate = formatChatDate(msg.timestamp)
+                  const prevDate = i > 0 ? formatChatDate(filtered[i - 1].timestamp) : null
+                  const showSeparator = currentDate !== prevDate
+                  // Message grouping logic for modern chat
+                  const prevMsg = i > 0 ? filtered[i - 1] : null
+                  const nextMsg = i < filtered.length - 1 ? filtered[i + 1] : null
+                  const isFirstInGroup =
+                    !prevMsg || prevMsg.deviceId !== msg.deviceId || showSeparator
+                  const isLastInGroup = !nextMsg || nextMsg.deviceId !== msg.deviceId
+                  return (
+                    <React.Fragment key={msg.id || i}>
+                      {showSeparator && (
+                        <div className="sticky top-0 z-10 flex items-center gap-3 py-2 my-3">
+                          <div className="flex-1 h-px bg-linear-to-r from-transparent via-border to-transparent" />
+                          <div className="bg-background/80 backdrop-blur-sm px-3 py-1 rounded-full border border-border/50 shadow-sm">
+                            <span className="text-xs font-medium text-muted-foreground">
+                              {currentDate}
+                            </span>
+                          </div>
+                          <div className="flex-1 h-px bg-linear-to-r from-border via-transparent to-transparent" />
+                        </div>
+                      )}
+                      <div
+                        className={`flex flex-col ${isLocal ? 'items-end' : 'items-start'} mb-0.5`}
+                      >
+                        <div
+                          className={`
+                          max-w-[70%] min-w-0 group relative break-words
+                          ${isFirstInGroup ? (isLocal ? 'mb-0.5' : 'mb-0.5') : ''}
+                          ${isLastInGroup ? 'mb-2' : 'mb-0.5'}
+                        `}
+                          style={{
+                            wordWrap: 'break-word',
+                            overflowWrap: 'break-word'
+                          }}
+                        >
+                          <ChatMessage
+                            message={msg}
+                            isLocal={isLocal}
+                            device={device}
+                            localDeviceId={localDevice?.deviceId}
+                            messages={messages}
+                            onReply={handleReply}
+                            onForward={handleForwardClick}
+                            onCopy={handleCopy}
+                            onDelete={handleDelete}
+                          />
+                        </div>
+                      </div>
+                    </React.Fragment>
+                  )
+                })
+            )}
           </div>
-        </div>
-      </TabsContent>
-      <TabsContent value="files" className="mt-0 flex-1 flex flex-col min-h-0">
-        <TransferView device={device} />
-      </TabsContent>
+          {/* Compact scroll to bottom button */}
+          {!isScrolledToBottom && (
+            <div className="absolute bottom-20 right-3 z-20">
+              <button
+                onClick={() => scrollToBottom(true)}
+                className="
+                  bg-background/95 backdrop-blur-md border border-border/50
+                  text-foreground rounded-full p-3 shadow-lg hover:shadow-xl
+                  transition-all duration-200 hover:scale-110 active:scale-95
+                  focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2
+                  group relative overflow-hidden
+                "
+                aria-label="Scroll to bottom"
+                type="button"
+              >
+                <div className="absolute inset-0 bg-primary/5 scale-0 group-hover:scale-100 transition-transform duration-300 rounded-full" />
+                <svg
+                  className="w-5 h-5 transition-transform group-hover:translate-y-0.5"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M19 14l-7 7m0 0l-7-7m7 7V3"
+                  />
+                </svg>
+              </button>
+            </div>
+          )}
+          {/* Modern input area */}
+          <div className="relative border-t border-border/50 bg-background/80 backdrop-blur-md">
+            <div className="p-3 space-y-2">
+              {replyingTo && (
+                <div className="animate-in slide-in-from-bottom-2 duration-200">
+                  <ReplyPreview
+                    replyingTo={replyingTo}
+                    device={device}
+                    localDeviceId={localDevice?.deviceId}
+                    onCancel={handleCancelReply}
+                  />
+                </div>
+              )}
+              <div className="relative">
+                <ChatInput
+                  value={input}
+                  theme={theme}
+                  onChange={setInput}
+                  onSend={handleSend}
+                  onFileSelect={handleFileSelect}
+                />
+              </div>
+            </div>
+          </div>
+        </TabsContent>
+        <TabsContent
+          value="files"
+          className="mt-0 flex-1 flex flex-col min-h-0 focus-visible:outline-none bg-linear-to-b from-background to-background/95"
+          role="tabpanel"
+          aria-label="File transfers"
+        >
+          <TransferView device={device} />
+        </TabsContent>
+      </Tabs>
       <ForwardDialog
         isOpen={!!forwardingMessage}
         onOpenChange={(open) => !open && setForwardingMessage(null)}
         onForward={handleForward}
       />
-    </Tabs>
-  )
-}
-const TransferView: React.FC<{ device: Device }> = ({ device }) => {
-  const { addMessage } = useStore()
-  const transfers = useStore(
-    useShallow((state) =>
-      Object.values(state.transfers).filter((t) => t.deviceId === device.deviceId)
-    )
-  )
-  const handleSelectFile = async (): Promise<void> => {
-    const path = await window.api.selectFile()
-    if (path) {
-      const sentMsg = await window.api.sendFile(device.deviceId, path)
-      addMessage(device.deviceId, sentMsg)
-    }
-  }
-  return (
-    <div className="flex-1 overflow-y-auto p-6 space-y-8 bg-background/50">
-      <div
-        onClick={handleSelectFile}
-        className="relative group border-2 border-dashed border-border/60 rounded-5xl p-16 text-center space-y-6 hover:border-primary/50 hover:bg-primary/5 transition-all cursor-pointer overflow-hidden"
-      >
-        <div className="relative z-10 space-y-4">
-          <div className="w-20 h-20 bg-primary/10 rounded-full flex items-center justify-center mx-auto group-hover:scale-110 transition-transform duration-500">
-            <div className="w-14 h-14 bg-primary rounded-full flex items-center justify-center shadow-lg shadow-primary/30">
-              <FileUp className="w-7 h-7 text-primary-foreground" />
-            </div>
-          </div>
-          <div className="space-y-2">
-            <h3 className="text-xl font-bold tracking-tight leading-tight">Send Files</h3>
-            <p className="text-sm text-muted-foreground truncate wrap-break-word max-w-60 mx-auto leading-relaxed">
-              Drag and drop your files here or{' '}
-              <span className="text-primary font-bold">browse</span> to share
-            </p>
-          </div>
-          <Button
-            variant="secondary"
-            className="mt-2 font-bold uppercase tracking-wider text-xs px-10 h-10 rounded-xl shadow-sm leading-none"
-          >
-            Browse Files
-          </Button>
-        </div>
-        {/* Decorative corner element */}
-        <div className="absolute -top-12 -right-12 w-24 h-24 bg-primary/5 rounded-full blur-2xl group-hover:bg-primary/10 transition-colors" />
-      </div>
-      <div className="space-y-6">
-        <div className="flex items-center gap-4">
-          <h3 className="text-xs font-bold uppercase tracking-widest text-muted-foreground/50 whitespace-nowrap leading-none">
-            Transfer History
-          </h3>
-          <Separator className="flex-1 opacity-10" />
-        </div>
-        {transfers.length === 0 ? (
-          <div className="text-center py-20 bg-muted/5 rounded-3xl border border-dashed border-border/40">
-            <div className="w-16 h-16 bg-muted/20 rounded-full flex items-center justify-center mx-auto mb-4">
-              <Paperclip className="w-6 h-6 text-muted-foreground/30" />
-            </div>
-            <p className="text-sm font-medium text-muted-foreground/60 leading-relaxed">
-              No recent activity
-            </p>
-          </div>
-        ) : (
-          <div className="grid gap-4">
-            {[...transfers].reverse().map((transfer) => {
-              const remainsCompleted = transfer.status === 'completed'
-              return (
-                <Card
-                  key={transfer.fileId}
-                  onClick={() => {
-                    if (remainsCompleted && transfer.path) {
-                      window.api.openFileLocation(transfer.path)
-                    }
-                  }}
-                  className={cn(
-                    'bg-card/40 border-border/40 overflow-hidden group transition-all rounded-2xl',
-                    remainsCompleted &&
-                      'cursor-pointer hover:border-primary/50 hover:bg-primary/5 hover:shadow-lg active:scale-[0.98]'
-                  )}
-                >
-                  <CardContent className="p-5 flex items-center gap-5">
-                    <div
-                      className={cn(
-                        'p-3.5 rounded-2xl border transition-colors',
-                        remainsCompleted
-                          ? 'bg-success/10 border-success/20 text-success'
-                          : 'bg-muted/10 border-border/50 text-muted-foreground/50'
-                      )}
-                    >
-                      {remainsCompleted ? (
-                        <FileUp className="w-6 h-6" />
-                      ) : (
-                        <Paperclip className="w-6 h-6" />
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm text-foreground truncate max-w-60">
-                        {transfer.name || 'Unknown File'}
-                      </p>
-                      <div className="flex items-center gap-2 mt-1">
-                        <span className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
-                          {transfer.status}
-                        </span>
-                        {transfer.status === 'active' && (
-                          <span className="text-xs text-primary font-bold">
-                            {(transfer.progress * 100).toFixed(0)}%
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-xs font-bold text-muted-foreground/50 bg-secondary/50 px-2 py-1 rounded-md">
-                        {formatFileSize(transfer.size)}
-                      </p>
-                    </div>
-                  </CardContent>
-                </Card>
-              )
-            })}
-          </div>
-        )}
-      </div>
-    </div>
+    </main>
   )
 }

@@ -58,6 +58,7 @@
     "electron-updater": "^6.3.9",
     "emoji-picker-react": "^4.16.1",
     "lucide-react": "^0.562.0",
+    "motion": "^12.33.0",
     "react-markdown": "^10.1.0",
     "react-router-dom": "^7.12.0",
     "remark-gfm": "^4.0.1",
