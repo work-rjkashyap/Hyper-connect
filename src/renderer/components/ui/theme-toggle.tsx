@@ -1,5 +1,6 @@
-import React, { useEffect } from 'react'
-import { Moon, Sun } from 'lucide-react'
+import React, { useEffect, useCallback } from 'react'
+import Moon from 'lucide-react/dist/esm/icons/moon'
+import Sun from 'lucide-react/dist/esm/icons/sun'
 import { useShallow } from 'zustand/react/shallow'
 import { Button } from '@renderer/components/ui/button'
 import { useStore } from '@renderer/store/useStore'
@@ -18,17 +19,21 @@ export const ThemeToggle: React.FC = () => {
     root.classList.add(theme)
   }, [theme])
 
+  const handleToggleTheme = useCallback(() => {
+    setTheme(theme === 'light' ? 'dark' : 'light')
+  }, [theme, setTheme])
+
   return (
     <Button
       variant="ghost"
       size="icon"
-      onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}
+      onClick={handleToggleTheme}
       className="w-9 h-9 rounded-full"
     >
       {theme === 'light' ? (
-        <Sun className="h-4 w-4 text-orange-500" />
+        <Sun className="h-4 w-4 text-warning" />
       ) : (
-        <Moon className="h-4 w-4 text-blue-500" />
+        <Moon className="h-4 w-4 text-info" />
       )}
       <span className="sr-only">Toggle theme</span>
     </Button>

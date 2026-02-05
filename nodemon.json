@@ -1,0 +1,8 @@
+{
+  "watch": ["src/main/**/*", "src/preload/**/*"],
+  "ext": "ts,js,json",
+  "ignore": ["**/*.spec.ts", "node_modules/**/*", "out/**/*", "dist/**/*"],
+  "exec": "npm run dev",
+  "restartable": "rs",
+  "delay": 1000
+}

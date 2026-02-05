@@ -1,18 +1,16 @@
-import React, { useState, useEffect } from 'react'
-import {
-  Info,
-  Settings,
-  User,
-  Save,
-  MessageSquare,
-  FileText,
-  Database,
-  FolderOpen,
-  Camera,
-  Network,
-  Server,
-  Wifi
-} from 'lucide-react'
+import React, { useState, useEffect, useCallback } from 'react'
+import Info from 'lucide-react/dist/esm/icons/info'
+import Settings from 'lucide-react/dist/esm/icons/settings'
+import User from 'lucide-react/dist/esm/icons/user'
+import Save from 'lucide-react/dist/esm/icons/save'
+import MessageSquare from 'lucide-react/dist/esm/icons/message-square'
+import FileText from 'lucide-react/dist/esm/icons/file-text'
+import Database from 'lucide-react/dist/esm/icons/database'
+import FolderOpen from 'lucide-react/dist/esm/icons/folder-open'
+import Camera from 'lucide-react/dist/esm/icons/camera'
+import Network from 'lucide-react/dist/esm/icons/network'
+import Server from 'lucide-react/dist/esm/icons/server'
+import Wifi from 'lucide-react/dist/esm/icons/wifi'
 import { useStore } from '@/renderer/store/useStore'
 import {
   Card,
@@ -51,12 +49,25 @@ export const SettingsPage: React.FC = () => {
   const [profileImage, setProfileImage] = useState<string | null>(localDevice?.profileImage || null)
   const [networkInfo, setNetworkInfo] = useState<NetworkInfo | null>(null)
   const [appVersion, setAppVersion] = useState<string>('')
-  const [updateStatus, setUpdateStatus] = useState<
-    'idle' | 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'error'
-  >('idle')
-  const [updateInfo, setUpdateInfo] = useState<{ version: string } | null>(null)
-  const [downloadProgress, setDownloadProgress] = useState<{ percent: number } | null>(null)
-  const [updateError, setUpdateError] = useState<string | null>(null)
+  // Consolidated update state
+  const [updateState, setUpdateState] = useState<{
+    status:
+      | 'idle'
+      | 'checking'
+      | 'available'
+      | 'not-available'
+      | 'downloading'
+      | 'downloaded'
+      | 'error'
+    info: { version: string } | null
+    progress: { percent: number } | null
+    error: string | null
+  }>({
+    status: 'idle',
+    info: null,
+    progress: null,
+    error: null
+  })
   useEffect(() => {
     const loadSettings = async (): Promise<void> => {
       try {
@@ -79,29 +90,23 @@ export const SettingsPage: React.FC = () => {
     window.api.getAppVersion().then(setAppVersion)
     // Set up update event listeners
     const cleanupChecking = window.api.onUpdateChecking(() => {
-      setUpdateStatus('checking')
-      setUpdateError(null)
+      setUpdateState((prev) => ({ ...prev, status: 'checking', error: null }))
     })
     const cleanupAvailable = window.api.onUpdateAvailable((info: { version: string }) => {
-      setUpdateStatus('available')
-      setUpdateInfo(info)
+      setUpdateState((prev) => ({ ...prev, status: 'available', info }))
     })
     const cleanupNotAvailable = window.api.onUpdateNotAvailable(() => {
-      setUpdateStatus('not-available')
-      setTimeout(() => setUpdateStatus('idle'), 3000)
+      setUpdateState((prev) => ({ ...prev, status: 'not-available' }))
+      setTimeout(() => setUpdateState((prev) => ({ ...prev, status: 'idle' })), 3000)
     })
     const cleanupProgress = window.api.onUpdateDownloadProgress((progress: { percent: number }) => {
-      setUpdateStatus('downloading')
-      setDownloadProgress(progress)
+      setUpdateState((prev) => ({ ...prev, status: 'downloading', progress }))
     })
     const cleanupDownloaded = window.api.onUpdateDownloaded((info: { version: string }) => {
-      setUpdateStatus('downloaded')
-      setUpdateInfo(info)
-      setDownloadProgress(null)
+      setUpdateState((prev) => ({ ...prev, status: 'downloaded', info, progress: null }))
     })
     const cleanupError = window.api.onUpdateError((error: string) => {
-      setUpdateStatus('error')
-      setUpdateError(error)
+      setUpdateState((prev) => ({ ...prev, status: 'error', error }))
     })
     return () => {
       cleanupChecking()
@@ -173,8 +178,11 @@ export const SettingsPage: React.FC = () => {
       await window.api.checkForUpdates()
     } catch (error) {
       console.error('Failed to check for updates:', error)
-      setUpdateStatus('error')
-      setUpdateError('Failed to check for updates')
+      setUpdateState((prev) => ({
+        ...prev,
+        status: 'error',
+        error: 'Failed to check for updates'
+      }))
     }
   }
   const handleDownloadUpdate = async (): Promise<void> => {
@@ -182,8 +190,11 @@ export const SettingsPage: React.FC = () => {
       await window.api.downloadUpdate()
     } catch (error) {
       console.error('Failed to download update:', error)
-      setUpdateStatus('error')
-      setUpdateError('Failed to download update')
+      setUpdateState((prev) => ({
+        ...prev,
+        status: 'error',
+        error: 'Failed to download update'
+      }))
     }
   }
   const handleInstallUpdate = async (): Promise<void> => {
@@ -193,13 +204,22 @@ export const SettingsPage: React.FC = () => {
       console.error('Failed to install update:', error)
     }
   }
+  const handleAvatarClick = useCallback((): void => {
+    document.getElementById('settings-avatar-input')?.click()
+  }, [])
+  const handleClearMessages = useCallback((): void => {
+    clearMessages()
+  }, [clearMessages])
+  const handleClearTransfers = useCallback((): void => {
+    clearTransfers()
+  }, [clearTransfers])
   return (
     <div className="flex-1 overflow-y-auto w-full">
       <div className="max-w-3xl mx-auto space-y-8 p-8">
         {/* Header */}
         <div className="space-y-2 pt-2">
-          <h2 className="text-3xl font-bold tracking-tight">Settings</h2>
-          <p className="text-muted-foreground text-base">
+          <h2 className="text-3xl font-bold tracking-tight leading-tight">Settings</h2>
+          <p className="prose prose-base dark:prose-invert text-muted-foreground">
             Manage your device preferences and application data
           </p>
         </div>
@@ -211,14 +231,13 @@ export const SettingsPage: React.FC = () => {
               <User className="w-5 h-5" />
               <CardTitle>Profile</CardTitle>
             </div>
-            <CardDescription>Update your display name visible to other devices</CardDescription>
+            <CardDescription className="prose prose-sm dark:prose-invert">
+              Update your display name visible to other devices
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex flex-col items-center sm:flex-row sm:items-start gap-6">
-              <div
-                className="relative group cursor-pointer"
-                onClick={() => document.getElementById('settings-avatar-input')?.click()}
-              >
+              <div className="relative group cursor-pointer" onClick={handleAvatarClick}>
                 <Avatar className="w-20 h-20 border border-border/50">
                   <AvatarImage
                     src={profileImage || undefined}
@@ -277,7 +296,9 @@ export const SettingsPage: React.FC = () => {
               <Settings className="w-5 h-5" />
               <CardTitle>Preferences</CardTitle>
             </div>
-            <CardDescription>Customize your application settings</CardDescription>
+            <CardDescription className="prose prose-sm dark:prose-invert">
+              Customize your application settings
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
             <div className="space-y-2">
@@ -294,7 +315,7 @@ export const SettingsPage: React.FC = () => {
                   Browse
                 </Button>
               </div>
-              <p className="text-sm text-muted-foreground">
+              <p className="text-sm text-muted-foreground leading-relaxed">
                 Choose where received files will be saved
               </p>
             </div>
@@ -302,7 +323,7 @@ export const SettingsPage: React.FC = () => {
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
                 <Label className="text-base">Auto-accept Files</Label>
-                <p className="text-sm text-muted-foreground">
+                <p className="text-sm text-muted-foreground leading-relaxed">
                   Automatically download incoming files without permission
                 </p>
               </div>
@@ -317,30 +338,36 @@ export const SettingsPage: React.FC = () => {
               <Network className="w-5 h-5" />
               <CardTitle>Network</CardTitle>
             </div>
-            <CardDescription>TCP server details and network configuration</CardDescription>
+            <CardDescription className="prose prose-sm dark:prose-invert">
+              TCP server details and network configuration
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             {networkInfo ? (
               <>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground leading-snug">
                       <Server className="w-4 h-4" />
                       <span>TCP Server Port</span>
                     </div>
-                    <p className="text-2xl font-bold font-mono">{networkInfo.port}</p>
+                    <p className="text-2xl font-bold font-mono leading-tight">{networkInfo.port}</p>
                   </div>
                   <div className="space-y-2">
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground leading-snug">
                       <Wifi className="w-4 h-4" />
                       <span>Active Connections</span>
                     </div>
-                    <p className="text-2xl font-bold">{networkInfo.activeConnections}</p>
+                    <p className="text-2xl font-bold leading-tight">
+                      {networkInfo.activeConnections}
+                    </p>
                   </div>
                 </div>
                 <Separator />
                 <div className="space-y-2">
-                  <Label className="text-sm text-muted-foreground">Local IP Addresses</Label>
+                  <Label className="text-sm text-muted-foreground leading-snug">
+                    Local IP Addresses
+                  </Label>
                   <div className="space-y-1">
                     {networkInfo.addresses.length > 0 ? (
                       networkInfo.addresses.map((addr) => (
@@ -348,12 +375,12 @@ export const SettingsPage: React.FC = () => {
                           key={addr}
                           className="flex items-center gap-2 px-3 py-2 bg-muted rounded-md font-mono text-sm"
                         >
-                          <div className="w-2 h-2 rounded-full bg-green-500" />
+                          <div className="w-2 h-2 rounded-full bg-success" />
                           {addr}
                         </div>
                       ))
                     ) : (
-                      <p className="text-sm text-muted-foreground">
+                      <p className="text-sm text-muted-foreground leading-relaxed">
                         No network interfaces detected
                       </p>
                     )}
@@ -361,7 +388,9 @@ export const SettingsPage: React.FC = () => {
                 </div>
               </>
             ) : (
-              <p className="text-sm text-muted-foreground">Loading network information...</p>
+              <p className="text-sm text-muted-foreground leading-relaxed">
+                Loading network information...
+              </p>
             )}
           </CardContent>
         </Card>
@@ -372,7 +401,9 @@ export const SettingsPage: React.FC = () => {
               <Database className="w-5 h-5" />
               <CardTitle>Data Management</CardTitle>
             </div>
-            <CardDescription>Clear application data and manage your privacy</CardDescription>
+            <CardDescription className="prose prose-sm dark:prose-invert">
+              Clear application data and manage your privacy
+            </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col sm:flex-row gap-2">
             <AlertDialog>
@@ -388,7 +419,7 @@ export const SettingsPage: React.FC = () => {
               <AlertDialogContent>
                 <AlertDialogHeader>
                   <AlertDialogTitle>Clear Chat History?</AlertDialogTitle>
-                  <AlertDialogDescription>
+                  <AlertDialogDescription className="prose prose-sm dark:prose-invert">
                     This will permanently delete all chat messages from this device. This action
                     cannot be undone.
                   </AlertDialogDescription>
@@ -396,7 +427,7 @@ export const SettingsPage: React.FC = () => {
                 <AlertDialogFooter>
                   <AlertDialogCancel>Cancel</AlertDialogCancel>
                   <AlertDialogAction
-                    onClick={() => clearMessages()}
+                    onClick={handleClearMessages}
                     className="bg-destructive hover:bg-destructive/90"
                   >
                     Clear History
@@ -417,7 +448,7 @@ export const SettingsPage: React.FC = () => {
               <AlertDialogContent>
                 <AlertDialogHeader>
                   <AlertDialogTitle>Clear Transfer History?</AlertDialogTitle>
-                  <AlertDialogDescription>
+                  <AlertDialogDescription className="prose prose-sm dark:prose-invert">
                     This will remove the log of all file transfers. The files themselves will remain
                     in your downloads folder.
                   </AlertDialogDescription>
@@ -425,7 +456,7 @@ export const SettingsPage: React.FC = () => {
                 <AlertDialogFooter>
                   <AlertDialogCancel>Cancel</AlertDialogCancel>
                   <AlertDialogAction
-                    onClick={() => clearTransfers()}
+                    onClick={handleClearTransfers}
                     className="bg-destructive hover:bg-destructive/90"
                   >
                     Clear History
@@ -438,7 +469,7 @@ export const SettingsPage: React.FC = () => {
                 <Button
                   variant="outline"
                   disabled={clearingCache}
-                  className="flex-1 justify-center text-orange-500 hover:text-orange-600 hover:bg-orange-500/10"
+                  className="flex-1 justify-center text-warning hover:text-warning/90 hover:bg-warning/10"
                 >
                   <Settings className="w-4 h-4" />
                   {clearingCache ? '...' : 'Cache'}
@@ -447,7 +478,7 @@ export const SettingsPage: React.FC = () => {
               <AlertDialogContent>
                 <AlertDialogHeader>
                   <AlertDialogTitle>Clear Application Cache?</AlertDialogTitle>
-                  <AlertDialogDescription>
+                  <AlertDialogDescription className="prose prose-sm dark:prose-invert">
                     This will clear all session data, temporary files, and reload the application.
                     You may need to re-discover devices.
                   </AlertDialogDescription>
@@ -456,7 +487,7 @@ export const SettingsPage: React.FC = () => {
                   <AlertDialogCancel>Cancel</AlertDialogCancel>
                   <AlertDialogAction
                     onClick={handleClearCache}
-                    className="bg-orange-500 hover:bg-orange-600"
+                    className="bg-warning hover:bg-warning/90 text-warning-foreground"
                   >
                     Clear Cache
                   </AlertDialogAction>
@@ -472,28 +503,30 @@ export const SettingsPage: React.FC = () => {
               <Info className="w-5 h-5" />
               <CardTitle>About</CardTitle>
             </div>
-            <CardDescription>Application version and updates</CardDescription>
+            <CardDescription className="prose prose-sm dark:prose-invert">
+              Application version and updates
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
                 <Label className="text-base">Current Version</Label>
-                <p className="text-sm text-muted-foreground font-mono">
+                <p className="text-sm text-muted-foreground font-mono leading-snug">
                   {appVersion || 'Loading...'}
                 </p>
               </div>
               <Button
                 onClick={handleCheckForUpdates}
-                disabled={updateStatus === 'checking' || updateStatus === 'downloading'}
+                disabled={updateState.status === 'checking' || updateState.status === 'downloading'}
                 variant="outline"
                 size="default"
               >
-                {updateStatus === 'checking' ? (
+                {updateState.status === 'checking' ? (
                   <>
                     <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin mr-2" />
                     Checking...
                   </>
-                ) : updateStatus === 'downloading' ? (
+                ) : updateState.status === 'downloading' ? (
                   <>
                     <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin mr-2" />
                     Downloading...
@@ -503,10 +536,10 @@ export const SettingsPage: React.FC = () => {
                 )}
               </Button>
             </div>
-            {updateStatus === 'available' && updateInfo && (
-              <div className="p-4 bg-blue-500/10 border border-blue-500/20 rounded-md space-y-2">
-                <p className="text-sm font-medium text-blue-600 dark:text-blue-400">
-                  New version available: {updateInfo.version}
+            {updateState.status === 'available' && updateState.info && (
+              <div className="p-4 bg-info/10 border border-info/20 rounded-md space-y-2">
+                <p className="text-sm font-medium text-info">
+                  New version available: {updateState.info.version}
                 </p>
                 <Button
                   onClick={handleDownloadUpdate}
@@ -518,24 +551,24 @@ export const SettingsPage: React.FC = () => {
                 </Button>
               </div>
             )}
-            {updateStatus === 'downloading' && downloadProgress && (
+            {updateState.status === 'downloading' && updateState.progress && (
               <div className="space-y-2">
                 <div className="flex justify-between text-sm">
                   <span>Downloading update...</span>
-                  <span>{downloadProgress.percent.toFixed(0)}%</span>
+                  <span>{updateState.progress.percent.toFixed(0)}%</span>
                 </div>
                 <div className="w-full bg-muted rounded-full h-2">
                   <div
                     className="bg-primary h-2 rounded-full transition-all duration-300"
-                    style={{ width: `${downloadProgress.percent}%` }}
+                    style={{ width: `${updateState.progress.percent}%` }}
                   />
                 </div>
               </div>
             )}
-            {updateStatus === 'downloaded' && updateInfo && (
-              <div className="p-4 bg-green-500/10 border border-green-500/20 rounded-md space-y-2">
-                <p className="text-sm font-medium text-green-600 dark:text-green-400">
-                  Update ready to install: {updateInfo.version}
+            {updateState.status === 'downloaded' && updateState.info && (
+              <div className="p-4 bg-success/10 border border-success/20 rounded-md space-y-2">
+                <p className="text-sm font-medium text-success">
+                  Update ready to install: {updateState.info.version}
                 </p>
                 <Button
                   onClick={handleInstallUpdate}
@@ -547,16 +580,16 @@ export const SettingsPage: React.FC = () => {
                 </Button>
               </div>
             )}
-            {updateStatus === 'not-available' && (
+            {updateState.status === 'not-available' && (
               <div className="p-4 bg-muted rounded-md">
-                <p className="text-sm text-muted-foreground">
+                <p className="text-sm text-muted-foreground leading-relaxed">
                   You&apos;re running the latest version
                 </p>
               </div>
             )}
-            {updateStatus === 'error' && updateError && (
+            {updateState.status === 'error' && updateState.error && (
               <div className="p-4 bg-destructive/10 border border-destructive/20 rounded-md">
-                <p className="text-sm text-destructive">{updateError}</p>
+                <p className="text-sm text-destructive">{updateState.error}</p>
               </div>
             )}
           </CardContent>

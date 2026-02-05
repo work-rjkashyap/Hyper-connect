@@ -16,7 +16,7 @@ const useTheme = (): { theme: 'light' | 'dark' } => {
       setTheme(newTheme)
     }
 
-    window.addEventListener('storage', handleStorage)
+    window.addEventListener('storage', handleStorage, { passive: true })
     return () => window.removeEventListener('storage', handleStorage)
   }, [])
 

@@ -1,7 +1,11 @@
-import React, { useState } from 'react'
+import React, { useState, useCallback } from 'react'
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom'
 import { useShallow } from 'zustand/react/shallow'
-import { Laptop, Monitor, RotateCw, Settings, User } from 'lucide-react'
+import Laptop from 'lucide-react/dist/esm/icons/laptop'
+import Monitor from 'lucide-react/dist/esm/icons/monitor'
+import RotateCw from 'lucide-react/dist/esm/icons/rotate-cw'
+import Settings from 'lucide-react/dist/esm/icons/settings'
+import User from 'lucide-react/dist/esm/icons/user'
 import { useStore } from '../store/useStore'
 import { ThemeToggle } from '../components/ui/theme-toggle'
 import { cn } from '../lib/utils'
@@ -37,6 +41,11 @@ export const DashboardLayout: React.FC = () => {
       setIsRefreshing(false)
     }
   }
+
+  const handleNavigateHome = useCallback((): void => {
+    navigate('/')
+  }, [navigate])
+
   return (
     <div className="flex h-screen bg-background overflow-hidden relative">
       {/* Sidebar */}
@@ -58,7 +67,7 @@ export const DashboardLayout: React.FC = () => {
                 className="w-full h-full object-contain hidden dark:block"
               />
             </div>
-            <h1 className="text-sm font-semibold tracking-tight bg-linear-to-br from-primary to-primary/60 bg-clip-text text-transparent">
+            <h1 className="text-lg font-bold tracking-tight bg-linear-to-br from-primary to-primary/60 bg-clip-text text-transparent">
               Hyper Connect
             </h1>
           </div>
@@ -67,7 +76,7 @@ export const DashboardLayout: React.FC = () => {
             style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
           >
             <ThemeToggle />
-            <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+            <div className="w-2 h-2 rounded-full bg-success animate-pulse" />
           </div>
         </div>
         <div className="flex-1 flex flex-col min-h-0">
@@ -88,17 +97,19 @@ export const DashboardLayout: React.FC = () => {
                       )}
                     </div>
                     <div>
-                      <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">
+                      <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider leading-none">
                         My Device
                       </p>
-                      <p className="text-sm font-semibold truncate">{localDevice?.displayName}</p>
+                      <p className="text-sm font-semibold truncate leading-tight">
+                        {localDevice?.displayName}
+                      </p>
                     </div>
                   </div>
                 </div>
               </div>
               <div className="flex-1 overflow-y-auto p-4 space-y-2">
                 <div className="flex items-center justify-between px-2 pb-2">
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider leading-none">
                     Nearby Devices ({discoveredDevices.filter((d) => d.isOnline).length})
                   </p>
                   <button
@@ -115,7 +126,9 @@ export const DashboardLayout: React.FC = () => {
                     <div className="inline-block p-3 bg-secondary rounded-full">
                       <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
                     </div>
-                    <p className="text-sm text-muted-foreground">Searching for peers...</p>
+                    <p className="text-sm text-muted-foreground leading-relaxed">
+                      Searching for peers...
+                    </p>
                   </div>
                 ) : (
                   discoveredDevices.map((device) => (
@@ -150,7 +163,9 @@ export const DashboardLayout: React.FC = () => {
                         )}
                       </div>
                       <div className="text-left flex-1 min-w-0">
-                        <p className="text-sm font-semibold truncate">{device.displayName}</p>
+                        <p className="text-sm font-semibold truncate leading-tight">
+                          {device.displayName}
+                        </p>
                         <p
                           className={cn(
                             'text-xs truncate',
@@ -164,7 +179,7 @@ export const DashboardLayout: React.FC = () => {
                       </div>
                       <div className="flex flex-col items-end gap-1.5 shrink-0">
                         {unreadCounts[device.deviceId] > 0 && (
-                          <div className="min-w-4.5 h-4.5 rounded-full bg-red-500 text-[10px] font-bold text-white flex items-center justify-center px-1 animate-in zoom-in duration-300">
+                          <div className="min-w-4.5 h-4.5 rounded-full bg-destructive text-xs font-bold text-destructive-foreground flex items-center justify-center px-1 animate-in zoom-in duration-300 leading-none">
                             {unreadCounts[device.deviceId] > 99
                               ? '99+'
                               : unreadCounts[device.deviceId]}
@@ -173,9 +188,7 @@ export const DashboardLayout: React.FC = () => {
                         <div
                           className={cn(
                             'w-2 h-2 rounded-full shrink-0',
-                            device.isOnline
-                              ? 'bg-green-500 animate-pulse'
-                              : 'bg-muted-foreground/30'
+                            device.isOnline ? 'bg-success animate-pulse' : 'bg-muted-foreground/30'
                           )}
                         />
                       </div>
@@ -186,17 +199,17 @@ export const DashboardLayout: React.FC = () => {
             </>
           ) : (
             <div className="flex-1 overflow-y-auto px-4 py-2 space-y-4">
-              <p className="text-xs font-semibold text-muted-foreground px-2 uppercase tracking-wider">
+              <p className="text-xs font-semibold text-muted-foreground px-2 uppercase tracking-wider leading-none">
                 Settings
               </p>
               <button
-                onClick={() => navigate('/')}
+                onClick={handleNavigateHome}
                 className="w-full flex items-center gap-3 p-3 rounded-lg bg-secondary text-secondary-foreground shadow-sm active:scale-[0.98]"
               >
                 <div className="p-2 bg-primary/10 rounded-md text-primary">
                   <Laptop className="w-4 h-4" />
                 </div>
-                <span className="text-sm font-semibold">Back to Devices</span>
+                <span className="text-sm font-semibold leading-tight">Back to Devices</span>
               </button>
             </div>
           )}
@@ -226,7 +239,7 @@ export const DashboardLayout: React.FC = () => {
                 )}
               />
             </div>
-            <span className="text-sm font-bold uppercase tracking-wider">
+            <span className="text-sm font-bold uppercase tracking-wider leading-none">
               {isSettings ? 'Close Settings' : 'Settings'}
             </span>
           </Link>

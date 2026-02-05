@@ -2,7 +2,8 @@ import React from 'react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from './ui/dialog'
 import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar'
 import { useStore } from '../store/useStore'
-import { User, Send } from 'lucide-react'
+import User from 'lucide-react/dist/esm/icons/user'
+import Send from 'lucide-react/dist/esm/icons/send'
 import { Button } from './ui/button'
 
 interface ForwardDialogProps {
@@ -24,11 +25,15 @@ export const ForwardDialog: React.FC<ForwardDialogProps> = ({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Forward Message</DialogTitle>
-          <DialogDescription>Select a device to forward this message to.</DialogDescription>
+          <DialogDescription className="prose prose-sm dark:prose-invert">
+            Select a device to forward this message to.
+          </DialogDescription>
         </DialogHeader>
         <div className="space-y-2 max-h-[60vh] overflow-y-auto pr-2">
           {onlineDevices.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">No online devices found</div>
+            <div className="text-center py-8 prose prose-sm dark:prose-invert text-muted-foreground">
+              No online devices found
+            </div>
           ) : (
             onlineDevices.map((device) => (
               <div
@@ -47,8 +52,8 @@ export const ForwardDialog: React.FC<ForwardDialogProps> = ({
                     </AvatarFallback>
                   </Avatar>
                   <div>
-                    <p className="font-medium text-sm">{device.displayName}</p>
-                    <p className="text-xs text-muted-foreground">{device.platform}</p>
+                    <p className="font-medium text-sm leading-tight">{device.displayName}</p>
+                    <p className="text-xs text-muted-foreground leading-snug">{device.platform}</p>
                   </div>
                 </div>
                 <Button

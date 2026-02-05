@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react'
-import { User, Camera } from 'lucide-react'
+import React, { useState, useEffect, useCallback } from 'react'
+import User from 'lucide-react/dist/esm/icons/user'
+import Camera from 'lucide-react/dist/esm/icons/camera'
 import {
   Card,
   CardContent,
@@ -57,6 +58,11 @@ export const Onboarding: React.FC = () => {
       console.error('Failed to update profile:', e)
     }
   }
+
+  const handleAvatarClick = useCallback((): void => {
+    document.getElementById('avatar-input')?.click()
+  }, [])
+
   return (
     <div className="flex items-center justify-center min-h-screen bg-background p-4 relative overflow-hidden">
       {/* Background blobs for premium feel */}
@@ -68,10 +74,7 @@ export const Onboarding: React.FC = () => {
       <Card className="w-full max-w-md border border-border/50 shadow-2xl glass animate-in zoom-in-95 duration-500 relative z-20">
         <CardHeader className="text-center space-y-4">
           <div className="mx-auto flex flex-col items-center space-y-6">
-            <div
-              className="w-24 h-24 relative group cursor-pointer"
-              onClick={() => document.getElementById('avatar-input')?.click()}
-            >
+            <div className="w-24 h-24 relative group cursor-pointer" onClick={handleAvatarClick}>
               <div className="w-full h-full rounded-full border-2 border-primary/20 p-1 group-hover:border-primary/50 transition-colors bg-background flex items-center justify-center overflow-hidden">
                 {profileImage ? (
                   <img
@@ -95,10 +98,10 @@ export const Onboarding: React.FC = () => {
               />
             </div>
             <div className="space-y-2">
-              <CardTitle className="text-3xl font-bold tracking-tight bg-linear-to-br from-foreground to-foreground/70 bg-clip-text text-transparent">
+              <CardTitle className="text-3xl font-bold tracking-tight bg-linear-to-br from-foreground to-foreground/70 bg-clip-text text-transparent leading-tight">
                 Hyper Connect
               </CardTitle>
-              <CardDescription className="text-base">
+              <CardDescription className="prose prose-base dark:prose-invert">
                 Set a display name and avatar so others can find you on the network.
               </CardDescription>
             </div>

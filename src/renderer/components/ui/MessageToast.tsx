@@ -1,5 +1,7 @@
 import React from 'react'
-import { MessageSquare, FileText, ArrowRight } from 'lucide-react'
+import MessageSquare from 'lucide-react/dist/esm/icons/message-square'
+import FileText from 'lucide-react/dist/esm/icons/file-text'
+import ArrowRight from 'lucide-react/dist/esm/icons/arrow-right'
 import { cn } from '../../lib/utils'
 
 interface MessageToastProps {

@@ -1,21 +1,19 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useParams, Navigate } from 'react-router-dom'
 import { useShallow } from 'zustand/react/shallow'
-import {
-  FileUp,
-  Paperclip,
-  Send,
-  User,
-  Check,
-  CheckCheck,
-  Copy,
-  Trash2,
-  Reply,
-  Forward,
-  X,
-  Smile,
-  ExternalLink
-} from 'lucide-react'
+import FileUp from 'lucide-react/dist/esm/icons/file-up'
+import Paperclip from 'lucide-react/dist/esm/icons/paperclip'
+import Send from 'lucide-react/dist/esm/icons/send'
+import User from 'lucide-react/dist/esm/icons/user'
+import Check from 'lucide-react/dist/esm/icons/check'
+import CheckCheck from 'lucide-react/dist/esm/icons/check-check'
+import Copy from 'lucide-react/dist/esm/icons/copy'
+import Trash2 from 'lucide-react/dist/esm/icons/trash-2'
+import Reply from 'lucide-react/dist/esm/icons/reply'
+import Forward from 'lucide-react/dist/esm/icons/forward'
+import X from 'lucide-react/dist/esm/icons/x'
+import Smile from 'lucide-react/dist/esm/icons/smile'
+import ExternalLink from 'lucide-react/dist/esm/icons/external-link'
 const EmojiPicker = React.lazy(() => import('emoji-picker-react'))
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -83,27 +81,30 @@ export const DevicePage: React.FC = () => {
   )
   const [input, setInput] = useState('')
   const scrollRef = useRef<HTMLDivElement>(null)
-  const scrollToBottom = useCallback((): void => {
+  const scrollToBottom = (): void => {
     if (scrollRef.current) {
       scrollRef.current.scrollTo({
         top: scrollRef.current.scrollHeight,
         behavior: 'smooth'
       })
     }
-  }, [])
+  }
+  // Scroll to bottom when switching to chat tab or messages change
   useEffect(() => {
     if (tab === 'chat') {
       scrollToBottom()
-      // Mark visible unread messages as read
-      if (!device) return
-      const unreadIncoming = messages.filter(
-        (m) => m.deviceId !== localDevice?.deviceId && m.status !== 'read'
-      )
-      unreadIncoming.forEach((msg) => {
-        if (msg.id) window.api.markAsRead(device.deviceId, msg.id)
-      })
     }
-  }, [messages, tab, device, localDevice?.deviceId, scrollToBottom])
+  }, [messages, tab])
+  // Mark unread messages as read when viewing chat
+  useEffect(() => {
+    if (tab !== 'chat' || !device || !localDevice) return
+    const unreadIncoming = messages.filter(
+      (m) => m.deviceId !== localDevice.deviceId && m.status !== 'read'
+    )
+    unreadIncoming.forEach((msg) => {
+      if (msg.id) window.api.markAsRead(device.deviceId, msg.id)
+    })
+  }, [messages, tab, device, localDevice])
   const handleSend = async (): Promise<void> => {
     if (!input.trim() || !device) return
     try {
@@ -138,10 +139,19 @@ export const DevicePage: React.FC = () => {
       setReplyingTo(null)
     }
   }
-  const handleCopy = (text: string): void => {
+  const handleCopy = useCallback((text: string): void => {
     navigator.clipboard.writeText(text)
     toast.custom((id) => <StatusToast message="Copied to clipboard" type="success" id={id} />)
-  }
+  }, [])
+  const handleReply = useCallback((msg: NetworkMessage): void => {
+    setReplyingTo(msg)
+  }, [])
+  const handleForwardClick = useCallback((msg: NetworkMessage): void => {
+    setForwardingMessage(msg)
+  }, [])
+  const handleCancelReply = useCallback((): void => {
+    setReplyingTo(null)
+  }, [])
   const executeDelete = useCallback(
     async (msg: NetworkMessage): Promise<void> => {
       if (!deviceId || !msg.id) return
@@ -178,7 +188,6 @@ export const DevicePage: React.FC = () => {
           id={id}
         />
       ))
-
       // Undo logic is a bit complex with custom toast without custom implementation of undo action in the toast itself.
       // For now status toast doesn't support actions.
       // I will execute delete immediately for now to consistent with other actions.
@@ -209,17 +218,17 @@ export const DevicePage: React.FC = () => {
             </AvatarFallback>
           </Avatar>
           <div className="flex flex-col">
-            <h2 className="text-lg font-bold truncate leading-tight">{device.displayName}</h2>
+            <h2 className="text-xl font-bold truncate leading-tight">{device.displayName}</h2>
             <p
               className={cn(
                 'text-xs flex items-center gap-1.5 font-medium',
-                device.isOnline ? 'text-green-500' : 'text-muted-foreground'
+                device.isOnline ? 'text-success' : 'text-muted-foreground'
               )}
             >
               <span
                 className={cn(
                   'w-2 h-2 rounded-full',
-                  device.isOnline ? 'bg-green-500 animate-pulse' : 'bg-muted-foreground'
+                  device.isOnline ? 'bg-success animate-pulse' : 'bg-muted-foreground'
                 )}
               />
               {device.isOnline ? 'Online' : 'Offline'}
@@ -255,7 +264,7 @@ export const DevicePage: React.FC = () => {
               <div className="p-4 bg-muted rounded-full">
                 <Send className="w-8 h-8 text-muted-foreground" />
               </div>
-              <p className="text-sm font-medium">No messages yet. Say hello!</p>
+              <p className="text-sm font-medium leading-relaxed">No messages yet. Say hello!</p>
             </div>
           ) : (
             messages
@@ -272,7 +281,7 @@ export const DevicePage: React.FC = () => {
                     {showSeparator && (
                       <div className="flex items-center gap-4 py-4">
                         <Separator className="flex-1 opacity-10" />
-                        <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/40 whitespace-nowrap">
+                        <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground/40 whitespace-nowrap">
                           {currentDate}
                         </span>
                         <Separator className="flex-1 opacity-10" />
@@ -298,7 +307,7 @@ export const DevicePage: React.FC = () => {
                                   if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
                                 }}
                                 className={cn(
-                                  'mb-1 p-1.5 rounded-md text-[11px] border-l-2 overflow-hidden cursor-pointer hover:opacity-80 transition-opacity',
+                                  'mb-1 p-1.5 rounded-md text-xs border-l-2 overflow-hidden cursor-pointer hover:opacity-80 transition-opacity leading-snug',
                                   isLocal
                                     ? 'bg-black/20 border-primary-foreground/50 text-primary-foreground/80'
                                     : 'bg-muted border-primary/50 text-muted-foreground'
@@ -331,7 +340,7 @@ export const DevicePage: React.FC = () => {
                               </div>
                             )}
                             {!isFile ? (
-                              <div className="text-sm leading-relaxed whitespace-pre-wrap wrap-break-word select-text prose prose-invert max-w-none [&>p]:mb-0 [&>a]:text-blue-400 [&>a]:underline hover:[&>a]:text-blue-300 [&>ul]:list-disc [&>ul]:ml-4 [&>ol]:list-decimal [&>ol]:ml-4">
+                              <div className="prose prose-sm dark:prose-invert max-w-none prose-p:my-1 prose-a:text-info prose-a:no-underline hover:prose-a:text-info/80 prose-a:transition-colors select-text">
                                 <ReactMarkdown
                                   remarkPlugins={[remarkGfm]}
                                   components={{
@@ -341,7 +350,7 @@ export const DevicePage: React.FC = () => {
                                         {...props}
                                         target="_blank"
                                         rel="noopener noreferrer"
-                                        className="inline-flex items-baseline gap-0.5 hover:text-blue-300 transition-colors"
+                                        className="inline-flex items-baseline gap-0.5 hover:text-info/80 transition-colors"
                                       >
                                         {children}
                                         <ExternalLink className="w-3 h-3 self-center opacity-70" />
@@ -361,14 +370,14 @@ export const DevicePage: React.FC = () => {
                         </ContextMenuTrigger>
                         <ContextMenuContent className="w-48">
                           <ContextMenuItem
-                            onClick={() => setReplyingTo(msg)}
+                            onClick={() => handleReply(msg)}
                             className="flex items-center gap-2"
                           >
                             <Reply className="w-4 h-4" />
                             <span>Reply</span>
                           </ContextMenuItem>
                           <ContextMenuItem
-                            onClick={() => setForwardingMessage(msg)}
+                            onClick={() => handleForwardClick(msg)}
                             className="flex items-center gap-2"
                           >
                             <Forward className="w-4 h-4" />
@@ -394,7 +403,7 @@ export const DevicePage: React.FC = () => {
                         </ContextMenuContent>
                       </ContextMenu>
                       <div className="flex items-center gap-1.5 mt-0.5 px-1">
-                        <span className="text-[10px] text-muted-foreground font-medium">
+                        <span className="text-xs text-muted-foreground font-medium leading-none">
                           {new Date(msg.timestamp || 0).toLocaleTimeString([], {
                             hour: '2-digit',
                             minute: '2-digit'
@@ -408,9 +417,7 @@ export const DevicePage: React.FC = () => {
                             {msg.status === 'delivered' && (
                               <CheckCheck className="w-3 h-3 text-muted-foreground/50" />
                             )}
-                            {msg.status === 'read' && (
-                              <CheckCheck className="w-3 h-3 text-blue-500" />
-                            )}
+                            {msg.status === 'read' && <CheckCheck className="w-3 h-3 text-info" />}
                           </div>
                         )}
                       </div>
@@ -425,11 +432,11 @@ export const DevicePage: React.FC = () => {
             <div className="max-w-4xl mx-auto mb-2 flex items-center gap-3 bg-secondary/50 p-2.5 rounded-xl border border-border/50 animate-in slide-in-from-bottom-2 duration-200">
               <div className="w-1 bg-primary self-stretch rounded-full opacity-50" />
               <div className="flex-1 min-w-0">
-                <p className="text-[10px] font-bold text-primary uppercase tracking-wider mb-0.5">
+                <p className="text-xs font-bold text-primary uppercase tracking-wide mb-0.5 leading-none">
                   Replying to{' '}
                   {replyingTo.deviceId === localDevice?.deviceId ? 'you' : device.displayName}
                 </p>
-                <p className="text-sm text-muted-foreground truncate">
+                <p className="text-sm text-muted-foreground truncate leading-snug">
                   {replyingTo.type === 'FILE_META'
                     ? `📎 ${(replyingTo.payload as FileMetadata).name}`
                     : (replyingTo.payload as string)}
@@ -439,7 +446,7 @@ export const DevicePage: React.FC = () => {
                 variant="ghost"
                 size="icon"
                 className="h-7 w-7 rounded-full hover:bg-secondary"
-                onClick={() => setReplyingTo(null)}
+                onClick={handleCancelReply}
               >
                 <X className="w-4 h-4" />
               </Button>
@@ -541,7 +548,7 @@ const TransferView: React.FC<{ device: Device }> = ({ device }) => {
     <div className="flex-1 overflow-y-auto p-6 space-y-8 bg-background/50">
       <div
         onClick={handleSelectFile}
-        className="relative group border-2 border-dashed border-border/60 rounded-[2.5rem] p-16 text-center space-y-6 hover:border-primary/50 hover:bg-primary/5 transition-all cursor-pointer overflow-hidden"
+        className="relative group border-2 border-dashed border-border/60 rounded-5xl p-16 text-center space-y-6 hover:border-primary/50 hover:bg-primary/5 transition-all cursor-pointer overflow-hidden"
       >
         <div className="relative z-10 space-y-4">
           <div className="w-20 h-20 bg-primary/10 rounded-full flex items-center justify-center mx-auto group-hover:scale-110 transition-transform duration-500">
@@ -550,15 +557,15 @@ const TransferView: React.FC<{ device: Device }> = ({ device }) => {
             </div>
           </div>
           <div className="space-y-2">
-            <h3 className="text-xl font-bold tracking-tight">Send Files</h3>
-            <p className="text-xs text-muted-foreground truncate wrap-break-word max-w-60 mx-auto leading-relaxed">
+            <h3 className="text-xl font-bold tracking-tight leading-tight">Send Files</h3>
+            <p className="text-sm text-muted-foreground truncate wrap-break-word max-w-60 mx-auto leading-relaxed">
               Drag and drop your files here or{' '}
               <span className="text-primary font-bold">browse</span> to share
             </p>
           </div>
           <Button
             variant="secondary"
-            className="mt-2 font-bold uppercase tracking-wider text-[11px] px-10 h-10 rounded-xl shadow-sm"
+            className="mt-2 font-bold uppercase tracking-wider text-xs px-10 h-10 rounded-xl shadow-sm leading-none"
           >
             Browse Files
           </Button>
@@ -568,7 +575,7 @@ const TransferView: React.FC<{ device: Device }> = ({ device }) => {
       </div>
       <div className="space-y-6">
         <div className="flex items-center gap-4">
-          <h3 className="text-xs font-bold uppercase tracking-[0.2em] text-muted-foreground/50 whitespace-nowrap">
+          <h3 className="text-xs font-bold uppercase tracking-widest text-muted-foreground/50 whitespace-nowrap leading-none">
             Transfer History
           </h3>
           <Separator className="flex-1 opacity-10" />
@@ -578,7 +585,9 @@ const TransferView: React.FC<{ device: Device }> = ({ device }) => {
             <div className="w-16 h-16 bg-muted/20 rounded-full flex items-center justify-center mx-auto mb-4">
               <Paperclip className="w-6 h-6 text-muted-foreground/30" />
             </div>
-            <p className="text-sm font-medium text-muted-foreground/60">No recent activity</p>
+            <p className="text-sm font-medium text-muted-foreground/60 leading-relaxed">
+              No recent activity
+            </p>
           </div>
         ) : (
           <div className="grid gap-4">
@@ -603,7 +612,7 @@ const TransferView: React.FC<{ device: Device }> = ({ device }) => {
                       className={cn(
                         'p-3.5 rounded-2xl border transition-colors',
                         remainsCompleted
-                          ? 'bg-green-500/10 border-green-500/20 text-green-600'
+                          ? 'bg-success/10 border-success/20 text-success'
                           : 'bg-muted/10 border-border/50 text-muted-foreground/50'
                       )}
                     >

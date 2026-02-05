@@ -1,5 +1,6 @@
 import React from 'react'
-import { CheckCircle2, FileText } from 'lucide-react'
+import CheckCircle2 from 'lucide-react/dist/esm/icons/check-circle-2'
+import FileText from 'lucide-react/dist/esm/icons/file-text'
 import { FileMetadata, NetworkMessage } from '../../shared/messageTypes'
 import { useStore } from '../store/useStore'
 import { cn, formatFileSize, getFileType } from '../lib/utils'
@@ -32,7 +33,7 @@ const AcceptRejectButtons: React.FC<{ fileId: string }> = ({ fileId }) => {
     <div className="flex gap-2 pt-2 animate-in slide-in-from-top-2 duration-300">
       <Button
         size="sm"
-        className="flex-1 bg-green-500 hover:bg-green-600 text-white font-bold uppercase tracking-wider text-[10px] h-8 rounded-lg shadow-sm"
+        className="flex-1 bg-success hover:bg-success/90 text-success-foreground font-bold uppercase tracking-wider text-xs h-8 rounded-lg shadow-sm leading-none"
         onClick={handleAccept}
       >
         Accept
@@ -40,7 +41,7 @@ const AcceptRejectButtons: React.FC<{ fileId: string }> = ({ fileId }) => {
       <Button
         size="sm"
         variant="secondary"
-        className="flex-1 font-bold uppercase tracking-wider text-[10px] h-8 rounded-lg"
+        className="flex-1 font-bold uppercase tracking-wider text-xs h-8 rounded-lg leading-none"
         onClick={handleReject}
       >
         Reject
@@ -127,7 +128,7 @@ export const FileChatBubble: React.FC<{ msg: NetworkMessage; isLocal: boolean }>
         >
           {isCompleted ? (
             <CheckCircle2
-              className={cn('w-5 h-5', isLocal ? 'text-primary-foreground' : 'text-green-500')}
+              className={cn('w-5 h-5', isLocal ? 'text-primary-foreground' : 'text-success')}
             />
           ) : (
             <FileText
@@ -138,7 +139,7 @@ export const FileChatBubble: React.FC<{ msg: NetworkMessage; isLocal: boolean }>
         <div className="flex-1 min-w-0">
           <p
             className={cn(
-              'text-sm font-medium break-words',
+              'text-sm font-medium break-words leading-relaxed',
               isLocal ? 'text-primary-foreground' : 'text-foreground'
             )}
           >
@@ -147,7 +148,7 @@ export const FileChatBubble: React.FC<{ msg: NetworkMessage; isLocal: boolean }>
           <div className="flex items-center gap-2 mt-0.5">
             <p
               className={cn(
-                'text-[10px] uppercase font-black tracking-widest opacity-70',
+                'text-xs uppercase font-black tracking-widest opacity-70 leading-none',
                 isLocal ? 'text-primary-foreground' : 'text-muted-foreground'
               )}
             >
@@ -156,7 +157,7 @@ export const FileChatBubble: React.FC<{ msg: NetworkMessage; isLocal: boolean }>
             <span className="w-1 h-1 rounded-full bg-current opacity-30" />
             <p
               className={cn(
-                'text-[10px] font-bold opacity-70',
+                'text-xs font-bold opacity-70 leading-tight',
                 isLocal ? 'text-primary-foreground' : 'text-muted-foreground'
               )}
             >
@@ -165,7 +166,7 @@ export const FileChatBubble: React.FC<{ msg: NetworkMessage; isLocal: boolean }>
             <span className="w-1 h-1 rounded-full bg-current opacity-30" />
             <p
               className={cn(
-                'text-[9px] font-black uppercase tracking-tighter',
+                'text-xs font-black uppercase tracking-tight leading-none',
                 isLocal ? 'text-primary-foreground' : 'text-primary'
               )}
             >
@@ -176,7 +177,7 @@ export const FileChatBubble: React.FC<{ msg: NetworkMessage; isLocal: boolean }>
                 <span className="w-1 h-1 rounded-full bg-current opacity-30" />
                 <p
                   className={cn(
-                    'text-[9px] font-black uppercase tracking-tighter',
+                    'text-xs font-black uppercase tracking-tight leading-none',
                     isLocal ? 'text-primary-foreground' : 'text-primary'
                   )}
                 >
@@ -192,7 +193,7 @@ export const FileChatBubble: React.FC<{ msg: NetworkMessage; isLocal: boolean }>
         <div className="px-1 space-y-1.5 animate-in fade-in duration-300">
           <div
             className={cn(
-              'flex justify-between text-[9px] font-bold uppercase tracking-tighter',
+              'flex justify-between text-xs font-bold uppercase tracking-tight leading-none',
               isLocal ? 'text-primary-foreground/70' : 'text-muted-foreground'
             )}
           >

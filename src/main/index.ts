@@ -7,6 +7,20 @@ import { tcpServer } from './tcpServer'
 import { discoveryManager } from './discovery'
 import { setupIpc } from './ipc'
 import { initAutoUpdater, checkForUpdates } from './autoUpdater'
+
+// Enable auto-reload in development
+if (is.dev) {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    require('electron-reloader')(module, {
+      debug: true,
+      watchRenderer: true
+    })
+  } catch (err) {
+    console.error('Error loading electron-reloader:', err)
+  }
+}
+
 let mainWindow: BrowserWindow
 function createWindow(): void {
   mainWindow = new BrowserWindow({

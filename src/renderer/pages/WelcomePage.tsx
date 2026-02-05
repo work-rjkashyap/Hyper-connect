@@ -1,5 +1,5 @@
 import React from 'react'
-import { CheckCircle2 } from 'lucide-react'
+import CheckCircle2 from 'lucide-react/dist/esm/icons/check-circle-2'
 
 export const WelcomePage: React.FC = () => {
   return (
@@ -8,8 +8,8 @@ export const WelcomePage: React.FC = () => {
         <CheckCircle2 className="w-10 h-10 text-primary/20" />
       </div>
       <div className="max-w-xs space-y-2">
-        <h2 className="text-2xl font-bold">Ready to Connect</h2>
-        <p className="text-muted-foreground">
+        <h1 className="text-3xl font-bold leading-tight">Ready to Connect</h1>
+        <p className="prose prose-base dark:prose-invert text-muted-foreground">
           Select a device from the sidebar to start sharing files and messages instantly.
         </p>
       </div>

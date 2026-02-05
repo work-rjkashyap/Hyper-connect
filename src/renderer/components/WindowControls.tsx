@@ -1,5 +1,7 @@
 import React from 'react'
-import { Minus, Square, X } from 'lucide-react'
+import Minus from 'lucide-react/dist/esm/icons/minus'
+import Square from 'lucide-react/dist/esm/icons/square'
+import X from 'lucide-react/dist/esm/icons/x'
 import { cn } from '../lib/utils'
 
 export const WindowControls: React.FC<{ className?: string }> = ({ className }) => {
@@ -24,7 +26,7 @@ export const WindowControls: React.FC<{ className?: string }> = ({ className }) 
       </button>
       <button
         onClick={() => window.api.closeWindow()}
-        className="h-8 w-12 flex items-center justify-center hover:bg-red-500 hover:text-white transition-colors focus:outline-hidden active:bg-red-600 group"
+        className="h-8 w-12 flex items-center justify-center hover:bg-destructive hover:text-destructive-foreground transition-colors focus:outline-hidden active:bg-destructive/90 group"
         title="Close"
       >
         <X className="w-4 h-4 opacity-70 group-hover:opacity-100" />

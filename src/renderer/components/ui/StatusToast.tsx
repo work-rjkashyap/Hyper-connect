@@ -1,5 +1,8 @@
 import React from 'react'
-import { CheckCircle2, AlertCircle, Info, X } from 'lucide-react'
+import CheckCircle2 from 'lucide-react/dist/esm/icons/check-circle-2'
+import AlertCircle from 'lucide-react/dist/esm/icons/alert-circle'
+import Info from 'lucide-react/dist/esm/icons/info'
+import X from 'lucide-react/dist/esm/icons/x'
 import { cn } from '../../lib/utils'
 import { toast } from 'sonner'
 
@@ -16,15 +19,15 @@ const ICON_MAP = {
 }
 
 const COLOR_MAP = {
-  success: 'bg-green-500/10 border-green-500/20 text-green-600 dark:text-green-400',
-  error: 'bg-red-500/10 border-red-500/20 text-red-600 dark:text-red-400',
-  info: 'bg-blue-500/10 border-blue-500/20 text-blue-600 dark:text-blue-400'
+  success: 'bg-success/10 border-success/20 text-success',
+  error: 'bg-destructive/10 border-destructive/20 text-destructive',
+  info: 'bg-info/10 border-info/20 text-info'
 }
 
 const ICON_BG_MAP = {
-  success: 'bg-green-500/20 ring-green-500/30',
-  error: 'bg-red-500/20 ring-red-500/30',
-  info: 'bg-blue-500/20 ring-blue-500/30'
+  success: 'bg-success/20 ring-success/30',
+  error: 'bg-destructive/20 ring-destructive/30',
+  info: 'bg-info/20 ring-info/30'
 }
 
 export const StatusToast: React.FC<StatusToastProps> = ({
@@ -52,8 +55,10 @@ export const StatusToast: React.FC<StatusToastProps> = ({
       </div>
 
       <div className="flex-1 min-w-0">
-        <h4 className="font-semibold text-sm text-foreground">{message}</h4>
-        {description && <p className="text-xs text-muted-foreground mt-0.5">{description}</p>}
+        <h4 className="font-semibold text-sm text-foreground leading-tight">{message}</h4>
+        {description && (
+          <p className="text-xs text-muted-foreground mt-0.5 leading-snug">{description}</p>
+        )}
       </div>
 
       {id && (
