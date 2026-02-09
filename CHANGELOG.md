@@ -2,30 +2,215 @@
 
 All notable changes to this project will be documented in this file.
 
-This changelog is automatically generated from commit messages using [git-cliff](https://git-cliff.org/).
-
-## Commit Message Format
-
-To ensure your changes appear in the changelog, use conventional commits:
-
-- `feat: add new component` - 🚀 Features
-- `fix: resolve navigation bug` - 🐛 Bug Fixes
-- `docs: update installation guide` - 📚 Documentation
-- `perf: optimize build time` - ⚡ Performance
-- `refactor: restructure components` - 🚜 Refactor
-- `style: format code` - 🎨 Styling
-- `test: add unit tests` - 🧪 Testing
-- `chore: update dependencies` - ⚙️ Miscellaneous Tasks
-
-For breaking changes, add `BREAKING CHANGE:` in the commit body.
-
----
-
 ## [Unreleased]
 
+### 🚜 Refactor
+
+- And clean up code across multiple components
+- Streamline import statements in source.config.mjs
+- Simplify home page and stop tracking generated .source folder
+- Remove SettingsPage, WelcomePage, and useStore; clean up shared constants and message types
+- Update GitHub Actions workflows for documentation deployment and add automated changelog generation
+- Update git-cliff-action to version 4 and ensure GITHUB_TOKEN is set in the changelog generation step
+
+## [1.8.0] - 2026-02-03
+
 ### 🚀 Features
-- Initial documentation site setup
-- Automated deployment to GitHub Pages
-- Automated changelog generation from commits
+
+- Add new documentation for getting started, guides, and troubleshooting, update Fumadocs source configuration, remove old static assets, and adjust UI components.
+
+### 🐛 Bug Fixes
+
+- Update token handling in release workflow to support Personal Access Token for triggering workflows
+
+### ⚙️ Miscellaneous Tasks
+
+- **main:** Release 1.8.0 (#18)
+
+## [1.7.0] - 2026-01-30
+
+### 🚀 Features
+
+- Add frontend-design skill with comprehensive guidelines and license
+
+### 🚜 Refactor
+
+- Apply consistent code formatting and styling across various components and configurations.
+
+### ⚙️ Miscellaneous Tasks
+
+- **main:** Release 1.7.0 (#17)
+
+### Build
+
+- Update GitHub Actions `checkout` and `setup-node` versions and change `electron-builder` publish strategy from `always` to `onTag`.
+
+## [1.6.0] - 2026-01-26
+
+### 🚀 Features
+
+- Add new UI components, theme toggle, and update Next.js config for deployment.
+
+### 🚜 Refactor
+
+- Reformat import statements in DevicePage.tsx
+
+### ⚙️ Miscellaneous Tasks
+
+- Add GitHub Actions workflow for documentation deployment to GitHub Pages.
+- Disable draft releases in the build workflow and refactor homepage styling syntax for CSS variables and Tailwind utilities.
+- **main:** Release 1.6.0 (#16)
+
+## [1.5.0] - 2026-01-24
+
+### 🚀 Features
+
+- Dynamically set release tag and name from `package.json` version and update release action to v2.
+
+### ⚙️ Miscellaneous Tasks
+
+- **main:** Release 1.5.0 (#15)
+
+## [1.4.0] - 2026-01-24
+
+### 🚀 Features
+
+- Add auto-update feature and redesign documentation home page
+
+### ⚙️ Miscellaneous Tasks
+
+- Include `.yml` files from the `dist` directory in release assets.
+- **main:** Release 1.4.0 (#14)
+
+### Build
+
+- Configure custom artifact naming for macOS builds
+
+## [1.3.0] - 2026-01-24
+
+### 🚀 Features
+
+- Configure macOS code signing and notarization with entitlements, CI/CD integration, and a new setup guide.
+
+### ⚙️ Miscellaneous Tasks
+
+- **main:** Release 1.3.0 (#13)
+
+## [1.2.0] - 2026-01-23
+
+### 🚀 Features
+
+- Add network information retrieval and display in settings
+- Add husky and lint-staged for commit message validation and code formatting
+- Add initial documentation structure with browser, dynamic, and server configurations
+- Implement auto-update functionality
+
+### 🐛 Bug Fixes
+
+- Remove duplicate dependencies for react and react-dom in package.json
+- Streamline commit message validation script by removing unnecessary lines
+- Update release-please action and checkout versions to v4
+- Remove duplicate react and react-dom dependencies from package.json
+- Correct action reference in release-please workflow and clean up formatting
+
+### 📚 Documentation
+
+- Add comprehensive Fumadocs documentation site
+- Add .gitignore for docs directory
+- Fix build issues - update dependencies and imports
+
+### 🚜 Refactor
+
+- Migrate docs to Next.js App Router, introducing a `src` directory structure and updating content organization.
+
+### ⚙️ Miscellaneous Tasks
+
+- **main:** Release 1.2.0 (#12)
+
+## [1.1.0] - 2026-01-15
+
+### 🐛 Bug Fixes
+
+- Build issue
+- Fix reduntent build issue
+- Shell type
+- Update permission
+- Permission value error
+
+### ⚙️ Miscellaneous Tasks
+
+- **main:** Release 1.0.2
+- **main:** Release 1.0.3
+- **main:** Release 1.0.4
+- **main:** Release 1.0.5
+- **main:** Release 1.0.6
+- **main:** Release 1.0.7
+- New image added
+- **main:** Release 1.0.8
+- **main:** Release 1.1.0 (#10)
+
+### Add
+
+- App icons
+
+### Refector
+
+- Build extension
+
+### Update
+
+- Vs code extension
+
+## [1.0.1] - 2026-01-13
+
+### 🚀 Features
+
+- Add UI components and theme toggle for improved user experience
+
+### 🐛 Bug Fixes
+
+- Quite issur
+- Message ipodency
+- The issue message issue
+- Profile image issue
+- Build issue
+- Permission issue
+- Local network permission
+- Import issue
+
+### ⚙️ Miscellaneous Tasks
+
+- **main:** Release 1.0.1
+
+### Fix
+
+- Build issue
+
+### Add
+
+- File storage
+- New data
+- Notification
+- Build workflow
+
+### Chat
+
+- History
+
+### Next
+
+- Commit
+
+### Notification
+
+- Message
+
+### Open
+
+- File
+
+### Refector
+
+- Add try catch on start server
 
 <!-- generated by git-cliff -->
