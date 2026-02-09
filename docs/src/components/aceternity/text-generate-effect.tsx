@@ -16,6 +16,7 @@ export function TextGenerateEffect({
     <div className={cn('', className)}>
       {wordsArray.map((word, idx) => (
         <motion.span
+          // biome-ignore lint/suspicious/noArrayIndexKey: rendering text animation
           key={word + idx}
           initial={{ opacity: 0, filter: 'blur(10px)' }}
           animate={{ opacity: 1, filter: 'blur(0px)' }}

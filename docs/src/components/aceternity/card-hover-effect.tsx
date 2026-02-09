@@ -1,8 +1,8 @@
 'use client'
 
 import { motion, useMotionValue, useSpring, useTransform } from 'framer-motion'
+import { type ReactNode, useRef } from 'react'
 import { cn } from '@/lib/cn'
-import { ReactNode, useRef } from 'react'
 
 interface CardHoverEffectProps {
   children: ReactNode

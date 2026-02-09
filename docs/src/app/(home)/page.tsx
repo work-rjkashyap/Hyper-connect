@@ -1,5 +1,6 @@
 import { Download, Github, Globe, Shield, Zap } from 'lucide-react'
 import Link from 'next/link'
+
 // Hoist static data outside component (rendering-hoist-jsx)
 const FEATURES = [
   {

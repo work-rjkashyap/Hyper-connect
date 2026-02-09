@@ -5,8 +5,8 @@ import * as __fd_glob_6 from '../content/docs/getting-started/quick-start.mdx?co
 import * as __fd_glob_5 from '../content/docs/getting-started/installation.mdx?collection=docs'
 import * as __fd_glob_4 from '../content/docs/index.mdx?collection=docs'
 import * as __fd_glob_3 from '../content/docs/components.mdx?collection=docs'
-import { default as __fd_glob_2 } from '../content/docs/getting-started/meta.json?collection=docs'
-import { default as __fd_glob_1 } from '../content/docs/guides/meta.json?collection=docs'
+import { default as __fd_glob_2 } from '../content/docs/guides/meta.json?collection=docs'
+import { default as __fd_glob_1 } from '../content/docs/getting-started/meta.json?collection=docs'
 import { default as __fd_glob_0 } from '../content/docs/meta.json?collection=docs'
 import { server } from 'fumadocs-mdx/runtime/server'
 import type * as Config from '../source.config'
@@ -23,8 +23,8 @@ export const docs = await create.docs(
   'content/docs',
   {
     'meta.json': __fd_glob_0,
-    'guides/meta.json': __fd_glob_1,
-    'getting-started/meta.json': __fd_glob_2
+    'getting-started/meta.json': __fd_glob_1,
+    'guides/meta.json': __fd_glob_2
   },
   {
     'components.mdx': __fd_glob_3,

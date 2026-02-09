@@ -1,15 +1,15 @@
-import { createMDX } from 'fumadocs-mdx/next'
+import { createMDX } from "fumadocs-mdx/next";
 
-const withMDX = createMDX()
+const withMDX = createMDX();
 
-const isProd = process.env.NODE_ENV === 'production'
+const isProd = process.env.NODE_ENV === "production";
 
 /** @type {import('next').NextConfig} */
 const config = {
-  output: 'export',
+  output: "export",
   reactStrictMode: true,
-  basePath: isProd ? '/Hyper-connect' : '',
-  assetPrefix: isProd ? '/Hyper-connect' : ''
-}
+  basePath: isProd ? "/Hyper-connect" : "",
+  assetPrefix: isProd ? "/Hyper-connect" : "",
+};
 
-export default withMDX(config)
+export default withMDX(config);
