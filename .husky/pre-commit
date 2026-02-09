@@ -1,4 +1,4 @@
 # Run typecheck
-npm run typecheck
-# Run lint-staged (lint and format)
-npx lint-staged
+npm run types:check
+# Run biome check with auto-fix
+npx biome check --write
