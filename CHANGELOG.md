@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### 🚀 Features
+
+- Introduce `HyperconnectLogo` component and integrate it into the layout navigation and home header.
+- Introduce and integrate a new Hyperconnect logo component into the header and navigation.
+
+### 📚 Documentation
+
+- Update changelog [skip ci]
+
 ### 🚜 Refactor
 
 - And clean up code across multiple components
