@@ -1,8 +1,14 @@
 import type { BaseLayoutProps } from "fumadocs-ui/layouts/shared";
+import { HyperconnectLogo } from "@/components/logo";
 export function baseOptions(): BaseLayoutProps {
   return {
     nav: {
-      title: "HYPERCONNECT",
+      title: (
+        <span style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+          <HyperconnectLogo style={{ width: 24, height: 24 }} />
+          HYPERCONNECT
+        </span>
+      ),
     },
     links: [
       {
