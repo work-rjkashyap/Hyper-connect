@@ -9,9 +9,11 @@ All notable changes to this project will be documented in this file.
 - Introduce `HyperconnectLogo` component and integrate it into the layout navigation and home header.
 - Introduce and integrate a new Hyperconnect logo component into the header and navigation.
 - Remove 'HYPERCONNECT' text from header and navigation titles, and adjust header logo spacing.
+- Implement new landing page, home, docs, and sidebar layouts, add various UI and TOC components, and update core application structure and dependencies.
 
 ### 📚 Documentation
 
+- Update changelog [skip ci]
 - Update changelog [skip ci]
 - Update changelog [skip ci]
 
