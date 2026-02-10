@@ -6,14 +6,14 @@
 
 :root {
     /* Custom theme colors that integrate with Fumadocs */
-    --zed-bg: #f7f7f2;
+    --zed-bg: #ffffff;
     --zed-card-bg: #ffffff;
-    --zed-blue: #0751cf;
-    --zed-text-primary: #4c5461;
-    --zed-text-secondary: #6f7b90;
-    --zed-border: rgba(0, 0, 0, 0.1);
+    --zed-blue: #000000;
+    /* black */
+    --zed-text-primary: #000000;
+    --zed-text-secondary: #666666;
+    --zed-border: #eaeaea;
     --zed-shadow-btn: 0px -2px 0px 0px inset rgba(0, 0, 0, 0.1);
-
     /* Override Fumadocs colors for consistency */
     --color-fd-background: var(--zed-bg);
     --color-fd-foreground: var(--zed-text-primary);
@@ -28,27 +28,27 @@
 [class='dark'],
 [data-theme='dark'] {
     /* Dark mode colors */
-    --zed-bg: #151516;
-    --zed-card-bg: #1c1c1e;
-    --zed-blue: #5b9aff;
-    --zed-text-primary: #e1e1e6;
-    --zed-text-secondary: #9ea3ae;
-    --zed-border: rgba(255, 255, 255, 0.08);
-    --zed-shadow-btn: 0px -2px 0px 0px inset rgba(0, 0, 0, 0.3);
-
+    --zed-bg: #000000;
+    --zed-card-bg: #000000;
+    --zed-blue: #ffffff;
+    /* white */
+    --zed-text-primary: #ededed;
+    --zed-text-secondary: #a1a1a1;
+    --zed-border: #333333;
+    --zed-shadow-btn: 0px -2px 0px 0px inset rgba(255, 255, 255, 0.1);
     /* Override Fumadocs dark mode colors */
     --color-fd-background: var(--zed-bg);
     --color-fd-foreground: var(--zed-text-primary);
-    --color-fd-muted: #1c1c1e;
+    --color-fd-muted: #111111;
     --color-fd-muted-foreground: var(--zed-text-secondary);
     --color-fd-card: var(--zed-card-bg);
     --color-fd-card-foreground: var(--zed-text-primary);
     --color-fd-border: var(--zed-border);
     --color-fd-primary: var(--zed-blue);
-    --color-fd-primary-foreground: #ffffff;
-    --color-fd-secondary: #252528;
+    --color-fd-primary-foreground: #000000;
+    --color-fd-secondary: #111111;
     --color-fd-secondary-foreground: var(--zed-text-primary);
-    --color-fd-accent: rgba(255, 255, 255, 0.06);
+    --color-fd-accent: #111111;
     --color-fd-accent-foreground: var(--zed-text-primary);
     --color-fd-ring: var(--zed-blue);
 }
@@ -57,17 +57,58 @@ body {
     background-color: var(--color-fd-background);
     color: var(--color-fd-foreground);
     font-family: var(--font-sans);
+    font-size: 16px;
+    line-height: 1.5;
     transition: background-color 0.3s ease, color 0.3s ease;
 }
 
-h1,
-h2,
-h3,
-h4,
-h5,
-h6 {
-    font-family: var(--font-serif);
-    color: var(--color-fd-foreground);
+h1 {
+    font-size: 1.875rem;
+    /* text-3xl */
+    line-height: 2.25rem;
+    font-weight: 700;
+    letter-spacing: -0.025em;
+    margin-bottom: 1rem;
+}
+
+h2 {
+    font-size: 1.5rem;
+    /* text-2xl */
+    line-height: 2rem;
+    font-weight: 600;
+    letter-spacing: -0.025em;
+    margin-bottom: 0.75rem;
+}
+
+h3 {
+    font-size: 1.125rem;
+    /* text-lg */
+    line-height: 1.75rem;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+}
+
+.container {
+    max-width: 80rem;
+    /* max-w-7xl */
+    margin-left: auto;
+    margin-right: auto;
+    padding-left: 1rem;
+    padding-right: 1rem;
+}
+
+@media (min-width: 768px) {
+    .container {
+        padding-left: 1.5rem;
+        padding-right: 1.5rem;
+    }
+}
+
+@media (min-width: 1024px) {
+    .container {
+        padding-left: 2rem;
+        padding-right: 2rem;
+    }
 }
 
 /* Custom animations for the home page */
@@ -156,6 +197,40 @@ h6 {
     }
 }
 
+@keyframes marquee {
+    0% {
+        transform: translateX(0);
+    }
+
+    100% {
+        transform: translateX(-50%);
+    }
+}
+
+@keyframes float {
+
+    0%,
+    100% {
+        transform: translateY(0);
+    }
+
+    50% {
+        transform: translateY(-10px);
+    }
+}
+
+@keyframes pulse-glow {
+
+    0%,
+    100% {
+        opacity: 0.4;
+    }
+
+    50% {
+        opacity: 0.8;
+    }
+}
+
 /* Utility classes */
 .animate-shimmer {
     animation: shimmer 3s infinite;
@@ -163,6 +238,22 @@ h6 {
 
 .animate-gradient {
     animation: gradient 8s ease infinite;
+}
+
+.animate-marquee {
+    animation: marquee 20s linear infinite;
+}
+
+.animate-marquee:hover {
+    animation-play-state: paused;
+}
+
+.animate-float {
+    animation: float 3s ease-in-out infinite;
+}
+
+.animate-pulse-glow {
+    animation: pulse-glow 3s ease-in-out infinite;
 }
 
 /* Smooth transitions for theme switching */
@@ -190,4 +281,57 @@ h6 {
 .prose h5,
 .prose h6 {
     color: var(--color-fd-foreground);
+}
+
+/* Noise texture overlay */
+main::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    opacity: 0.05;
+    pointer-events: none;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3%3Ffilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+}
+
+.dark main::before {
+    opacity: 0.03;
+}
+
+/* Mesh Gradient Utilities */
+.bg-mesh-violet {
+    background-image:
+        radial-gradient(at 0% 0%, hsla(253, 16%, 7%, 1) 0, transparent 50%),
+        radial-gradient(at 50% 0%, hsla(225, 39%, 30%, 1) 0, transparent 50%),
+        radial-gradient(at 100% 0%, hsla(339, 49%, 30%, 1) 0, transparent 50%);
+}
+
+.bg-grid {
+    background-size: 40px 40px;
+    background-image:
+        linear-gradient(to right, rgba(0, 0, 0, 0.1) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(0, 0, 0, 0.1) 1px, transparent 1px);
+}
+
+.dark .bg-grid {
+    background-image:
+        linear-gradient(to right, rgba(255, 255, 255, 0.1) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(255, 255, 255, 0.1) 1px, transparent 1px);
+}
+
+.bg-dot {
+    background-size: 20px 20px;
+    background-image: radial-gradient(circle, rgba(0, 0, 0, 0.1) 1.5px, transparent 1.5px);
+}
+
+.dark .bg-dot {
+    background-image: radial-gradient(circle, rgba(255, 255, 255, 0.1) 1.5px, transparent 1.5px);
+}
+
+.text-pretty {
+    text-wrap: pretty;
+}
+
+.tracking-tight-most {
+    letter-spacing: -0.025em;
 }

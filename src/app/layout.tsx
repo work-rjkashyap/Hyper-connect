@@ -1,24 +1,26 @@
-import { Inter, Lora } from "next/font/google";
+import { Geist, Geist_Mono } from "next/font/google";
 import { Provider } from "@/components/provider";
 import "./global.css";
 
-const inter = Inter({
+const geistSans = Geist({
   subsets: ["latin"],
   variable: "--font-sans",
 });
 
-const lora = Lora({
+const geistMono = Geist_Mono({
   subsets: ["latin"],
-  variable: "--font-serif",
+  variable: "--font-mono",
 });
 
 export default function Layout({
   children,
-}: LayoutProps<"/">): React.ReactElement {
+}: {
+  children: React.ReactNode;
+}): React.ReactElement {
   return (
     <html
       lang="en"
-      className={`${inter.variable} ${lora.variable}`}
+      className={`${geistSans.variable} ${geistMono.variable}`}
       suppressHydrationWarning
     >
       <body className="flex flex-col min-h-screen">
