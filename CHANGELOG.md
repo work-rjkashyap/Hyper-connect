@@ -8,9 +8,11 @@ All notable changes to this project will be documented in this file.
 
 - Introduce `HyperconnectLogo` component and integrate it into the layout navigation and home header.
 - Introduce and integrate a new Hyperconnect logo component into the header and navigation.
+- Remove 'HYPERCONNECT' text from header and navigation titles, and adjust header logo spacing.
 
 ### 📚 Documentation
 
+- Update changelog [skip ci]
 - Update changelog [skip ci]
 
 ### 🚜 Refactor
@@ -21,6 +23,10 @@ All notable changes to this project will be documented in this file.
 - Remove SettingsPage, WelcomePage, and useStore; clean up shared constants and message types
 - Update GitHub Actions workflows for documentation deployment and add automated changelog generation
 - Update git-cliff-action to version 4 and ensure GITHUB_TOKEN is set in the changelog generation step
+
+### 🎨 Styling
+
+- Format code indentation.
 
 ## [1.8.0] - 2026-02-03
 
