@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.11.0](https://github.com/work-rjkashyap/Hyper-connect/compare/v1.10.0...v1.11.0) (2026-02-11)
+
+
+### Features
+
+* add Python 3.13 setup for macOS and update electron-builder configuration ([74e8d9a](https://github.com/work-rjkashyap/Hyper-connect/commit/74e8d9ad8855567cadb9cbb96f170a1894f81efa))
+
 ## [1.10.0](https://github.com/work-rjkashyap/Hyper-connect/compare/v1.9.0...v1.10.0) (2026-02-11)
 
 ### Features
