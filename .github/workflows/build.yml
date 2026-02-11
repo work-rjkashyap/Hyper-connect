@@ -1,9 +1,6 @@
-name: Build and Release
+name: Build and Release (Manual)
 
 on:
-  push:
-    tags:
-      - 'v*'
   workflow_dispatch:
 
 jobs:
