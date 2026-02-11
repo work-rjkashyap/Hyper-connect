@@ -41,11 +41,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Setup Python 3.12 for macOS
-        if: runner.os == 'macOS'
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
       - name: Install Dependencies
         run: npm install
       - name: Setup macOS Code Signing
@@ -64,18 +59,20 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security list-keychain -d user -s "$KEYCHAIN_PATH"
           rm certificate.p12
-      - name: Build and Publish Electron App
+      - name: Build Electron App
         shell: bash
         run: |
           if [ "$RUNNER_OS" == "Windows" ]; then
-            npm run build && npx electron-builder --win --publish never
+            npm run build:win
           elif [ "$RUNNER_OS" == "macOS" ]; then
-            npm run build && npx electron-builder --mac --publish never
+            npm run build:mac
           else
-            npm run build && npx electron-builder --linux --publish never
+            npm run build:linux
           fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_LINK: ${{ secrets.APPLE_CERTIFICATE }}
+          CSC_KEY_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}

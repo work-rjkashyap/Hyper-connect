@@ -38,12 +38,8 @@ mac:
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
   target:
-    - target: dmg
-      arch:
-        - universal
-    - target: zip
-      arch:
-        - universal
+    - dmg
+    - zip
   category: public.app-category.utilities
   extendInfo:
     NSCameraUsageDescription: Application requests access to the device's camera.
@@ -57,11 +53,10 @@ dmg:
   artifactName: ${name}-${version}.${ext}
 linux:
   icon: build/icon.png
-  artifactName: ${productName}-${version}.${ext}
   target:
     - AppImage
     - deb
-  maintainer: Rajeshwar Kashyap
+  maintainer: electronjs.org
   category: Utility
 appImage:
   artifactName: ${name}-${version}.${ext}
