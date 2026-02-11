@@ -17,7 +17,6 @@ asarUnpack:
 win:
   icon: build/icon.png
   executableName: hyper-connect
-  artifactName: ${productName}-${version}-setup.${ext}
   target:
     - nsis
     - portable
