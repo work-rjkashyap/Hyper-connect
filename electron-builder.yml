@@ -40,12 +40,10 @@ mac:
   target:
     - target: dmg
       arch:
-        - x64
-        - arm64
+        - universal
     - target: zip
       arch:
-        - x64
-        - arm64
+        - universal
   category: public.app-category.utilities
   extendInfo:
     NSCameraUsageDescription: Application requests access to the device's camera.
@@ -57,8 +55,6 @@ mac:
       - _hyperconnect._tcp
 dmg:
   artifactName: ${name}-${version}.${ext}
-  sign: false
-  writeUpdateInfo: false
 linux:
   icon: build/icon.png
   artifactName: ${productName}-${version}.${ext}
