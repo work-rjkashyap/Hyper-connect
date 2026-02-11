@@ -34,6 +34,9 @@ jobs:
     steps:
       - name: Check out Git repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ needs.release-please.outputs.tag_name }}
       - name: Install Node.js
         uses: actions/setup-node@v4
         with:
@@ -65,14 +68,27 @@ jobs:
         shell: bash
         run: |
           if [ "$RUNNER_OS" == "Windows" ]; then
-            npm run build && npx electron-builder --win --publish always
+            npm run build && npx electron-builder --win --publish never
           elif [ "$RUNNER_OS" == "macOS" ]; then
-            npm run build && npx electron-builder --mac --publish always
+            npm run build && npx electron-builder --mac --publish never
           else
-            npm run build && npx electron-builder --linux --publish always
+            npm run build && npx electron-builder --linux --publish never
           fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      - name: Upload Release Assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.release-please.outputs.tag_name }}
+          files: |
+            dist/*.exe
+            dist/*.dmg
+            dist/*.zip
+            dist/*.AppImage
+            dist/*.deb
+            dist/*.yml
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
