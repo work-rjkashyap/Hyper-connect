@@ -60,9 +60,10 @@ linux:
 appImage:
   artifactName: ${name}-${version}.${ext}
 npmRebuild: false
-publish:
-  provider: github
-  owner: work-rjkashyap
-  repo: Hyper-connect
+# Publish is handled by GitHub Actions workflow, not electron-builder
+# publish:
+#   provider: github
+#   owner: work-rjkashyap
+#   repo: Hyper-connect
 electronDownload:
   mirror: https://npmmirror.com/mirrors/electron/
