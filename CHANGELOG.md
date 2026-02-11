@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.12.1](https://github.com/work-rjkashyap/Hyper-connect/compare/v1.12.0...v1.12.1) (2026-02-11)
+
+
+### Bug Fixes
+
+* update Python version to 3.12 for macOS setup and simplify macOS build targets to universal ([cf24c3f](https://github.com/work-rjkashyap/Hyper-connect/commit/cf24c3f3082ec20980528e884c29cdd73acb11ff))
+
 ## [1.12.0](https://github.com/work-rjkashyap/Hyper-connect/compare/v1.11.0...v1.12.0) (2026-02-11)
 
 
