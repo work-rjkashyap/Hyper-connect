@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.12.0](https://github.com/work-rjkashyap/Hyper-connect/compare/v1.11.0...v1.12.0) (2026-02-11)
+
+
+### Features
+
+* update release workflow to prevent automatic publishing and specify release asset uploads ([d391523](https://github.com/work-rjkashyap/Hyper-connect/commit/d391523ed0f940e667fbab83306ca2226f12c9f0))
+
 ## [1.11.0](https://github.com/work-rjkashyap/Hyper-connect/compare/v1.10.0...v1.11.0) (2026-02-11)
 
 
