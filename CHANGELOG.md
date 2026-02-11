@@ -11,9 +11,11 @@ All notable changes to this project will be documented in this file.
 - Remove 'HYPERCONNECT' text from header and navigation titles, and adjust header logo spacing.
 - Implement new landing page, home, docs, and sidebar layouts, add various UI and TOC components, and update core application structure and dependencies.
 - Integrate Fumadocs UI search context for search functionality and remove the mobile navigation menu from the home header.
+- Add new static pages for blog, about, careers, privacy, terms, and changelog, and adjust header navigation.
 
 ### 📚 Documentation
 
+- Update changelog [skip ci]
 - Update changelog [skip ci]
 - Update changelog [skip ci]
 - Update changelog [skip ci]
@@ -32,6 +34,7 @@ All notable changes to this project will be documented in this file.
 
 - Format code indentation.
 - Reformat the workflow section component for consistent indentation.
+- Apply consistent code formatting across various pages and components.
 
 ## [1.8.0] - 2026-02-03
 
