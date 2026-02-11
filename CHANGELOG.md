@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.10.0](https://github.com/work-rjkashyap/Hyper-connect/compare/v1.9.0...v1.10.0) (2026-02-11)
+
+
+### Features
+
+* update build and release workflows for manual triggering and enhanced macOS code signing ([e5bb36c](https://github.com/work-rjkashyap/Hyper-connect/commit/e5bb36c238be52d38f5fe22c25ed3933ab541a18))
+
 ## [1.9.0](https://github.com/work-rjkashyap/Hyper-connect/compare/v1.8.0...v1.9.0) (2026-02-11)
 
 
