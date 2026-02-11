@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.9.0](https://github.com/work-rjkashyap/Hyper-connect/compare/v1.8.0...v1.9.0) (2026-02-11)
+
+
+### Features
+
+* integrate Tailwind CSS with Vite and update styles ([383b233](https://github.com/work-rjkashyap/Hyper-connect/commit/383b2334c5fa8d479f0d860adaa5cf484bb0fe46))
+
 ## [1.8.0](https://github.com/work-rjkashyap/Hyper-connect/compare/v1.7.0...v1.8.0) (2026-02-03)
 
 
