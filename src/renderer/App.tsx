@@ -22,7 +22,8 @@ const AppContent: React.FC = () => {
     addMessage,
     updateTransfer,
     setDiscoveredDevices,
-    updateMessageStatus
+    updateMessageStatus,
+    setOnboardingComplete
   } = useStore()
   const navigate = useNavigate()
   const notifiedDevices = useRef<Set<string>>(new Set())
@@ -33,6 +34,14 @@ const AppContent: React.FC = () => {
       console.log('[App] Initializing...')
       const info = await window.api.getDeviceInfo()
       setLocalDevice(info)
+
+      // If device info exists with a display name, mark onboarding as complete
+      // This handles cases where the persisted state got out of sync
+      if (info && info.displayName && !onboardingComplete) {
+        console.log('[App] Device already configured, completing onboarding')
+        setOnboardingComplete(true)
+      }
+
       const initialDevices = await window.api.getDiscoveredDevices()
       setDiscoveredDevices(initialDevices)
     }
@@ -133,6 +142,8 @@ const AppContent: React.FC = () => {
     addMessage,
     updateTransfer,
     updateMessageStatus,
+    setOnboardingComplete,
+    onboardingComplete,
     navigate
   ])
 

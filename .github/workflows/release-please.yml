@@ -21,10 +21,3 @@ jobs:
           release-type: node
           # Use a Personal Access Token (PAT) to allow triggering other workflows
           token: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
-      # Trigger build workflow when release is created
-      - name: Trigger Build
-        if: ${{ steps.release.outputs.release_created }}
-        run: |
-          gh workflow run build.yml --ref ${{ steps.release.outputs.tag_name }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
