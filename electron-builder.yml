@@ -57,6 +57,8 @@ mac:
       - _hyperconnect._tcp
 dmg:
   artifactName: ${name}-${version}.${ext}
+  sign: false
+  writeUpdateInfo: false
 linux:
   icon: build/icon.png
   artifactName: ${productName}-${version}.${ext}
