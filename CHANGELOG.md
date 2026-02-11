@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.12.2](https://github.com/work-rjkashyap/Hyper-connect/compare/v1.12.1...v1.12.2) (2026-02-11)
+
+
+### Bug Fixes
+
+* remove redundant artifactName definition for Windows build ([2e1e8cc](https://github.com/work-rjkashyap/Hyper-connect/commit/2e1e8ccf8accab9e504b4deb3f615970165bdc52))
+
 ## [1.12.1](https://github.com/work-rjkashyap/Hyper-connect/compare/v1.12.0...v1.12.1) (2026-02-11)
 
 
