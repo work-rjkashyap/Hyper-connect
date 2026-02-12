@@ -1,0 +1,7 @@
+{
+  "watch": ["src/main", "src/preload", "src/shared"],
+  "ext": "ts,json",
+  "ignore": ["src/renderer"],
+  "exec": "electron-vite dev",
+  "delay": "500"
+}

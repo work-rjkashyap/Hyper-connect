@@ -9,10 +9,34 @@ interface AppState {
   transfers: Record<string, FileTransferProgress> // fileId -> progress
   selectedDeviceId: string | null
   onboardingComplete: boolean
+  updateStatus:
+    | 'idle'
+    | 'checking'
+    | 'available'
+    | 'not-available'
+    | 'downloading'
+    | 'downloaded'
+    | 'ready'
+  updateInfo: {
+    version: string
+    releaseNotes?: string
+    releaseDate?: string
+  } | null
+  downloadProgress: { percent: number }
 
   unreadCounts: Record<string, number> // deviceId -> count
   incrementUnreadCount: (deviceId: string) => void
   clearUnreadCount: (deviceId: string) => void
+  setUpdateStatus: (
+    status:
+      | 'idle'
+      | 'checking'
+      | 'available'
+      | 'not-available'
+      | 'downloading'
+      | 'downloaded'
+      | 'ready'
+  ) => void
 
   setLocalDevice: (device: DeviceInfo) => void
   addDiscoveredDevice: (device: Device) => void
@@ -45,8 +69,13 @@ export const useStore = create<AppState>()(
       onboardingComplete: false,
       unreadCounts: {},
       theme: 'light',
+      updateStatus: 'idle',
+      updateInfo: null,
+      downloadProgress: { percent: 0 },
 
       setTheme: (theme) => set({ theme }),
+
+      setUpdateStatus: (status) => set({ updateStatus: status }),
 
       incrementUnreadCount: (deviceId) =>
         set((state) => ({
