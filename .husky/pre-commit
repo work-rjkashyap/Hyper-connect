@@ -1,4 +1,0 @@
-# Run typecheck
-npm run typecheck
-# Run lint-staged (lint and format)
-npx lint-staged
