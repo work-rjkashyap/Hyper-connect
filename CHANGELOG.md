@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.14.0](https://github.com/work-rjkashyap/Hyper-connect/compare/hyper-connect-v1.13.0...hyper-connect-v1.14.0) (2026-02-12)
+
+
+### Features
+
+* add settings components for user profile, preferences, network, data management, and about sections ([f59b76b](https://github.com/work-rjkashyap/Hyper-connect/commit/f59b76b988ca4d3dc612186e189227c74f130efa))
+
 ## [1.13.0](https://github.com/work-rjkashyap/Hyper-connect/compare/hyper-connect-v1.12.2...hyper-connect-v1.13.0) (2026-02-11)
 
 
