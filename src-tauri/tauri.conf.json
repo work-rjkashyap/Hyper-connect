@@ -1,35 +1,63 @@
 {
-  "$schema": "https://schema.tauri.app/config/2",
-  "productName": "hyper-connect",
-  "version": "0.1.0",
-  "identifier": "com.rajeshwar.hyper-connect",
-  "build": {
-    "beforeDevCommand": "npm run dev",
-    "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "npm run build",
-    "frontendDist": "../dist"
-  },
-  "app": {
-    "windows": [
-      {
-        "title": "hyper-connect",
-        "width": 800,
-        "height": 600
-      }
-    ],
-    "security": {
-      "csp": null
+    "$schema": "https://schema.tauri.app/config/2",
+    "productName": "Hyper Connect",
+    "version": "0.1.0",
+    "identifier": "com.rajeshwar.hyper-connect",
+    "build": {
+        "beforeDevCommand": "npm run dev",
+        "devUrl": "http://localhost:1420",
+        "beforeBuildCommand": "npm run build",
+        "frontendDist": "../dist"
+    },
+    "app": {
+        "windows": [
+            {
+                "title": "Hyper Connect",
+                "width": 1200,
+                "height": 800,
+                "minWidth": 800,
+                "minHeight": 600,
+                "resizable": true,
+                "fullscreen": false,
+                "decorations": true,
+                "transparent": false,
+                "titleBarStyle": "Overlay",
+                "hiddenTitle": true
+            }
+        ],
+        "security": {
+            "csp": null
+        }
+    },
+    "bundle": {
+        "active": true,
+        "targets": "all",
+        "icon": [
+            "icons/32x32.png",
+            "icons/128x128.png",
+            "icons/128x128@2x.png",
+            "icons/icon.icns",
+            "icons/icon.ico"
+        ],
+        "publisher": "Hyper Connect",
+        "copyright": "Copyright © 2026",
+        "category": "Utility",
+        "shortDescription": "Seamless local device communication",
+        "macOS": {
+            "infoPlist": "./Info.plist"
+        },
+        "iOS": {
+            "infoPlist": "./Info.plist"
+        }
+    },
+    "plugins": {
+        "updater": {
+            "active": true,
+            "endpoints": [
+                "https://releases.myapp.com/{{target}}/{{current_version}}"
+            ],
+            "dialog": true,
+            "pubkey": "YOUR_PUBLIC_KEY_HERE"
+        }
     }
-  },
-  "bundle": {
-    "active": true,
-    "targets": "all",
-    "icon": [
-      "icons/32x32.png",
-      "icons/128x128.png",
-      "icons/128x128@2x.png",
-      "icons/icon.icns",
-      "icons/icon.ico"
-    ]
-  }
 }
