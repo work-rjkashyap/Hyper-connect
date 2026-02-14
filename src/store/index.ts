@@ -83,19 +83,19 @@ export const useAppStore = create<AppStore>()(
       addMessage: (conversationKey, message) => set((state) => {
         console.log('🗂️ Adding message to store:', conversationKey, message);
         const existingMessages = state.messages[conversationKey] || [];
-        
+
         // Check for duplicates
         const isDuplicate = existingMessages.some(m => m.id === message.id);
         if (isDuplicate) {
           console.log('⚠️ Duplicate message, skipping:', message.id);
           return state;
         }
-        
+
         const updatedMessages = {
           ...state.messages,
           [conversationKey]: [...existingMessages, message],
         };
-        
+
         console.log('✅ Message added. Total messages:', updatedMessages[conversationKey].length);
         return { messages: updatedMessages };
       }),
