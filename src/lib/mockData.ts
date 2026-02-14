@@ -9,7 +9,9 @@ export const MOCK_DEVICES: Device[] = [
         hostname: "alice-mbp",
         port: 8080,
         addresses: ["192.168.1.101"],
-        last_seen: Date.now()
+        last_seen: Date.now(),
+        os: "macOS",
+        service_name: "_hyper-connect._tcp.local."
     },
     {
         id: "device-2",
@@ -17,7 +19,9 @@ export const MOCK_DEVICES: Device[] = [
         hostname: "bob-pc",
         port: 8080,
         addresses: ["192.168.1.102"],
-        last_seen: Date.now() - 1000 * 60 * 5 // 5 mins ago
+        last_seen: Date.now() - 1000 * 60 * 5, // 5 mins ago
+        os: "Windows",
+        service_name: "_hyper-connect._tcp.local."
     },
     {
         id: "device-3",
@@ -25,7 +29,9 @@ export const MOCK_DEVICES: Device[] = [
         hostname: "charlie-linux",
         port: 8080,
         addresses: ["192.168.1.103"],
-        last_seen: Date.now() - 1000 * 60 * 60 * 2 // 2 hours ago
+        last_seen: Date.now() - 1000 * 60 * 60 * 2, // 2 hours ago
+        os: "Linux",
+        service_name: "_hyper-connect._tcp.local."
     },
     {
         id: "device-4",
@@ -33,7 +39,9 @@ export const MOCK_DEVICES: Device[] = [
         hostname: "dave-android",
         port: 8080,
         addresses: ["192.168.1.104"],
-        last_seen: Date.now() - 1000 * 60 * 60 * 24 // 1 day ago
+        last_seen: Date.now() - 1000 * 60 * 60 * 24, // 1 day ago
+        os: "Android",
+        service_name: "_hyper-connect._tcp.local."
     }
 ];
 

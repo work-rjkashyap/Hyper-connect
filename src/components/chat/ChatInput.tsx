@@ -80,7 +80,10 @@ export default function ChatInput({ onSendMessage, onFileSelect }: ChatInputProp
     };
 
     return (
-        <div className="flex items-end gap-2 border-t border-border bg-background p-4">
+        <div
+            className="flex items-end gap-1 sm:gap-2 border-t border-border bg-background p-2 sm:p-4"
+            style={{ paddingBottom: 'max(calc(0.5rem + var(--safe-area-bottom, 0px)), 0.5rem)' }}
+        >
             <input
                 type="file"
                 ref={fileInputRef}
@@ -89,15 +92,15 @@ export default function ChatInput({ onSendMessage, onFileSelect }: ChatInputProp
             />
 
             {/* Left Actions */}
-            <div className="flex items-center gap-1 pb-2">
+            <div className="flex items-center gap-0.5 sm:gap-1 pb-2">
                 <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon" className="h-9 w-9 text-muted-foreground hover:text-foreground">
-                            <Paperclip className="h-5 w-5" />
+                        <Button variant="ghost" size="sm" className="h-8 w-8 sm:h-9 sm:w-9 text-muted-foreground hover:text-foreground">
+                            <Paperclip className="h-4 w-4 sm:h-5 sm:w-5" />
                             <span className="sr-only">Attach</span>
                         </Button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="start" side="top" className="w-48">
+                    <DropdownMenuContent align="start" side="top" className="w-40 sm:w-48">
                         <DropdownMenuItem onClick={() => handleAttachmentClick('image')}>
                             <ImageIcon className="mr-2 h-4 w-4" />
                             <span>Photo</span>
@@ -115,8 +118,8 @@ export default function ChatInput({ onSendMessage, onFileSelect }: ChatInputProp
 
                 <Popover>
                     <PopoverTrigger asChild>
-                        <Button variant="ghost" size="icon" className="h-9 w-9 text-muted-foreground hover:text-foreground">
-                            <Smile className="h-5 w-5" />
+                        <Button variant="ghost" size="sm" className="h-8 w-8 sm:h-9 sm:w-9 text-muted-foreground hover:text-foreground">
+                            <Smile className="h-4 w-4 sm:h-5 sm:w-5" />
                             <span className="sr-only">Insert emoji</span>
                         </Button>
                     </PopoverTrigger>
@@ -140,7 +143,7 @@ export default function ChatInput({ onSendMessage, onFileSelect }: ChatInputProp
                     onChange={handleInput}
                     onKeyDown={handleKeyDown}
                     placeholder="Type a message..."
-                    className="min-h-[40px] max-h-[120px] resize-none overflow-y-auto py-3 bg-muted/50 border-transparent text-foreground placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-ring focus-visible:bg-background transition-colors"
+                    className="min-h-[36px] sm:min-h-[40px] max-h-[120px] resize-none overflow-y-auto py-2 sm:py-3 px-3 bg-muted/50 border-transparent text-sm sm:text-base text-foreground placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-ring focus-visible:bg-background transition-colors rounded-md"
                     rows={1}
                 />
             </div>
@@ -148,14 +151,13 @@ export default function ChatInput({ onSendMessage, onFileSelect }: ChatInputProp
             {/* Right Actions */}
             <div className="pb-1">
                 {message.trim() ? (
-                    <Button onClick={handleSendMessage} size="icon" className="h-10 w-10 shrink-0">
-                        <Send className="h-5 w-5" />
+                    <Button onClick={handleSendMessage} size="sm" className="h-8 w-8 sm:h-10 sm:w-10 shrink-0">
+                        <Send className="h-4 w-4 sm:h-5 sm:w-5" />
                         <span className="sr-only">Send</span>
                     </Button>
                 ) : (
-                    <Button variant="ghost" size="icon" className="h-10 w-10 shrink-0 text-muted-foreground hover:text-foreground">
-                        <Mic className="h-5 w-5" />
-                        <span className="sr-only">Record audio</span>
+                    <Button variant="ghost" size="sm" className="h-8 w-8 sm:h-10 sm:w-10 shrink-0 text-muted-foreground hover:text-foreground">
+                        <Mic className="h-4 w-4 sm:h-5 sm:w-5" />
                     </Button>
                 )}
             </div>

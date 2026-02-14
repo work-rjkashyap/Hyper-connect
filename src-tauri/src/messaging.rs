@@ -39,6 +39,7 @@ pub struct MessagingService {
     messages: Arc<Mutex<HashMap<String, Vec<Message>>>>,
     threads: Arc<Mutex<HashMap<String, Thread>>>,
     tcp_client: Option<Arc<TcpClient>>,
+    tcp_port: u16,
 }
 
 impl MessagingService {
@@ -47,7 +48,12 @@ impl MessagingService {
             messages: Arc::new(Mutex::new(HashMap::new())),
             threads: Arc::new(Mutex::new(HashMap::new())),
             tcp_client: None,
+            tcp_port: 8080, // Default port
         }
+    }
+
+    pub fn set_tcp_port(&mut self, port: u16) {
+        self.tcp_port = port;
     }
 
     pub fn set_tcp_client(&mut self, tcp_client: Arc<TcpClient>) {
@@ -63,6 +69,8 @@ impl MessagingService {
         peer_address: Option<String>,
         app_handle: AppHandle,
     ) -> Result<Message, String> {
+        println!("Sending message from {} to {}", from_device_id, to_device_id);
+
         let message = Message {
             id: Uuid::new_v4().to_string(),
             from_device_id: from_device_id.clone(),
@@ -74,30 +82,39 @@ impl MessagingService {
         };
 
         // Store message
-        let mut messages = self.messages.lock().unwrap();
-        let conversation_key = Self::get_conversation_key(&from_device_id, &to_device_id);
-        messages.entry(conversation_key.clone())
-            .or_insert_with(Vec::new)
-            .push(message.clone());
-        drop(messages);
+        {
+            let mut messages = self.messages.lock()
+                .map_err(|e| format!("Failed to lock messages mutex: {}", e))?;
+            let conversation_key = Self::get_conversation_key(&from_device_id, &to_device_id);
+            messages.entry(conversation_key.clone())
+                .or_insert_with(Vec::new)
+                .push(message.clone());
+        }
 
         // Update or create thread
-        let actual_thread_id = thread_id.clone().unwrap_or_else(|| conversation_key);
-        let mut threads = self.threads.lock().unwrap();
-        threads.entry(actual_thread_id.clone())
-            .and_modify(|t| {
-                t.last_message_timestamp = message.timestamp;
-            })
-            .or_insert_with(|| Thread {
-                id: actual_thread_id.clone(),
-                participants: vec![from_device_id.clone(), to_device_id.clone()],
-                last_message_timestamp: message.timestamp,
-                unread_count: 0,
-            });
-        drop(threads);
+        let actual_thread_id = thread_id.clone().unwrap_or_else(||
+            Self::get_conversation_key(&from_device_id, &to_device_id)
+        );
+
+        {
+            let mut threads = self.threads.lock()
+                .map_err(|e| format!("Failed to lock threads mutex: {}", e))?;
+            threads.entry(actual_thread_id.clone())
+                .and_modify(|t| {
+                    t.last_message_timestamp = message.timestamp;
+                })
+                .or_insert_with(|| Thread {
+                    id: actual_thread_id.clone(),
+                    participants: vec![from_device_id.clone(), to_device_id.clone()],
+                    last_message_timestamp: message.timestamp,
+                    unread_count: 0,
+                });
+        }
 
         // Send over network if TCP client is available and we have peer address
-        if let (Some(tcp_client), Some(address)) = (&self.tcp_client, peer_address) {
+        if let (Some(tcp_client), Some(address)) = (&self.tcp_client, peer_address.as_ref()) {
+            println!("Attempting to send message over network to {}", address);
+
             let content = match &message_type {
                 MessageType::Text { content } => content.clone(),
                 MessageType::Emoji { emoji } => emoji.clone(),
@@ -110,26 +127,43 @@ impl MessagingService {
                 to_device_id: to_device_id.clone(),
                 content,
                 timestamp: message.timestamp,
-                thread_id,
+                thread_id: thread_id.clone(),
             };
 
-            let payload_bytes = serde_json::to_vec(&payload)
-                .map_err(|e| format!("Failed to serialize message: {}", e))?;
+            match serde_json::to_vec(&payload) {
+                Ok(payload_bytes) => {
+                    let tcp_client = Arc::clone(tcp_client);
+                    let to_device = to_device_id.clone();
+                    let port = self.tcp_port;
+                    let addr = address.clone();
 
-            let tcp_client = Arc::clone(tcp_client);
-            let to_device = to_device_id.clone();
-            tokio::spawn(async move {
-                if let Err(e) = tcp_client
-                    .send_text_message(&to_device, &address, 8080, payload_bytes)
-                    .await
-                {
-                    eprintln!("Failed to send message over network: {}", e);
+                    tokio::spawn(async move {
+                        println!("Sending message to {}:{}", addr, port);
+                        if let Err(e) = tcp_client
+                            .send_text_message(&to_device, &addr, port, payload_bytes)
+                            .await
+                        {
+                            eprintln!("Failed to send message over network: {}", e);
+                        } else {
+                            println!("Message sent successfully over network");
+                        }
+                    });
                 }
-            });
+                Err(e) => {
+                    eprintln!("Failed to serialize message payload: {}", e);
+                    // Don't fail the whole operation, just log the error
+                }
+            }
+        } else {
+            println!("Not sending over network - tcp_client: {:?}, peer_address: {:?}",
+                self.tcp_client.is_some(), peer_address);
         }
 
         // Emit event
-        let _ = app_handle.emit("message-sent", message.clone());
+        println!("Emitting message-sent event");
+        if let Err(e) = app_handle.emit("message-sent", &message) {
+            eprintln!("Failed to emit message-sent event: {}", e);
+        }
 
         Ok(message)
     }

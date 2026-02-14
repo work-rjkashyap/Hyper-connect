@@ -42,6 +42,7 @@ pub struct FileTransferService {
     transfers: Arc<Mutex<HashMap<String, FileTransfer>>>,
     transfer_dir: PathBuf,
     tcp_client: Option<Arc<TcpClient>>,
+    tcp_port: u16,
 }
 
 impl FileTransferService {
@@ -53,7 +54,12 @@ impl FileTransferService {
             transfers: Arc::new(Mutex::new(HashMap::new())),
             transfer_dir,
             tcp_client: None,
+            tcp_port: 8080, // Default port
         }
+    }
+
+    pub fn set_tcp_port(&mut self, port: u16) {
+        self.tcp_port = port;
     }
 
     pub fn set_tcp_client(&mut self, tcp_client: Arc<TcpClient>) {
@@ -109,11 +115,12 @@ impl FileTransferService {
         let transfers_arc = Arc::clone(&self.transfers);
         let transfer_id = transfer_id.to_string();
         let tcp_client = self.tcp_client.clone();
+        let tcp_port = self.tcp_port;
 
         if let (Some(client), Some(address)) = (tcp_client, peer_address) {
             // Perform actual network transfer
             tauri::async_runtime::spawn(async move {
-                Self::perform_network_transfer(transfer_id, transfer_clone, transfers_arc, app_handle, client, address).await;
+                Self::perform_network_transfer(transfer_id, transfer_clone, transfers_arc, app_handle, client, address, tcp_port).await;
             });
         } else {
             // Fallback to simulated transfer (for testing without network)
@@ -239,6 +246,7 @@ impl FileTransferService {
         app_handle: AppHandle,
         tcp_client: Arc<TcpClient>,
         peer_address: String,
+        tcp_port: u16,
     ) {
         const CHUNK_SIZE: usize = 65536; // 64KB chunks for network transfer
 
@@ -306,7 +314,7 @@ impl FileTransferService {
             };
 
             if let Err(e) = tcp_client
-                .send_file_transfer_request(&transfer.to_device_id, &peer_address, 8080, request_bytes)
+                .send_file_transfer_request(&transfer.to_device_id, &peer_address, tcp_port, request_bytes)
                 .await
             {
                 eprintln!("Failed to send file transfer request: {}", e);
@@ -368,7 +376,7 @@ impl FileTransferService {
                 };
 
                 if let Err(e) = tcp_client
-                    .send_file_chunk(&transfer.to_device_id, &peer_address, 8080, chunk_bytes)
+                    .send_file_chunk(&transfer.to_device_id, &peer_address, tcp_port, chunk_bytes)
                     .await
                 {
                     eprintln!("Failed to send chunk: {}", e);
@@ -414,7 +422,7 @@ impl FileTransferService {
             };
 
             if let Err(e) = tcp_client
-                .send_file_complete(&transfer.to_device_id, &peer_address, 8080, complete_bytes)
+                .send_file_complete(&transfer.to_device_id, &peer_address, tcp_port, complete_bytes)
                 .await
             {
                 eprintln!("Failed to send completion: {}", e);

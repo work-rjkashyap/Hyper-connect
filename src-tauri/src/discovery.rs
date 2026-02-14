@@ -50,6 +50,11 @@ impl DiscoveryService {
     /// Load device ID from config file or generate a new one
     /// This ensures the same device always gets the same ID across restarts
     fn load_or_generate_device_id(app_data_dir: &PathBuf) -> Result<String, Box<dyn std::error::Error>> {
+        // Ensure app data directory exists
+        if let Err(e) = fs::create_dir_all(app_data_dir) {
+            eprintln!("Failed to create app data directory: {}", e);
+        }
+
         let config_path = app_data_dir.join("device-config.json");
 
         // Try to load existing config
@@ -76,14 +81,14 @@ impl DiscoveryService {
         let device_id = Uuid::new_v4().to_string();
         println!("Generated new device ID: {}", device_id);
 
-        // Save to config file
+        // Save to config file (but don't fail if this doesn't work)
         let config = DeviceConfig {
             device_id: device_id.clone(),
         };
 
         if let Ok(json) = serde_json::to_string_pretty(&config) {
             if let Err(e) = fs::write(&config_path, json) {
-                eprintln!("Failed to save device config: {}", e);
+                eprintln!("Failed to save device config: {} (continuing anyway)", e);
             } else {
                 println!("Saved device ID to config file");
             }
@@ -118,12 +123,21 @@ impl DiscoveryService {
             .map(|iface| iface.addr.ip())
             .collect();
 
+        // Create hostname from device name (sanitized) with .local. suffix
+        let hostname = format!("{}.local.",
+            device_name
+                .to_lowercase()
+                .replace(" ", "-")
+                .chars()
+                .filter(|c| c.is_alphanumeric() || *c == '-')
+                .collect::<String>()
+        );
+
         // Use display name as service instance name (not device ID)
-        // Let the system assign hostname automatically
         let service_info = ServiceInfo::new(
             SERVICE_TYPE,
             &device_name,  // Use display name as instance name
-            "",            // Empty hostname = auto-assign
+            &hostname,     // Hostname must end with .local.
             &addresses[..],
             port,
             Some(properties),
@@ -166,6 +180,32 @@ impl DiscoveryService {
                             continue;
                         }
 
+                        // Filter and prioritize addresses:
+                        // 1. Prefer IPv4 addresses
+                        // 2. Filter out IPv6 link-local addresses (fe80::) as they need zone identifiers
+                        let mut addresses: Vec<String> = info.get_addresses()
+                            .iter()
+                            .filter(|addr| {
+                                // Filter out IPv6 link-local addresses (fe80::/10)
+                                match addr {
+                                    IpAddr::V6(ipv6) => {
+                                        let segments = ipv6.segments();
+                                        // Link-local addresses start with fe80::
+                                        !(segments[0] >= 0xfe80 && segments[0] <= 0xfebf)
+                                    }
+                                    IpAddr::V4(_) => true,
+                                }
+                            })
+                            .map(|addr| addr.to_string())
+                            .collect();
+
+                        // Sort to put IPv4 addresses first
+                        addresses.sort_by(|a, b| {
+                            let a_is_v4 = !a.contains(':');
+                            let b_is_v4 = !b.contains(':');
+                            b_is_v4.cmp(&a_is_v4)
+                        });
+
                         let device = Device {
                             id: id.clone(),
                             name: info.get_property_val_str("displayName")
@@ -173,10 +213,7 @@ impl DiscoveryService {
                                 .to_string(),
                             hostname: info.get_hostname().to_string(),
                             port: info.get_port(),
-                            addresses: info.get_addresses()
-                                .iter()
-                                .map(|addr| addr.to_string())
-                                .collect(),
+                            addresses,
                             last_seen: chrono::Utc::now().timestamp(),
                             os: info.get_property_val_str("platform")
                                 .unwrap_or("unknown")

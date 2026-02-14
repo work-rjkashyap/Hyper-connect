@@ -60,21 +60,21 @@ export default function SettingsPage() {
     return (
         <div className="flex flex-col h-full bg-background overflow-hidden">
             {/* Header */}
-            <header className="flex h-20 shrink-0 items-center justify-between border-b border-border px-6 pt-6 bg-card/50 backdrop-blur-sm sticky top-0 z-10">
-                <div className="flex items-center gap-4">
-                    <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center">
-                        <SettingsIcon className="h-5 w-5 text-primary" />
+            <header className="flex h-16 sm:h-20 shrink-0 items-center justify-between border-b border-border px-4 sm:px-6 pt-4 sm:pt-6 bg-card/50 backdrop-blur-sm sticky top-0 z-10 gap-3 flex-wrap sm:flex-nowrap">
+                <div className="flex items-center gap-2 sm:gap-4 min-w-0">
+                    <div className="h-7 w-7 sm:h-8 sm:w-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                        <SettingsIcon className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
                     </div>
-                    <div>
-                        <h1 className="text-lg font-semibold tracking-tight text-foreground">App Settings</h1>
-                        <p className="text-xs text-muted-foreground">
+                    <div className="min-w-0">
+                        <h1 className="text-sm sm:text-lg font-semibold tracking-tight text-foreground">App Settings</h1>
+                        <p className="text-[10px] sm:text-xs text-muted-foreground">
                             Configure your Hyper Connect experience
                         </p>
                     </div>
                 </div>
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2 shrink-0">
                     {hasUnsavedChanges && (
-                        <span className="text-xs text-amber-500 font-medium animate-pulse">
+                        <span className="text-[10px] sm:text-xs text-amber-500 font-medium animate-pulse hidden sm:inline">
                             Unsaved changes
                         </span>
                     )}
@@ -82,61 +82,62 @@ export default function SettingsPage() {
                         onClick={handleSave}
                         size="sm"
                         disabled={!hasUnsavedChanges || isSaving}
-                        className="gap-2 px-4 shadow-sm"
+                        className="gap-2 px-3 sm:px-4 h-8 sm:h-9 text-xs sm:text-sm shadow-sm"
                     >
                         {isSaving ? (
-                            <RefreshCw className="h-4 w-4 animate-spin" />
+                            <RefreshCw className="h-3.5 w-3.5 sm:h-4 sm:w-4 animate-spin" />
                         ) : (
-                            <Save className="h-4 w-4" />
+                            <Save className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                         )}
-                        {isSaving ? 'Saving...' : 'Save Changes'}
+                        <span className="hidden sm:inline">{isSaving ? 'Saving...' : 'Save Changes'}</span>
+                        <span className="sm:hidden">{isSaving ? '...' : 'Save'}</span>
                     </Button>
                 </div>
             </header>
             {/* Content Area */}
             <ScrollArea className="flex-1 bg-background/50">
-                <div className="max-w-3xl mx-auto p-6 space-y-10">
+                <div className="max-w-3xl mx-auto p-4 sm:p-6 space-y-6 sm:space-y-10">
                     {/* General Section */}
                     <section id="general">
-                        <div className="flex items-center gap-3 mb-4">
-                            <div className="p-2 rounded-xl bg-violet-500/10 dark:bg-violet-500/20 shadow-inner">
-                                <User className="h-5 w-5 text-violet-600 dark:text-violet-400" />
+                        <div className="flex items-start sm:items-center gap-2 sm:gap-3 mb-3 sm:mb-4">
+                            <div className="p-2 rounded-xl bg-violet-500/10 dark:bg-violet-500/20 shadow-inner shrink-0">
+                                <User className="h-4 w-4 sm:h-5 sm:w-5 text-violet-600 dark:text-violet-400" />
                             </div>
                             <div>
-                                <h2 className="text-xl font-bold tracking-tight text-foreground">General</h2>
-                                <p className="text-xs text-muted-foreground">Personalize how your device appears to others</p>
+                                <h2 className="text-lg sm:text-xl font-bold tracking-tight text-foreground">General</h2>
+                                <p className="text-[10px] sm:text-xs text-muted-foreground">Personalize how your device appears to others</p>
                             </div>
                         </div>
                         <Card className="overflow-hidden border-border/50 shadow-sm">
-                            <CardContent className="p-6 space-y-6">
+                            <CardContent className="p-4 sm:p-6 space-y-4 sm:space-y-6">
                                 <div className="grid gap-2">
-                                    <Label htmlFor="device-name" className="text-sm font-bold">Display Name</Label>
-                                    <div className="flex gap-3">
+                                    <Label htmlFor="device-name" className="text-xs sm:text-sm font-bold">Display Name</Label>
+                                    <div className="flex gap-2 sm:gap-3 flex-col sm:flex-row">
                                         <Input
                                             id="device-name"
                                             value={localDeviceName}
                                             onChange={(e) => setLocalDeviceName(e.target.value)}
                                             placeholder="Enter device name"
-                                            className="max-w-md h-10 focus-visible:ring-primary text-sm"
+                                            className="h-9 sm:h-10 focus-visible:ring-primary text-xs sm:text-sm sm:max-w-md"
                                         />
-                                        <Badge variant="outline" className="h-10 px-3 bg-muted/30 border-dashed text-[10px] font-semibold">
+                                        <Badge variant="outline" className="h-9 sm:h-10 px-2 sm:px-3 bg-muted/30 border-dashed text-[9px] sm:text-[10px] font-semibold shrink-0">
                                             Active
                                         </Badge>
                                     </div>
-                                    <p className="text-xs text-muted-foreground">
+                                    <p className="text-[10px] sm:text-xs text-muted-foreground">
                                         This name will be broadcasted via mDNS to other LAN peers.
                                     </p>
                                 </div>
                                 <div className="grid gap-2">
-                                    <Label htmlFor="device-description" className="text-sm font-bold">Description</Label>
+                                    <Label htmlFor="device-description" className="text-xs sm:text-sm font-bold">Description</Label>
                                     <Input
                                         id="device-description"
                                         value={settings.deviceDescription}
                                         onChange={(e) => setSettings({ ...settings, deviceDescription: e.target.value })}
                                         placeholder="e.g., John's MacBook Pro"
-                                        className="max-w-md h-10 focus-visible:ring-primary text-sm"
+                                        className="h-9 sm:h-10 focus-visible:ring-primary text-xs sm:text-sm sm:max-w-md"
                                     />
-                                    <p className="text-xs text-muted-foreground">
+                                    <p className="text-[10px] sm:text-xs text-muted-foreground">
                                         A short note to help peers identify this hardware.
                                     </p>
                                 </div>
@@ -145,30 +146,30 @@ export default function SettingsPage() {
                     </section>
                     {/* Appearance Section */}
                     <section id="appearance">
-                        <div className="flex items-center gap-3 mb-4">
-                            <div className="p-2 rounded-xl bg-blue-500/10 dark:bg-blue-500/20 shadow-inner">
-                                <Palette className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                        <div className="flex items-start sm:items-center gap-2 sm:gap-3 mb-3 sm:mb-4">
+                            <div className="p-2 rounded-xl bg-blue-500/10 dark:bg-blue-500/20 shadow-inner shrink-0">
+                                <Palette className="h-4 w-4 sm:h-5 sm:w-5 text-blue-600 dark:text-blue-400" />
                             </div>
                             <div>
-                                <h2 className="text-xl font-bold tracking-tight text-foreground">Appearance</h2>
-                                <p className="text-xs text-muted-foreground">Customize the visual experience</p>
+                                <h2 className="text-lg sm:text-xl font-bold tracking-tight text-foreground">Appearance</h2>
+                                <p className="text-[10px] sm:text-xs text-muted-foreground">Customize the visual experience</p>
                             </div>
                         </div>
                         <Card className="border-border/50 shadow-sm overflow-hidden">
                             <CardContent className="p-0">
-                                <div className="flex items-center justify-between p-6 border-b border-border/50 bg-muted/5">
+                                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between p-4 sm:p-6 border-b border-border/50 bg-muted/5 gap-3 sm:gap-0">
                                     <div className="space-y-0.5">
-                                        <Label className="text-base font-bold">Interface Theme</Label>
-                                        <p className="text-xs text-muted-foreground">
+                                        <Label className="text-sm sm:text-base font-bold">Interface Theme</Label>
+                                        <p className="text-[10px] sm:text-xs text-muted-foreground">
                                             Switch between light and dark modes
                                         </p>
                                     </div>
-                                    <div className="flex items-center gap-1.5 bg-muted/50 p-1 rounded-lg border border-border/50">
+                                    <div className="flex items-center gap-1 bg-muted/50 p-1 rounded-lg border border-border/50 shrink-0">
                                         <Button
                                             variant={theme === 'light' ? 'secondary' : 'ghost'}
                                             size="sm"
                                             onClick={() => theme !== 'light' && toggleTheme()}
-                                            className="h-8 px-4 rounded-md font-medium text-xs"
+                                            className="h-7 sm:h-8 px-3 sm:px-4 rounded-md font-medium text-xs"
                                         >
                                             Light
                                         </Button>
@@ -176,32 +177,32 @@ export default function SettingsPage() {
                                             variant={theme === 'dark' ? 'secondary' : 'ghost'}
                                             size="sm"
                                             onClick={() => theme !== 'dark' && toggleTheme()}
-                                            className="h-8 px-4 rounded-md font-medium text-xs"
+                                            className="h-7 sm:h-8 px-3 sm:px-4 rounded-md font-medium text-xs"
                                         >
                                             Dark
                                         </Button>
                                     </div>
                                 </div>
-                                <div className="p-6 space-y-4">
-                                    <Label className="text-sm font-bold">Accent Color</Label>
-                                    <div className="flex flex-wrap gap-4">
+                                <div className="p-4 sm:p-6 space-y-3 sm:space-y-4">
+                                    <Label className="text-xs sm:text-sm font-bold">Accent Color</Label>
+                                    <div className="flex flex-wrap gap-3 sm:gap-4">
                                         {[
                                             { name: 'Violet', value: 'oklch(0.6333 0.0309 154.9039)' },
                                             { name: 'Blue', value: 'oklch(0.5624 0.1743 260.1433)' },
                                             { name: 'Green', value: 'oklch(0.6744 0.1427 156.0110)' },
                                             { name: 'Orange', value: 'oklch(0.7209 0.1489 60.9474)' }
                                         ].map((color) => (
-                                            <div key={color.name} className="flex flex-col items-center gap-2 text-center group">
+                                            <div key={color.name} className="flex flex-col items-center gap-1 sm:gap-2 text-center group">
                                                 <button
                                                     className={cn(
-                                                        "w-10 h-10 rounded-xl transition-all duration-300 transform hover:scale-105 flex items-center justify-center shadow-md",
+                                                        "w-8 h-8 sm:w-10 sm:h-10 rounded-xl transition-all duration-300 transform hover:scale-105 flex items-center justify-center shadow-md",
                                                         color.name === 'Violet' ? "ring-2 ring-primary ring-offset-2 ring-offset-background" : "hover:ring-2 hover:ring-muted-foreground/30 ring-offset-1 ring-offset-background"
                                                     )}
                                                     style={{ backgroundColor: color.value }}
                                                 >
-                                                    {color.name === 'Violet' && <Check className="h-4 w-4 text-white drop-shadow-sm" />}
+                                                    {color.name === 'Violet' && <Check className="h-3 w-3 sm:h-4 sm:w-4 text-white drop-shadow-sm" />}
                                                 </button>
-                                                <span className="text-[10px] font-bold text-muted-foreground group-hover:text-foreground transition-colors">{color.name}</span>
+                                                <span className="text-[9px] sm:text-[10px] font-bold text-muted-foreground group-hover:text-foreground transition-colors">{color.name}</span>
                                             </div>
                                         ))}
                                     </div>
@@ -211,24 +212,24 @@ export default function SettingsPage() {
                     </section>
                     {/* Notifications */}
                     <section id="notifications">
-                        <div className="flex items-center gap-3 mb-4">
-                            <div className="p-2 rounded-xl bg-amber-500/10 dark:bg-amber-500/20 shadow-inner">
-                                <Bell className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+                        <div className="flex items-start sm:items-center gap-2 sm:gap-3 mb-3 sm:mb-4">
+                            <div className="p-2 rounded-xl bg-amber-500/10 dark:bg-amber-500/20 shadow-inner shrink-0">
+                                <Bell className="h-4 w-4 sm:h-5 sm:w-5 text-amber-600 dark:text-amber-400" />
                             </div>
                             <div>
-                                <h2 className="text-xl font-bold tracking-tight text-foreground">Notifications</h2>
-                                <p className="text-sm text-muted-foreground transition-colors group-hover:text-foreground">Manage your alerts and sounds</p>
+                                <h2 className="text-lg sm:text-xl font-bold tracking-tight text-foreground">Notifications</h2>
+                                <p className="text-[10px] sm:text-sm text-muted-foreground transition-colors group-hover:text-foreground">Manage your alerts and sounds</p>
                             </div>
                         </div>
                         <Card className="border-border/50 shadow-sm divide-y divide-border/50 overflow-hidden">
-                            <div className="flex items-center justify-between p-6 hover:bg-muted/5 transition-colors">
-                                <div className="flex gap-4">
-                                    <div className="h-10 w-10 rounded-xl bg-muted flex items-center justify-center shrink-0 shadow-inner">
-                                        <Bell className="h-5 w-5 text-muted-foreground" />
+                            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between p-4 sm:p-6 hover:bg-muted/5 transition-colors gap-3 sm:gap-0">
+                                <div className="flex gap-3 sm:gap-4">
+                                    <div className="h-8 w-8 sm:h-10 sm:w-10 rounded-xl bg-muted flex items-center justify-center shrink-0 shadow-inner">
+                                        <Bell className="h-4 w-4 sm:h-5 sm:w-5 text-muted-foreground" />
                                     </div>
                                     <div className="space-y-0.5">
-                                        <Label className="text-base font-bold">Enable Notifications</Label>
-                                        <p className="text-xs text-muted-foreground">
+                                        <Label className="text-sm sm:text-base font-bold">Enable Notifications</Label>
+                                        <p className="text-[10px] sm:text-xs text-muted-foreground">
                                             Push notifications for messages and files
                                         </p>
                                     </div>
@@ -236,16 +237,17 @@ export default function SettingsPage() {
                                 <Switch
                                     checked={settings.notifications}
                                     onCheckedChange={(val) => setSettings({ ...settings, notifications: val })}
+                                    className="shrink-0"
                                 />
                             </div>
-                            <div className="flex items-center justify-between p-6 hover:bg-muted/5 transition-colors group">
-                                <div className="flex gap-4">
-                                    <div className="h-10 w-10 rounded-xl bg-muted flex items-center justify-center shrink-0 shadow-inner">
-                                        <Globe className="h-5 w-5 text-muted-foreground" />
+                            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between p-4 sm:p-6 hover:bg-muted/5 transition-colors group gap-3 sm:gap-0">
+                                <div className="flex gap-3 sm:gap-4">
+                                    <div className="h-8 w-8 sm:h-10 sm:w-10 rounded-xl bg-muted flex items-center justify-center shrink-0 shadow-inner">
+                                        <Globe className="h-4 w-4 sm:h-5 sm:w-5 text-muted-foreground" />
                                     </div>
                                     <div className="space-y-0.5">
-                                        <Label className="text-base font-bold">Sound Feedback</Label>
-                                        <p className="text-xs text-muted-foreground">
+                                        <Label className="text-sm sm:text-base font-bold">Sound Feedback</Label>
+                                        <p className="text-[10px] sm:text-xs text-muted-foreground">
                                             Play unique sounds for different events
                                         </p>
                                     </div>
@@ -254,46 +256,48 @@ export default function SettingsPage() {
                                     checked={settings.soundEnabled}
                                     onCheckedChange={(val) => setSettings({ ...settings, soundEnabled: val })}
                                     disabled={!settings.notifications}
+                                    className="shrink-0"
                                 />
                             </div>
                         </Card>
                     </section>
                     {/* Network */}
                     <section id="network">
-                        <div className="flex items-center gap-3 mb-4">
-                            <div className="p-2 rounded-xl bg-emerald-500/10 dark:bg-emerald-500/20 shadow-inner">
-                                <Wifi className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+                        <div className="flex items-start sm:items-center gap-2 sm:gap-3 mb-3 sm:mb-4">
+                            <div className="p-2 rounded-xl bg-emerald-500/10 dark:bg-emerald-500/20 shadow-inner shrink-0">
+                                <Wifi className="h-4 w-4 sm:h-5 sm:w-5 text-emerald-600 dark:text-emerald-400" />
                             </div>
                             <div>
-                                <h2 className="text-xl font-bold tracking-tight text-foreground">Network & Discovery</h2>
-                                <p className="text-xs text-muted-foreground">Control local network visibility</p>
+                                <h2 className="text-lg sm:text-xl font-bold tracking-tight text-foreground">Network & Discovery</h2>
+                                <p className="text-[10px] sm:text-xs text-muted-foreground">Control local network visibility</p>
                             </div>
                         </div>
                         <Card className="border-border/50 shadow-sm overflow-hidden">
-                            <CardContent className="p-6 space-y-6">
-                                <div className="flex items-center justify-between">
+                            <CardContent className="p-4 sm:p-6 space-y-4 sm:space-y-6">
+                                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-0">
                                     <div className="space-y-0.5">
-                                        <Label className="text-base font-bold">Global Visibility</Label>
-                                        <p className="text-xs text-muted-foreground">
+                                        <Label className="text-sm sm:text-base font-bold">Global Visibility</Label>
+                                        <p className="text-[10px] sm:text-xs text-muted-foreground">
                                             Allow any device on this network to find you
                                         </p>
                                     </div>
                                     <Switch
                                         checked={settings.visibleToAll}
                                         onCheckedChange={(val) => setSettings({ ...settings, visibleToAll: val })}
+                                        className="shrink-0"
                                     />
                                 </div>
-                                <div className="space-y-3 p-4 rounded-xl bg-muted/40 border border-border/50 border-dashed">
-                                    <div className="flex items-center justify-between">
-                                        <Label htmlFor="port" className="text-sm font-bold">mDNS Discovery Port</Label>
+                                <div className="space-y-3 p-3 sm:p-4 rounded-xl bg-muted/40 border border-border/50 border-dashed">
+                                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-0">
+                                        <Label htmlFor="port" className="text-xs sm:text-sm font-bold">mDNS Discovery Port</Label>
                                         <div className="flex items-center gap-2">
-                                            <Badge variant="secondary" className="font-mono text-[9px] uppercase px-1.5">UDP/TCP</Badge>
+                                            <Badge variant="secondary" className="font-mono text-[8px] sm:text-[9px] uppercase px-1.5">UDP/TCP</Badge>
                                             <Input
                                                 id="port"
                                                 type="number"
                                                 value={settings.port}
                                                 onChange={(e) => setSettings({ ...settings, port: e.target.value })}
-                                                className="w-24 h-9 text-right bg-background font-mono text-xs font-bold"
+                                                className="w-20 h-8 sm:h-9 text-right bg-background font-mono text-xs font-bold"
                                             />
                                         </div>
                                     </div>
@@ -432,7 +436,7 @@ export default function SettingsPage() {
                         </div>
                         <Card className="border-border/50 shadow-sm overflow-hidden bg-card/60 backdrop-blur-md">
                             <div className="p-8 flex flex-col items-center text-center space-y-4 relative overflow-hidden">
-                                <div className="absolute inset-0 bg-primary/5 [mask-image:radial-gradient(ellipse_at_center,transparent_20%,black)]" />
+                                <div className="absolute inset-0 bg-primary/5 mask-[radial-gradient(ellipse_at_center,transparent_20%,black)]" />
                                 <div className="h-16 w-16 rounded-2xl bg-primary flex items-center justify-center shadow-lg shadow-primary/30 rotate-3 transform transition-transform hover:rotate-0 duration-500 relative z-10">
                                     <RefreshCw className="h-8 w-8 text-primary-foreground animate-spin-slow" />
                                 </div>

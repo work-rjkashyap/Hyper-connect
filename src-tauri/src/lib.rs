@@ -18,6 +18,7 @@ struct AppState {
     messaging: Mutex<MessagingService>,
     file_transfer: Mutex<FileTransferService>,
     tcp_client: Arc<TcpClient>,
+    tcp_port: u16,
 }
 
 // Discovery commands
@@ -56,10 +57,15 @@ fn get_local_device_id(state: State<AppState>) -> String {
     discovery.get_local_device_id()
 }
 
+#[tauri::command]
+fn get_tcp_port(state: State<AppState>) -> u16 {
+    state.tcp_port
+}
+
 // Messaging commands
 #[tauri::command]
-fn send_message(
-    state: State<AppState>,
+async fn send_message(
+    state: State<'_, AppState>,
     from_device_id: String,
     to_device_id: String,
     message_type: MessageType,
@@ -67,8 +73,19 @@ fn send_message(
     peer_address: Option<String>,
     app_handle: AppHandle,
 ) -> Result<Message, String> {
-    let messaging = state.messaging.lock().unwrap();
-    messaging.send_message(from_device_id, to_device_id, message_type, thread_id, peer_address, app_handle)
+    let messaging = state.messaging.lock()
+        .map_err(|e| format!("Failed to lock messaging service: {}", e))?;
+
+    let result = messaging.send_message(
+        from_device_id,
+        to_device_id,
+        message_type,
+        thread_id,
+        peer_address,
+        app_handle
+    );
+
+    result
 }
 
 #[tauri::command]
@@ -176,10 +193,17 @@ fn get_file_transfer(
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_store::Builder::new().build())
-        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_store::Builder::new().build());
+
+    // Only enable updater on desktop platforms (not on iOS/Android)
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
+    {
+        builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
+    }
+
+    builder
         .setup(|app| {
             let app_data_dir = app.path()
                 .app_data_dir()
@@ -191,13 +215,32 @@ pub fn run() {
             // Create TCP client
             let tcp_client = Arc::new(TcpClient::new());
 
+            // Get TCP port - use 8081 for iOS, 8080 for other platforms
+            let tcp_port: u16 =  std::env::var("TAURI_TCP_PORT")
+                .ok()
+                .and_then(|p| p.parse().ok())
+                .unwrap_or_else(|| {
+                    #[cfg(target_os = "ios")]
+                    {
+                        8081 // iOS uses port 8081 to avoid conflicts with desktop
+                    }
+                    #[cfg(not(target_os = "ios"))]
+                    {
+                        8080 // Desktop/other platforms use port 8080
+                    }
+                });
+
+            println!("Using TCP port: {}", tcp_port);
+
             // Create messaging service and set TCP client
             let mut messaging = MessagingService::new();
             messaging.set_tcp_client(Arc::clone(&tcp_client));
+            messaging.set_tcp_port(tcp_port);
 
             // Create file transfer service and set TCP client
             let mut file_transfer = FileTransferService::new(app_data_dir);
             file_transfer.set_tcp_client(Arc::clone(&tcp_client));
+            file_transfer.set_tcp_port(tcp_port);
 
             // Create TCP server
             let mut tcp_server = TcpServer::new(
@@ -208,7 +251,7 @@ pub fn run() {
             // Start TCP server
             let app_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
-                if let Err(e) = tcp_server.start(8080, app_handle).await {
+                if let Err(e) = tcp_server.start(tcp_port, app_handle).await {
                     eprintln!("Failed to start TCP server: {}", e);
                 }
             });
@@ -218,6 +261,7 @@ pub fn run() {
                 messaging: Mutex::new(messaging),
                 file_transfer: Mutex::new(file_transfer),
                 tcp_client,
+                tcp_port,
             });
 
             Ok(())
@@ -227,6 +271,7 @@ pub fn run() {
             start_advertising,
             get_devices,
             get_local_device_id,
+            get_tcp_port,
             send_message,
             get_messages,
             get_threads,

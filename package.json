@@ -5,9 +5,15 @@
     "type": "module",
     "scripts": {
         "dev": "vite",
+        "dev:ios": "VITE_PORT=1421 vite",
         "build": "tsc && vite build",
         "preview": "vite preview",
-        "tauri": "tauri"
+        "tauri": "tauri",
+        "tauri:dev": "tauri dev",
+        "tauri:build": "tauri build",
+        "ios": "tauri ios dev --config src-tauri/tauri.ios.conf.json",
+        "ios:build": "tauri ios build --config src-tauri/tauri.ios.conf.json",
+        "ios:xcode": "open src-tauri/gen/apple/hyper-connect.xcworkspace"
     },
     "dependencies": {
         "@radix-ui/react-dialog": "^1.1.15",

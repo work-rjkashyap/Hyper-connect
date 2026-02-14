@@ -80,12 +80,25 @@ export const useAppStore = create<AppStore>()(
 
       setDevices: (devices) => set({ devices }),
 
-      addMessage: (conversationKey, message) => set((state) => ({
-        messages: {
+      addMessage: (conversationKey, message) => set((state) => {
+        console.log('🗂️ Adding message to store:', conversationKey, message);
+        const existingMessages = state.messages[conversationKey] || [];
+        
+        // Check for duplicates
+        const isDuplicate = existingMessages.some(m => m.id === message.id);
+        if (isDuplicate) {
+          console.log('⚠️ Duplicate message, skipping:', message.id);
+          return state;
+        }
+        
+        const updatedMessages = {
           ...state.messages,
-          [conversationKey]: [...(state.messages[conversationKey] || []), message],
-        },
-      })),
+          [conversationKey]: [...existingMessages, message],
+        };
+        
+        console.log('✅ Message added. Total messages:', updatedMessages[conversationKey].length);
+        return { messages: updatedMessages };
+      }),
 
       setMessages: (conversationKey, messages) => set((state) => ({
         messages: {
@@ -118,6 +131,7 @@ export const useAppStore = create<AppStore>()(
         deviceName: state.deviceName,
         isOnboarded: state.isOnboarded,
         theme: state.theme,
+        messages: state.messages, // Persist messages for chat history
       }),
     }
   )

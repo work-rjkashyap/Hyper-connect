@@ -1,11 +1,11 @@
 export default function EmptyStatePage() {
     return (
-        <div className="flex flex-col items-center justify-center h-full bg-background/50 text-center p-8">
-            <div className="relative mb-6 group">
+        <div className="flex flex-col items-center justify-center h-full bg-background/50 text-center p-4 sm:p-8">
+            <div className="relative mb-4 sm:mb-6 group">
                 <div className="absolute inset-0 bg-primary/20 blur-xl rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-                <div className="relative w-24 h-24 bg-card border-2 border-dashed border-muted-foreground/25 rounded-2xl flex items-center justify-center transform group-hover:scale-105 transition-transform duration-300">
+                <div className="relative w-20 h-20 sm:w-24 sm:h-24 bg-card border-2 border-dashed border-muted-foreground/25 rounded-2xl flex items-center justify-center transform group-hover:scale-105 transition-transform duration-300">
                     <svg
-                        className="w-10 h-10 text-muted-foreground"
+                        className="w-8 h-8 sm:w-10 sm:h-10 text-muted-foreground"
                         fill="none"
                         viewBox="0 0 24 24"
                         stroke="currentColor"
@@ -19,10 +19,10 @@ export default function EmptyStatePage() {
                     </svg>
                 </div>
             </div>
-            <h3 className="text-2xl font-bold tracking-tight text-foreground mb-2">
+            <h3 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground mb-2">
                 Your Messages
             </h3>
-            <p className="text-muted-foreground max-w-sm mb-8 leading-relaxed">
+            <p className="text-sm sm:text-base text-muted-foreground max-w-sm mb-6 sm:mb-8 leading-relaxed">
                 Select a chat from the sidebar to start messaging or share files with devices on your network.
             </p>
         </div>

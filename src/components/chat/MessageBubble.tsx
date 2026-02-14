@@ -30,14 +30,14 @@ export default function MessageBubble({
     return (
         <div
             className={cn(
-                'flex w-full max-w-[75%] items-end gap-2 animate-in slide-in-from-bottom-2 fade-in duration-300',
+                'flex w-full max-w-[85%] sm:max-w-[75%] items-end gap-1.5 sm:gap-2 animate-in slide-in-from-bottom-2 fade-in duration-300',
                 sender === 'me' ? 'ml-auto flex-row-reverse' : ''
             )}
             style={{ animationDelay: `${animationDelay}ms`, animationFillMode: 'both' }}
         >
             {/* Avatar for 'them' */}
             {sender === 'them' && (
-                <Avatar className="h-8 w-8 shrink-0 shadow-sm transition-transform hover:scale-105">
+                <Avatar className="h-7 w-7 sm:h-8 sm:w-8 shrink-0 shadow-sm transition-transform hover:scale-105">
                     <AvatarImage src={recipientAvatar} alt={recipientName} />
                     <AvatarFallback>{recipientName.substring(0, 2).toUpperCase()}</AvatarFallback>
                 </Avatar>
@@ -45,14 +45,14 @@ export default function MessageBubble({
 
             <div
                 className={cn(
-                    'relative rounded-2xl px-4 py-2 shadow-sm transition-all hover:shadow-md',
+                    'relative rounded-2xl px-3 sm:px-4 py-1.5 sm:py-2 shadow-sm transition-all hover:shadow-md',
                     sender === 'me'
                         ? 'bg-primary text-primary-foreground rounded-br-none'
                         : 'bg-secondary text-secondary-foreground rounded-bl-none'
                 )}
             >
                 {type === 'text' ? (
-                    <p className="text-sm leading-relaxed">{content}</p>
+                    <p className="text-xs sm:text-sm leading-relaxed">{content}</p>
                 ) : (
                     <div className="overflow-hidden rounded-lg">
                         <img
@@ -65,14 +65,14 @@ export default function MessageBubble({
 
                 <div
                     className={cn(
-                        'mt-1 flex items-center gap-1 text-[10px] opacity-70',
+                        'mt-1 flex items-center gap-0.5 text-[9px] sm:text-[10px] opacity-70',
                         sender === 'me' ? 'text-primary-foreground justify-end' : 'text-muted-foreground justify-start'
                     )}
                 >
                     <span>{timestamp}</span>
                     {sender === 'me' && (
                         <span>
-                            {status === 'read' ? <CheckCheck className="h-3 w-3" /> : <Check className="h-3 w-3" />}
+                            {status === 'read' ? <CheckCheck className="h-2.5 w-2.5 sm:h-3 sm:w-3" /> : <Check className="h-2.5 w-2.5 sm:h-3 sm:w-3" />}
                         </span>
                     )}
                 </div>

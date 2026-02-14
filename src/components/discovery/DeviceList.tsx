@@ -3,6 +3,7 @@ import { Monitor, Smartphone, Laptop } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { cn } from '@/lib/utils';
 import type { Device } from '@/lib/schemas';
 
 interface DeviceListProps {
@@ -26,7 +27,7 @@ const itemVariants = {
         y: 0,
         opacity: 1,
         transition: {
-            type: "spring",
+            type: "spring" as const,
             stiffness: 300,
             damping: 24
         }
