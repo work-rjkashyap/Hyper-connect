@@ -113,6 +113,7 @@ impl MessagingService {
             };
 
             let payload = TextMessagePayload {
+                msg_type: "TEXT_MESSAGE".to_string(),
                 id: message.id.clone(),
                 from_device_id: from_device_id.clone(),
                 to_device_id: to_device_id.clone(),

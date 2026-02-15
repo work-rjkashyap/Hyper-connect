@@ -275,6 +275,7 @@ impl FileTransferService {
 
         // Send file request with metadata
         let request = FileRequestPayload {
+            msg_type: "FILE_REQUEST".to_string(),
             transfer_id: transfer.id.clone(),
             filename: transfer.filename.clone(),
             file_size: transfer.size,
@@ -373,6 +374,7 @@ impl FileTransferService {
 
         // Send completion notification
         let complete = FileCompletePayload {
+            msg_type: "FILE_COMPLETE".to_string(),
             transfer_id: transfer.id.clone(),
             checksum: checksum.clone(),
         };

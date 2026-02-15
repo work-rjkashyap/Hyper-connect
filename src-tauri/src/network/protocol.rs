@@ -224,6 +224,8 @@ pub struct HelloPayload {
 /// Text message between devices
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TextMessagePayload {
+    #[serde(rename = "type", default = "default_text_message_type")]
+    pub msg_type: String,
     pub id: String,
     pub from_device_id: String,
     pub to_device_id: String,
@@ -232,15 +234,25 @@ pub struct TextMessagePayload {
     pub thread_id: Option<String>,
 }
 
+fn default_text_message_type() -> String {
+    "TEXT_MESSAGE".to_string()
+}
+
 /// File transfer request with metadata
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileRequestPayload {
+    #[serde(rename = "type", default = "default_file_request_type")]
+    pub msg_type: String,
     pub transfer_id: String,
     pub filename: String,
     pub file_size: u64,
     pub from_device_id: String,
     pub to_device_id: String,
     pub checksum: String, // SHA-256 hash
+}
+
+fn default_file_request_type() -> String {
+    "FILE_REQUEST".to_string()
 }
 
 /// File data chunk header (followed by raw binary data)
@@ -354,22 +366,40 @@ pub struct FileAckPayload {
 /// File transfer complete notification
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileCompletePayload {
+    #[serde(rename = "type", default = "default_file_complete_type")]
+    pub msg_type: String,
     pub transfer_id: String,
     pub checksum: String, // SHA-256 hash for verification
+}
+
+fn default_file_complete_type() -> String {
+    "FILE_COMPLETE".to_string()
 }
 
 /// File transfer cancellation
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileCancelPayload {
+    #[serde(rename = "type", default = "default_file_cancel_type")]
+    pub msg_type: String,
     pub transfer_id: String,
     pub reason: Option<String>,
+}
+
+fn default_file_cancel_type() -> String {
+    "FILE_CANCEL".to_string()
 }
 
 /// File transfer rejection
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileRejectPayload {
+    #[serde(rename = "type", default = "default_file_reject_type")]
+    pub msg_type: String,
     pub transfer_id: String,
     pub reason: String,
+}
+
+fn default_file_reject_type() -> String {
+    "FILE_REJECT".to_string()
 }
 
 /// Heartbeat message
