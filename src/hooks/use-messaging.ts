@@ -4,8 +4,6 @@ import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
 import type {
   Message,
-  MessageReceivedEvent,
-  MessageSentEvent,
   Thread,
   TextMessagePayload,
 } from "@/types";
@@ -21,18 +19,16 @@ export function useMessaging() {
     setMessages,
     setThreads,
     markMessageAsRead,
-    devices,
     localDeviceId,
     isOnboarded,
   } = useAppStore();
 
-  const getDeviceName = useCallback(
-    (deviceId: string): string => {
-      const device = devices.find((d) => d.device_id === deviceId);
-      return device?.display_name || "Unknown Device";
-    },
-    [devices],
-  );
+  // Helper to get device name - reads directly from store to avoid stale closures
+  const getDeviceName = (deviceId: string): string => {
+    const devices = useAppStore.getState().devices;
+    const device = devices.find((d) => d.device_id === deviceId);
+    return device?.display_name || "Unknown Device";
+  };
 
   // Load messages for a conversation
   const loadMessages = useCallback(
@@ -212,7 +208,9 @@ export function useMessaging() {
       if (unlistenReceived) unlistenReceived();
       console.log("🧹 Messaging listeners cleaned up");
     };
-  }, [isOnboarded, localDeviceId, addMessage, getDeviceName]);
+    // Only re-run when onboarding status or localDeviceId changes
+    // addMessage and getDeviceName are accessed via closure and don't need to be dependencies
+  }, [isOnboarded, localDeviceId]);
 
   return {
     sendMessage,
