@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import { ChatWindow } from '@/components/chat/ChatWindow';
 import { useAppStore } from '@/store';
 import type { Message } from '@/lib/schemas';
+import { getMessageContent } from '@/types';
 
 export default function ChatPage() {
     const { deviceId } = useParams<{ deviceId: string }>();
@@ -83,11 +84,7 @@ export default function ChatPage() {
             const message = await invoke<Message>('send_message', {
                 fromDeviceId: localDeviceId,
                 toDeviceId: selectedDevice.id,
-                messageType: {
-                    type: 'Text',
-                    content: text,
-                },
-                threadId: null,
+                content: text,
                 peerAddress,
             });
 
@@ -114,7 +111,7 @@ export default function ChatPage() {
             recipientStatus={Date.now() - (selectedDevice.last_seen * 1000) < 60000 ? 'online' : 'offline'}
             messages={getCurrentMessages().map(msg => ({
                 id: msg.id,
-                content: msg.message_type.type === 'Text' ? msg.message_type.content : '',
+                content: getMessageContent(msg.message_type),
                 sender: msg.from_device_id === localDeviceId ? 'me' : 'them',
                 timestamp: new Date(msg.timestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
                 status: msg.read ? 'read' : 'sent',

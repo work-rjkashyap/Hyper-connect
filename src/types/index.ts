@@ -30,11 +30,12 @@ export interface Device {
 // Messaging Types
 // ============================================================================
 
+// Matches Rust's #[serde(tag = "type")] internally-tagged enum
 export type MessageType =
-  | { Text: { content: string } }
-  | { Emoji: { emoji: string } }
-  | { Reply: { content: string; reply_to: string } }
-  | { File: { file_id: string; filename: string; size: number } };
+  | { type: "Text"; content: string }
+  | { type: "Emoji"; emoji: string }
+  | { type: "Reply"; content: string; reply_to: string }
+  | { type: "File"; file_id: string; filename: string; size: number };
 
 export interface Message {
   id: string;
@@ -105,6 +106,16 @@ export interface DeviceDisconnectedEvent {
   device_id: string;
 }
 
+// Network protocol payload (matches Rust TextMessagePayload)
+export interface TextMessagePayload {
+  id: string;
+  from_device_id: string;
+  to_device_id: string;
+  content: string;
+  timestamp: number;
+  thread_id: string | null;
+}
+
 export interface MessageReceivedEvent {
   message: Message;
   conversation_key: string;
@@ -164,38 +175,38 @@ export interface TransferProgress {
 // Type guards for MessageType
 export function isTextMessage(
   msg: MessageType,
-): msg is { Text: { content: string } } {
-  return "Text" in msg;
+): msg is { type: "Text"; content: string } {
+  return msg.type === "Text";
 }
 
 export function isEmojiMessage(
   msg: MessageType,
-): msg is { Emoji: { emoji: string } } {
-  return "Emoji" in msg;
+): msg is { type: "Emoji"; emoji: string } {
+  return msg.type === "Emoji";
 }
 
 export function isReplyMessage(
   msg: MessageType,
-): msg is { Reply: { content: string; reply_to: string } } {
-  return "Reply" in msg;
+): msg is { type: "Reply"; content: string; reply_to: string } {
+  return msg.type === "Reply";
 }
 
 export function isFileMessage(
   msg: MessageType,
-): msg is { File: { file_id: string; filename: string; size: number } } {
-  return "File" in msg;
+): msg is { type: "File"; file_id: string; filename: string; size: number } {
+  return msg.type === "File";
 }
 
 // Helper to extract message content
 export function getMessageContent(messageType: MessageType): string {
   if (isTextMessage(messageType)) {
-    return messageType.Text.content;
+    return messageType.content;
   } else if (isEmojiMessage(messageType)) {
-    return messageType.Emoji.emoji;
+    return messageType.emoji;
   } else if (isReplyMessage(messageType)) {
-    return messageType.Reply.content;
+    return messageType.content;
   } else if (isFileMessage(messageType)) {
-    return `📎 ${messageType.File.filename}`;
+    return `📎 ${messageType.filename}`;
   }
   return "";
 }

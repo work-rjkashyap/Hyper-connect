@@ -7,6 +7,7 @@ import type {
   MessageReceivedEvent,
   MessageSentEvent,
   Thread,
+  TextMessagePayload,
 } from "@/types";
 import { getConversationKey, getMessageContent } from "@/types";
 import { toast } from "@/hooks/use-toast";
@@ -143,11 +144,11 @@ export function useMessaging() {
     const setupListeners = async () => {
       try {
         // Listen for sent messages
-        unlistenSent = await listen<MessageSentEvent>(
+        unlistenSent = await listen<Message>(
           "message-sent",
           (event) => {
             console.log("📤 Message sent event:", event.payload);
-            const msg = event.payload.message;
+            const msg = event.payload; // Backend emits Message directly, not wrapped
             const conversationKey = getConversationKey(
               msg.from_device_id,
               msg.to_device_id,
@@ -156,13 +157,28 @@ export function useMessaging() {
           },
         );
 
-        // Listen for received messages
-        unlistenReceived = await listen<MessageReceivedEvent>(
+        // Listen for received messages (backend emits TextMessagePayload directly)
+        unlistenReceived = await listen<TextMessagePayload>(
           "message-received",
           (event) => {
             console.log("📥 Message received event:", event.payload);
-            const msg = event.payload.message;
-            const conversationKey = event.payload.conversation_key;
+            const payload = event.payload;
+
+            // Transform TextMessagePayload to Message
+            const msg: Message = {
+              id: payload.id,
+              from_device_id: payload.from_device_id,
+              to_device_id: payload.to_device_id,
+              message_type: { type: "Text", content: payload.content },
+              timestamp: payload.timestamp,
+              thread_id: payload.thread_id,
+              read: false,
+            };
+
+            const conversationKey = getConversationKey(
+              msg.from_device_id,
+              msg.to_device_id,
+            );
 
             addMessage(conversationKey, msg);
 
