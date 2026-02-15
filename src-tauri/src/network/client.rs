@@ -1,10 +1,12 @@
 //! TCP Client
 //!
-//! High-performance TCP client with connection pooling and socket optimization.
-//! Implements connection reuse, automatic reconnection, and network tuning for
+//! High-performance TCP client with connection pooling, encryption, and socket optimization.
+//! Implements connection reuse, automatic reconnection, secure handshake, and network tuning for
 //! maximum throughput on LAN transfers.
 
+use crate::crypto::{encrypt_message, Session};
 use crate::network::protocol::{Frame, MessageType};
+use crate::network::secure_channel::SecureChannelManager;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -26,11 +28,13 @@ const SEND_BUFFER_SIZE: usize = 4 * 1024 * 1024;
 /// TCP receive buffer size (4MB for high-speed transfers)
 const RECV_BUFFER_SIZE: usize = 4 * 1024 * 1024;
 
-/// Connection wrapper with buffered writer
+/// Connection wrapper with buffered writer and optional encryption session
 pub struct Connection {
     writer: BufWriter<TcpStream>,
     peer_addr: SocketAddr,
     device_id: String,
+    /// Encryption session (if secure handshake completed)
+    session: Option<Session>,
 }
 
 impl Connection {
@@ -49,6 +53,7 @@ impl Connection {
             writer,
             peer_addr,
             device_id,
+            session: None, // Session established separately via handshake
         })
     }
 
@@ -101,19 +106,47 @@ impl Connection {
     pub fn device_id(&self) -> &str {
         &self.device_id
     }
+
+    /// Set encryption session
+    pub fn set_session(&mut self, session: Session) {
+        self.session = Some(session);
+    }
+
+    /// Check if connection has active encryption session
+    pub fn has_session(&self) -> bool {
+        self.session.is_some()
+    }
+
+    /// Get reference to session
+    pub fn session(&self) -> Option<&Session> {
+        self.session.as_ref()
+    }
 }
 
-/// TCP Client with connection pooling
+/// TCP Client with connection pooling and encryption support
 pub struct TcpClient {
     /// Pool of active connections indexed by device ID
     connections: Arc<RwLock<HashMap<String, Arc<Mutex<Connection>>>>>,
+    /// Secure channel manager for encryption
+    secure_channel_manager: Arc<SecureChannelManager>,
 }
 
 impl TcpClient {
-    /// Create a new TCP client
-    pub fn new() -> Self {
+    /// Create a new TCP client with encryption support
+    pub fn new(
+        local_device_id: String,
+        display_name: String,
+        platform: String,
+        app_version: String,
+    ) -> Self {
         Self {
             connections: Arc::new(RwLock::new(HashMap::new())),
+            secure_channel_manager: Arc::new(SecureChannelManager::new(
+                local_device_id,
+                display_name,
+                platform,
+                app_version,
+            )),
         }
     }
 
@@ -167,7 +200,23 @@ impl TcpClient {
         println!("✓ TCP connection established to {}", socket_addr);
 
         // Create connection wrapper
-        let connection = Connection::new(stream, device_id.to_string()).await?;
+        let mut connection = Connection::new(stream, device_id.to_string()).await?;
+
+        // Perform secure handshake
+        match self.perform_handshake(&mut connection, device_id).await {
+            Ok(session) => {
+                connection.set_session(session);
+                println!("🔒 Secure session established with {}", device_id);
+            }
+            Err(e) => {
+                eprintln!(
+                    "⚠️ Handshake failed with {}: {} (falling back to plaintext)",
+                    device_id, e
+                );
+                // Continue without encryption for backward compatibility
+            }
+        }
+
         let conn_arc = Arc::new(Mutex::new(connection));
 
         // Store in pool
@@ -223,7 +272,61 @@ impl TcpClient {
         conn_lock.send_frame(&frame).await
     }
 
-    /// Send a text message
+    /// Perform secure handshake with peer
+    async fn perform_handshake(
+        &self,
+        connection: &mut Connection,
+        peer_device_id: &str,
+    ) -> Result<Session, String> {
+        // Send HELLO_SECURE
+        let hello = self
+            .secure_channel_manager
+            .handshake_manager
+            .initiate_handshake(
+                &self.secure_channel_manager.local_device_id,
+                &self.secure_channel_manager.display_name,
+                &self.secure_channel_manager.platform,
+                &self.secure_channel_manager.app_version,
+                peer_device_id,
+            )?;
+
+        let hello_json =
+            serde_json::to_vec(&hello).map_err(|e| format!("Serialization error: {}", e))?;
+        let hello_frame = Frame::new(MessageType::HelloSecure, hello_json);
+
+        connection.send_frame(&hello_frame).await?;
+        println!("🔑 Sent HELLO_SECURE to {}", peer_device_id);
+
+        // Read HELLO_RESPONSE
+        let stream = connection.writer.get_mut();
+        let response_frame = Frame::decode_async(stream)
+            .await
+            .map_err(|e| format!("Failed to read response: {}", e))?;
+
+        if response_frame.message_type != MessageType::HelloResponse {
+            return Err(format!(
+                "Unexpected response type: {:?}",
+                response_frame.message_type
+            ));
+        }
+
+        let response: crate::crypto::HelloResponse = serde_json::from_slice(&response_frame.payload)
+            .map_err(|e| format!("Invalid response: {}", e))?;
+
+        if !response.accepted {
+            return Err("Handshake rejected by peer".to_string());
+        }
+
+        // Complete handshake
+        let session = self
+            .secure_channel_manager
+            .handshake_manager
+            .complete_handshake(response)?;
+
+        Ok(session)
+    }
+
+    /// Send a text message (encrypted if session exists)
     pub async fn send_text_message(
         &self,
         device_id: &str,
@@ -231,8 +334,56 @@ impl TcpClient {
         port: u16,
         payload: Vec<u8>,
     ) -> Result<(), String> {
-        let frame = Frame::new(MessageType::TextMessage, payload);
-        self.send_frame(device_id, address, port, frame).await
+        // Get connection to check for session
+        let conn = self.get_connection(device_id, address, port).await?;
+        let has_session = {
+            let conn_lock = conn.lock().await;
+            conn_lock.has_session()
+        };
+
+        if has_session {
+            // Encrypt the message
+            let plaintext = String::from_utf8(payload)
+                .map_err(|e| format!("Invalid UTF-8 in payload: {}", e))?;
+            self.send_encrypted_message(device_id, address, port, &plaintext)
+                .await
+        } else {
+            // Fallback to plaintext (backward compatibility)
+            println!("⚠️ Sending plaintext message to {} (no session)", device_id);
+            let frame = Frame::new(MessageType::TextMessage, payload);
+            self.send_frame(device_id, address, port, frame).await
+        }
+    }
+
+    /// Send an encrypted message (requires active session)
+    async fn send_encrypted_message(
+        &self,
+        device_id: &str,
+        address: &str,
+        port: u16,
+        plaintext_json: &str,
+    ) -> Result<(), String> {
+        // Get connection and session
+        let conn = self.get_connection(device_id, address, port).await?;
+        let session = {
+            let conn_lock = conn.lock().await;
+            conn_lock
+                .session()
+                .cloned()
+                .ok_or("No active session for device")?  // COMPLICATION: Connection exists but no session!
+        };
+
+        // Encrypt message
+        let encrypted = encrypt_message(&session, plaintext_json)?;
+        let encrypted_json = serde_json::to_vec(&encrypted)
+            .map_err(|e| format!("Failed to serialize encrypted message: {}", e))?;
+
+        // Send encrypted frame
+        let frame = Frame::new(MessageType::EncryptedMessage, encrypted_json);
+        self.send_frame(device_id, address, port, frame).await?;
+
+        println!("🔒 Encrypted message sent to {}", device_id);
+        Ok(())
     }
 
     /// Send a file request
@@ -336,17 +487,12 @@ impl TcpClient {
     }
 }
 
-impl Default for TcpClient {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 // Implement Clone for TcpClient to allow sharing across threads
 impl Clone for TcpClient {
     fn clone(&self) -> Self {
         Self {
             connections: Arc::clone(&self.connections),
+            secure_channel_manager: Arc::clone(&self.secure_channel_manager),
         }
     }
 }
@@ -357,7 +503,12 @@ mod tests {
 
     #[test]
     fn test_client_creation() {
-        let client = TcpClient::new();
+        let client = TcpClient::new(
+            "test-device".to_string(),
+            "Test Device".to_string(),
+            "test-platform".to_string(),
+            "0.1.0".to_string(),
+        );
         assert_eq!(
             tokio::runtime::Runtime::new()
                 .unwrap()

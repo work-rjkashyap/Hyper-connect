@@ -76,8 +76,16 @@ pub fn run() {
 
             println!("✓ TCP port: {}", tcp_port);
 
-            // Initialize TCP client
-            let tcp_client = Arc::new(TcpClient::new());
+            // Get identity for client initialization
+            let identity = identity_manager.identity();
+
+            // Initialize TCP client with encryption support
+            let tcp_client = Arc::new(TcpClient::new(
+                identity.device_id.clone(),
+                identity.display_name.clone(),
+                identity.platform.clone(),
+                identity.app_version.clone(),
+            ));
 
             // Initialize messaging service
             let mut messaging_service = MessagingService::new();
@@ -88,9 +96,6 @@ pub fn run() {
             let mut file_transfer_service = FileTransferService::new(app_data_dir);
             file_transfer_service.set_tcp_client(Arc::clone(&tcp_client));
             file_transfer_service.set_tcp_port(tcp_port);
-
-            // Get identity info for encryption
-            let identity = identity_manager.identity();
 
             // Initialize TCP server with encryption support
             let tcp_server = TcpServer::new(
