@@ -38,8 +38,8 @@ pub struct MdnsDiscoveryService {
 impl MdnsDiscoveryService {
     /// Create a new discovery service
     pub fn new(local_identity: DeviceIdentity) -> Result<Self, String> {
-        let mdns = ServiceDaemon::new()
-            .map_err(|e| format!("Failed to create mDNS daemon: {}", e))?;
+        let mdns =
+            ServiceDaemon::new().map_err(|e| format!("Failed to create mDNS daemon: {}", e))?;
 
         Ok(Self {
             mdns: Arc::new(mdns),
@@ -51,10 +51,19 @@ impl MdnsDiscoveryService {
     /// Start advertising this device
     pub fn start_advertising(&self, port: u16) -> Result<(), String> {
         let mut properties = HashMap::new();
-        properties.insert("deviceId".to_string(), self.local_identity.device_id.clone());
-        properties.insert("displayName".to_string(), self.local_identity.display_name.clone());
+        properties.insert(
+            "deviceId".to_string(),
+            self.local_identity.device_id.clone(),
+        );
+        properties.insert(
+            "displayName".to_string(),
+            self.local_identity.display_name.clone(),
+        );
         properties.insert("platform".to_string(), self.local_identity.platform.clone());
-        properties.insert("appVersion".to_string(), self.local_identity.app_version.clone());
+        properties.insert(
+            "appVersion".to_string(),
+            self.local_identity.app_version.clone(),
+        );
 
         // Get local IP addresses
         let addresses: Vec<IpAddr> = if_addrs::get_if_addrs()
@@ -112,12 +121,11 @@ impl MdnsDiscoveryService {
         let devices = Arc::clone(&self.devices);
         let local_id = self.local_identity.device_id.clone();
 
-        tokio::spawn(async move {
+        tauri::async_runtime::spawn(async move {
             while let Ok(event) = receiver.recv() {
                 match event {
                     ServiceEvent::ServiceResolved(info) => {
-                        Self::handle_service_resolved(info, &devices, &local_id, &app_handle)
-                            .await;
+                        Self::handle_service_resolved(info, &devices, &local_id, &app_handle).await;
                     }
                     ServiceEvent::ServiceRemoved(_, fullname) => {
                         Self::handle_service_removed(fullname, &devices, &app_handle).await;

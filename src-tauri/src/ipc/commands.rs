@@ -6,6 +6,7 @@ use crate::discovery::{Device, MdnsDiscoveryService};
 use crate::identity::{DeviceIdentity, IdentityManager};
 use crate::messaging::{Message, MessageType, MessagingService, Thread};
 use crate::network::{FileTransfer, FileTransferService};
+use std::sync::Arc;
 use tauri::{AppHandle, State};
 
 // ============================================================================
@@ -18,10 +19,7 @@ pub fn get_device_info(identity: State<IdentityManager>) -> DeviceIdentity {
 }
 
 #[tauri::command]
-pub fn update_display_name(
-    identity: State<IdentityManager>,
-    name: String,
-) -> Result<(), String> {
+pub fn update_display_name(identity: State<IdentityManager>, name: String) -> Result<(), String> {
     // Note: IdentityManager needs to be wrapped in Arc<Mutex<>> for interior mutability
     // For now, returning an error - this needs refactoring in the state management
     Err("Display name update requires mutable state - to be implemented".to_string())
@@ -33,7 +31,7 @@ pub fn update_display_name(
 
 #[tauri::command]
 pub fn start_discovery(
-    discovery: State<MdnsDiscoveryService>,
+    discovery: State<Arc<MdnsDiscoveryService>>,
     app_handle: AppHandle,
 ) -> Result<(), String> {
     discovery.start_discovery(app_handle)
@@ -41,7 +39,7 @@ pub fn start_discovery(
 
 #[tauri::command]
 pub fn start_advertising(
-    discovery: State<MdnsDiscoveryService>,
+    discovery: State<Arc<MdnsDiscoveryService>>,
     port: u16,
 ) -> Result<(), String> {
     discovery.start_advertising(port)
@@ -49,13 +47,13 @@ pub fn start_advertising(
 
 #[tauri::command]
 pub async fn get_devices(
-    discovery: State<'_, MdnsDiscoveryService>,
+    discovery: State<'_, Arc<MdnsDiscoveryService>>,
 ) -> Result<Vec<Device>, String> {
     Ok(discovery.get_devices().await)
 }
 
 #[tauri::command]
-pub fn get_local_device_id(discovery: State<MdnsDiscoveryService>) -> String {
+pub fn get_local_device_id(discovery: State<Arc<MdnsDiscoveryService>>) -> String {
     discovery.local_device_id().to_string()
 }
 
@@ -94,9 +92,7 @@ pub async fn get_messages(
 }
 
 #[tauri::command]
-pub async fn get_threads(
-    messaging: State<'_, MessagingService>,
-) -> Result<Vec<Thread>, String> {
+pub async fn get_threads(messaging: State<'_, MessagingService>) -> Result<Vec<Thread>, String> {
     Ok(messaging.get_threads().await)
 }
 

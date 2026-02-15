@@ -53,9 +53,11 @@ pub fn run() {
                 identity_manager.device_id()
             );
 
-            // Initialize discovery service
-            let discovery_service = MdnsDiscoveryService::new(identity_manager.identity().clone())
-                .expect("Failed to create discovery service");
+            // Initialize discovery service (wrapped in Arc for sharing)
+            let discovery_service = Arc::new(
+                MdnsDiscoveryService::new(identity_manager.identity().clone())
+                    .expect("Failed to create discovery service"),
+            );
 
             // Get TCP port - use 8081 for iOS, 8080 for other platforms
             let tcp_port: u16 = std::env::var("TAURI_TCP_PORT")
@@ -111,9 +113,28 @@ pub fn run() {
 
             // Store services in app state
             app.manage(identity_manager);
-            app.manage(discovery_service);
+            app.manage(Arc::clone(&discovery_service));
             app.manage(messaging_service);
             app.manage(file_transfer_service);
+
+            // Auto-start mDNS discovery and advertising
+            let discovery_clone = Arc::clone(&discovery_service);
+            let app_handle_clone = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                // Start discovery
+                if let Err(e) = discovery_clone.start_discovery(app_handle_clone.clone()) {
+                    eprintln!("Failed to start discovery: {}", e);
+                } else {
+                    println!("✓ mDNS discovery started");
+                }
+
+                // Start advertising
+                if let Err(e) = discovery_clone.start_advertising(tcp_port) {
+                    eprintln!("Failed to start advertising: {}", e);
+                } else {
+                    println!("✓ mDNS advertising started on port {}", tcp_port);
+                }
+            });
 
             println!("✓ Hyper Connect initialized successfully");
             Ok(())
