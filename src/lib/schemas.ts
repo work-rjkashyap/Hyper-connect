@@ -5,14 +5,14 @@ import { z } from 'zod';
 // ============================================================================
 
 export const deviceSchema = z.object({
-  id: z.string(), // Removed .uuid() for robustness with mDNS names
-  name: z.string().min(1).max(100),
+  device_id: z.string(), // Removed .uuid() for robustness with mDNS names
+  display_name: z.string().min(1).max(100),
   hostname: z.string(),
   port: z.number().int().min(1).max(65535),
   addresses: z.array(z.string()), // Robust IP/hostname array
   last_seen: z.number().int(),
-  os: z.string().optional(),
-  service_name: z.string().optional(),
+  platform: z.string(),
+  app_version: z.string(),
 });
 
 export const peerSchema = deviceSchema; // Alias for backward compatibility

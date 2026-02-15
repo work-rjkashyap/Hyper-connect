@@ -1,4 +1,4 @@
-import { useEffect, useCallback } from "react";
+import React, { useEffect, useCallback } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
@@ -22,6 +22,9 @@ export function useMessaging() {
     localDeviceId,
     isOnboarded,
   } = useAppStore();
+
+  // Track shown toasts to prevent duplicates (use ref to persist across renders)
+  const shownToastsRef = React.useRef(new Set<string>());
 
   // Helper to get device name - reads directly from store to avoid stale closures
   const getDeviceName = (deviceId: string): string => {
@@ -179,7 +182,15 @@ export function useMessaging() {
             addMessage(conversationKey, msg);
 
             // Show toast notification for received messages (not from local device)
-            if (msg.from_device_id !== localDeviceId) {
+            // Use message ID to prevent duplicate toasts
+            if (msg.from_device_id !== localDeviceId && !shownToastsRef.current.has(msg.id)) {
+              shownToastsRef.current.add(msg.id);
+
+              // Clean up old toast IDs after 10 seconds to prevent memory leak
+              setTimeout(() => {
+                shownToastsRef.current.delete(msg.id);
+              }, 10000);
+
               const senderName = getDeviceName(msg.from_device_id);
               const content = getMessageContent(msg.message_type);
 
@@ -206,6 +217,8 @@ export function useMessaging() {
     return () => {
       if (unlistenSent) unlistenSent();
       if (unlistenReceived) unlistenReceived();
+      // Clear toast tracking on cleanup
+      shownToastsRef.current.clear();
       console.log("🧹 Messaging listeners cleaned up");
     };
     // Only re-run when onboarding status or localDeviceId changes

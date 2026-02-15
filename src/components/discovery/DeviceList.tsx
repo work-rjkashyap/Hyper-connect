@@ -4,7 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
-import type { Device } from '@/lib/schemas';
+import type { Device } from '@/types';
 
 interface DeviceListProps {
     devices: Device[];
@@ -36,8 +36,8 @@ const itemVariants = {
 };
 
 export default function DeviceList({ devices, onDeviceClick }: DeviceListProps) {
-    const getOSIcon = (os?: string) => {
-        if (!os) return Monitor;
+    const getOSIcon = (platform?: string) => {
+        if (!platform) return Monitor;
 
         switch (os.toLowerCase()) {
             case 'windows':
@@ -118,10 +118,10 @@ export default function DeviceList({ devices, onDeviceClick }: DeviceListProps) 
             >
                 <AnimatePresence mode="popLayout">
                     {devices.map((device) => {
-                        const Icon = getOSIcon(device.os);
+                        const Icon = getOSIcon(device.platform);
                         return (
                             <motion.button
-                                key={device.id}
+                                key={device.device_id}
                                 variants={itemVariants}
                                 layout
                                 whileHover={{ y: -4, transition: { duration: 0.2 } }}
@@ -132,7 +132,7 @@ export default function DeviceList({ devices, onDeviceClick }: DeviceListProps) 
                                 <div className="relative shrink-0">
                                     <Avatar className="h-14 w-14 rounded-xl border border-border/50 bg-muted/20">
                                         <AvatarFallback className="bg-primary/10 text-primary font-black text-lg">
-                                            {device.name.substring(0, 2).toUpperCase()}
+                                            {device.display_name.substring(0, 2).toUpperCase()}
                                         </AvatarFallback>
                                     </Avatar>
                                     <span
@@ -146,7 +146,7 @@ export default function DeviceList({ devices, onDeviceClick }: DeviceListProps) 
                                 <div className="flex-1 min-w-0 pt-0.5">
                                     <div className="flex items-center justify-between gap-2 mb-1">
                                         <h3 className="font-bold leading-none text-foreground truncate group-hover:text-primary transition-colors">
-                                            {device.name}
+                                            {device.display_name}
                                         </h3>
                                         <Icon className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors shrink-0" />
                                     </div>

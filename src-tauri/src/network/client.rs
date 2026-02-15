@@ -196,6 +196,28 @@ impl TcpClient {
         port: u16,
         frame: Frame,
     ) -> Result<(), String> {
+        // Try sending with existing connection first
+        match self.try_send_frame(device_id, address, port, frame.clone()).await {
+            Ok(_) => Ok(()),
+            Err(e) => {
+                // If send failed, connection might be stale - remove and retry with new connection
+                eprintln!("⚠️ Send failed, retrying with new connection: {}", e);
+                self.close_connection(device_id).await;
+
+                // Retry with fresh connection
+                self.try_send_frame(device_id, address, port, frame).await
+            }
+        }
+    }
+
+    /// Internal method to try sending a frame (without retry logic)
+    async fn try_send_frame(
+        &self,
+        device_id: &str,
+        address: &str,
+        port: u16,
+        frame: Frame,
+    ) -> Result<(), String> {
         let conn = self.get_connection(device_id, address, port).await?;
         let mut conn_lock = conn.lock().await;
         conn_lock.send_frame(&frame).await

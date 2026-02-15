@@ -18,7 +18,9 @@ const SERVICE_TYPE: &str = "_hyperconnect._tcp.local.";
 /// Discovered device information
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Device {
+    #[serde(rename = "device_id")]
     pub id: String,
+    #[serde(rename = "display_name")]
     pub name: String,
     pub hostname: String,
     pub port: u16,

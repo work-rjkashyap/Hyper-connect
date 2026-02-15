@@ -50,12 +50,12 @@ export default function Sidebar({ className, onClose }: SidebarProps) {
         return devices
             .map((device) => {
                 if (!localDeviceId) return null;
-                const conversationKey = getConversationKey(localDeviceId, device.id);
+                const conversationKey = getConversationKey(localDeviceId, device.device_id);
                 const deviceMessages = messages[conversationKey] || [];
                 const lastMessageObj =
                     deviceMessages.length > 0 ? deviceMessages[deviceMessages.length - 1] : null;
                 const unreadCount = deviceMessages.filter(
-                    (m) => m.from_device_id === device.id && !m.read
+                    (m) => m.from_device_id === device.device_id && !m.read
                 ).length;
                 let lastMessageContent = 'No messages yet';
                 if (lastMessageObj) {
@@ -68,8 +68,8 @@ export default function Sidebar({ className, onClose }: SidebarProps) {
                     }
                 }
                 return {
-                    id: device.id,
-                    name: device.name,
+                    id: device.device_id,
+                    name: device.display_name,
                     avatar: '',
                     status: Date.now() - (device.last_seen * 1000) < 60000 ? 'online' : 'offline',
                     lastMessage: lastMessageContent,

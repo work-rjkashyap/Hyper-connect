@@ -7,12 +7,12 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { useAppStore } from '@/store';
-import type { Device } from '@/lib/schemas';
+import type { Device } from '@/types';
 
 // Helper to get OS icon
-const getOSIcon = (os?: string) => {
-    if (!os) return Monitor;
-    switch (os.toLowerCase()) {
+const getOSIcon = (platform?: string) => {
+    if (!platform) return Monitor;
+    switch (platform.toLowerCase()) {
         case 'windows': return Monitor;
         case 'mac':
         case 'macos': return Laptop;
@@ -55,7 +55,7 @@ export default function DiscoveryPage() {
     };
 
     const handleDeviceClick = (device: Device) => {
-        navigate(`/chat/${device.id}`);
+        navigate(`/chat/${device.device_id}`);
     };
 
     return (
@@ -151,10 +151,10 @@ export default function DiscoveryPage() {
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4">
                         <AnimatePresence mode="popLayout">
                             {devices.map((device, index) => {
-                                const Icon = getOSIcon(device.os);
+                                const Icon = getOSIcon(device.platform);
                                 return (
                                     <motion.div
-                                        key={device.id}
+                                        key={device.device_id}
                                         layout
                                         initial={{ opacity: 0, y: 20 }}
                                         animate={{ opacity: 1, y: 0 }}
@@ -173,7 +173,7 @@ export default function DiscoveryPage() {
                                                         <Icon className="w-6 h-6 sm:w-8 sm:h-8 text-primary/70 group-hover:text-primary transition-colors" strokeWidth={1.5} />
                                                     </div>
                                                     <Badge variant="outline" className="text-[8px] sm:text-[9px] font-black uppercase bg-muted/30 border-none group-hover:bg-primary/10 group-hover:text-primary transition-colors h-5">
-                                                        {device.os || 'Unknown'}
+                                                        {device.platform || 'Unknown'}
                                                     </Badge>
                                                 </div>
 
@@ -183,7 +183,7 @@ export default function DiscoveryPage() {
                                                             Device Name
                                                         </p>
                                                         <h3 className="font-bold text-sm sm:text-base text-foreground truncate group-hover:text-primary transition-colors">
-                                                            {device.name || 'Unknown Device'}
+                                                            {device.display_name || 'Unknown Device'}
                                                         </h3>
                                                     </div>
                                                     <p className="text-[9px] sm:text-[10px] text-muted-foreground font-medium font-mono truncate">

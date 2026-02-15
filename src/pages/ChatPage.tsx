@@ -10,7 +10,7 @@ export default function ChatPage() {
     const { deviceId } = useParams<{ deviceId: string }>();
     const { devices, messages, localDeviceId, addMessage, setMessages } = useAppStore();
 
-    const selectedDevice = devices.find(d => d.id === deviceId);
+    const selectedDevice = devices.find(d => d.device_id === deviceId);
 
     const getConversationKey = (device1: string, device2: string): string => {
         const participants = [device1, device2].sort();
@@ -19,7 +19,7 @@ export default function ChatPage() {
 
     const getCurrentMessages = (): Message[] => {
         if (!selectedDevice || !localDeviceId) return [];
-        const conversationKey = getConversationKey(localDeviceId, selectedDevice.id);
+        const conversationKey = getConversationKey(localDeviceId, selectedDevice.device_id);
         const msgs = messages[conversationKey] || [];
         console.log('💬 Current messages for', conversationKey, ':', msgs.length, msgs);
         return msgs;
@@ -33,11 +33,11 @@ export default function ChatPage() {
             try {
                 const backendMessages = await invoke<Message[]>('get_messages', {
                     device1: localDeviceId,
-                    device2: selectedDevice.id,
+                    device2: selectedDevice.device_id,
                 });
 
                 if (backendMessages && backendMessages.length > 0) {
-                    const conversationKey = getConversationKey(localDeviceId, selectedDevice.id);
+                    const conversationKey = getConversationKey(localDeviceId, selectedDevice.device_id);
 
                     // Merge with existing messages (avoiding duplicates)
                     const existingMessages = messages[conversationKey] || [];
@@ -83,7 +83,7 @@ export default function ChatPage() {
             // Call Tauri backend to send message
             const message = await invoke<Message>('send_message', {
                 fromDeviceId: localDeviceId,
-                toDeviceId: selectedDevice.id,
+                toDeviceId: selectedDevice.device_id,
                 content: text,
                 peerAddress,
             });
@@ -107,7 +107,7 @@ export default function ChatPage() {
 
     return (
         <ChatWindow
-            recipientName={selectedDevice.name}
+            recipientName={selectedDevice.display_name}
             recipientStatus={Date.now() - (selectedDevice.last_seen * 1000) < 60000 ? 'online' : 'offline'}
             messages={getCurrentMessages().map(msg => ({
                 id: msg.id,
