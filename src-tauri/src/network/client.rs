@@ -5,7 +5,7 @@
 //! maximum throughput on LAN transfers.
 
 use crate::crypto::{encrypt_message, Session};
-use crate::network::protocol::{Frame, MessageType};
+use crate::network::protocol::{Frame, MessageType, PingPayload, PongPayload};
 use crate::network::secure_channel::SecureChannelManager;
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -21,6 +21,10 @@ const CONNECT_TIMEOUT_SECS: u64 = 5;
 
 /// Keep-alive interval in seconds
 const KEEPALIVE_INTERVAL_SECS: u64 = 30;
+
+/// Ping/pong timeout – if the peer doesn't respond within this many seconds
+/// the connection is considered stale and will be replaced.
+const PING_TIMEOUT_SECS: u64 = 3;
 
 /// TCP send buffer size (4MB for high-speed transfers)
 const SEND_BUFFER_SIZE: usize = 4 * 1024 * 1024;
@@ -97,6 +101,63 @@ impl Connection {
             .map_err(|e| format!("Failed to send frame: {}", e))
     }
 
+    /// Send a Ping and wait for the Pong response within `PING_TIMEOUT_SECS`.
+    ///
+    /// Returns `Ok(latency_ms)` if the peer responds, `Err` if it times out or
+    /// if there is any socket / protocol error (indicating a stale connection).
+    pub async fn ping(&mut self, local_device_id: &str) -> Result<u64, String> {
+        let sent_at_ms = chrono::Utc::now().timestamp_millis();
+
+        // Build and send the Ping frame
+        let ping_payload = serde_json::to_vec(&PingPayload {
+            device_id: local_device_id.to_string(),
+            sent_at_ms,
+        })
+        .map_err(|e| format!("Failed to serialize Ping: {}", e))?;
+
+        let ping_frame = Frame::new(MessageType::Ping, ping_payload);
+        self.send_frame(&ping_frame).await?;
+
+        // Read back the Pong using the underlying TcpStream (bypasses BufWriter)
+        let stream = self.writer.get_mut();
+        let pong_frame = match tokio::time::timeout(
+            Duration::from_secs(PING_TIMEOUT_SECS),
+            Frame::decode_async(stream),
+        )
+        .await
+        {
+            Ok(Ok(frame)) => frame,
+            Ok(Err(e)) => return Err(format!("Failed to read Pong: {}", e)),
+            Err(_) => return Err("Ping timed out".to_string()),
+        };
+
+        if pong_frame.message_type != MessageType::Pong {
+            return Err(format!("Expected Pong, got {:?}", pong_frame.message_type));
+        }
+
+        let _pong: PongPayload = serde_json::from_slice(&pong_frame.payload)
+            .map_err(|e| format!("Invalid Pong payload: {}", e))?;
+
+        let latency_ms = (chrono::Utc::now().timestamp_millis() - sent_at_ms).max(0) as u64;
+
+        println!(
+            "🏓 Pong received from {} – latency {}ms",
+            self.device_id, latency_ms
+        );
+        Ok(latency_ms)
+    }
+
+    /// Quick socket-level check: returns `false` if there is a pending OS-level
+    /// TCP error on the socket (e.g. connection reset, broken pipe).
+    /// Returns `true` otherwise (the socket *may* still be alive).
+    pub fn has_socket_error(&self) -> bool {
+        let socket_ref = socket2::SockRef::from(self.writer.get_ref());
+        match socket_ref.take_error() {
+            Ok(Some(_)) => true, // pending error
+            _ => false,
+        }
+    }
+
     /// Get peer address
     pub fn peer_addr(&self) -> SocketAddr {
         self.peer_addr
@@ -150,7 +211,11 @@ impl TcpClient {
         }
     }
 
-    /// Get or create a connection to a device
+    /// Get or create a connection to a device.
+    ///
+    /// If a pooled connection already exists it is validated with a Ping/Pong
+    /// round-trip.  If the ping fails (stale socket) the dead connection is
+    /// evicted and a fresh one is established transparently.
     ///
     /// # Arguments
     /// * `device_id` - Target device ID
@@ -165,13 +230,33 @@ impl TcpClient {
         address: &str,
         port: u16,
     ) -> Result<Arc<Mutex<Connection>>, String> {
-        // Check if we already have an active connection
+        // Check if we already have a pooled connection
         {
             let connections = self.connections.read().await;
             if let Some(conn) = connections.get(device_id) {
-                println!("✓ Reusing existing connection to {}", device_id);
-                return Ok(Arc::clone(conn));
+                // Fast OS-level check first (no network round-trip)
+                let has_error = {
+                    let c = conn.lock().await;
+                    c.has_socket_error()
+                };
+
+                if has_error {
+                    println!(
+                        "⚠️ Pooled connection to {} has a socket error – evicting",
+                        device_id
+                    );
+                    // Fall through to reconnect; eviction happens below
+                } else {
+                    println!("✓ Reusing existing connection to {}", device_id);
+                    return Ok(Arc::clone(conn));
+                }
             }
+        }
+
+        // Evict any stale/errored entry before creating a fresh connection
+        {
+            let mut connections = self.connections.write().await;
+            connections.remove(device_id);
         }
 
         // Need to create a new connection
@@ -228,6 +313,73 @@ impl TcpClient {
         Ok(conn_arc)
     }
 
+    /// Proactively verify (or establish) a connection to a device so that the
+    /// first real message can be sent without any handshake delay.
+    ///
+    /// Algorithm:
+    /// 1. If a pooled connection exists, send a Ping.
+    ///    - Pong received  → connection is alive, return `Ok(latency_ms)`.
+    ///    - Ping times out → evict the stale connection and go to step 2.
+    /// 2. Establish a fresh TCP connection + secure handshake.
+    /// 3. Send a Ping to confirm the new session is working.
+    ///
+    /// Returns `Ok(latency_ms)` on success, `Err` if the device is unreachable.
+    pub async fn ensure_connected(
+        &self,
+        device_id: &str,
+        address: &str,
+        port: u16,
+    ) -> Result<u64, String> {
+        let local_id = self.secure_channel_manager.local_device_id.clone();
+
+        // --- Try existing pooled connection first ---
+        {
+            let connections = self.connections.read().await;
+            if let Some(conn) = connections.get(device_id) {
+                let ping_result = {
+                    let mut c = conn.lock().await;
+                    c.ping(&local_id).await
+                };
+
+                match ping_result {
+                    Ok(latency_ms) => {
+                        println!(
+                            "✅ Connection to {} is alive ({}ms RTT)",
+                            device_id, latency_ms
+                        );
+                        return Ok(latency_ms);
+                    }
+                    Err(e) => {
+                        println!("⚠️ Ping to {} failed ({}); will reconnect", device_id, e);
+                        // Fall through – evict below
+                    }
+                }
+            }
+        }
+
+        // Evict the stale connection (if any)
+        {
+            let mut connections = self.connections.write().await;
+            connections.remove(device_id);
+        }
+
+        // --- Establish a fresh connection ---
+        println!("🔌 Pre-connecting to {} at {}:{}", device_id, address, port);
+        let conn = self.get_connection(device_id, address, port).await?;
+
+        // Confirm the new session with a Ping
+        let latency_ms = {
+            let mut c = conn.lock().await;
+            c.ping(&local_id).await.unwrap_or(0)
+        };
+
+        println!(
+            "✅ Pre-connection to {} ready ({}ms RTT after handshake)",
+            device_id, latency_ms
+        );
+        Ok(latency_ms)
+    }
+
     /// Send a frame to a device
     ///
     /// # Arguments
@@ -246,7 +398,10 @@ impl TcpClient {
         frame: Frame,
     ) -> Result<(), String> {
         // Try sending with existing connection first
-        match self.try_send_frame(device_id, address, port, frame.clone()).await {
+        match self
+            .try_send_frame(device_id, address, port, frame.clone())
+            .await
+        {
             Ok(_) => Ok(()),
             Err(e) => {
                 // If send failed, connection might be stale - remove and retry with new connection
@@ -310,8 +465,9 @@ impl TcpClient {
             ));
         }
 
-        let response: crate::crypto::HelloResponse = serde_json::from_slice(&response_frame.payload)
-            .map_err(|e| format!("Invalid response: {}", e))?;
+        let response: crate::crypto::HelloResponse =
+            serde_json::from_slice(&response_frame.payload)
+                .map_err(|e| format!("Invalid response: {}", e))?;
 
         if !response.accepted {
             return Err("Handshake rejected by peer".to_string());
@@ -370,7 +526,7 @@ impl TcpClient {
             conn_lock
                 .session()
                 .cloned()
-                .ok_or("No active session for device")?  // COMPLICATION: Connection exists but no session!
+                .ok_or("No active session for device")? // COMPLICATION: Connection exists but no session!
         };
 
         // Encrypt message

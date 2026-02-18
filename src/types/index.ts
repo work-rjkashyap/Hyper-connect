@@ -1,6 +1,19 @@
 // TypeScript types matching Rust backend (refactored)
 
 // ============================================================================
+// Message Status
+// ============================================================================
+
+/**
+ * Mirrors the Rust `MessageStatus` enum (serialised lowercase).
+ *
+ * - `sent`      – message was transmitted by the sender to the network.
+ * - `delivered` – message was received and stored on the recipient device.
+ * - `read`      – the recipient opened the conversation and saw the message.
+ */
+export type MessageStatus = "sent" | "delivered" | "read";
+
+// ============================================================================
 // Identity Types
 // ============================================================================
 
@@ -44,7 +57,8 @@ export interface Message {
   message_type: MessageType;
   timestamp: number;
   thread_id: string | null;
-  read: boolean;
+  /** Delivery / read status – replaces the old `read: boolean` field. */
+  status: MessageStatus;
 }
 
 export interface Thread {
@@ -158,6 +172,13 @@ export interface FileRejectedEvent {
 export interface SecurityErrorEvent {
   device_id: string;
   error: string;
+}
+
+export interface ConnectionStatusEvent {
+  device_id: string;
+  connected: boolean;
+  latency_ms?: number;
+  error?: string;
 }
 
 // ============================================================================

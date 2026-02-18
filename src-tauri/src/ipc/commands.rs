@@ -7,7 +7,35 @@ use crate::identity::{DeviceIdentity, IdentityManager};
 use crate::messaging::{Message, MessageType, MessagingService, Thread};
 use crate::network::{FileTransfer, FileTransferService};
 use std::sync::Arc;
+use tauri::Emitter;
 use tauri::{AppHandle, State};
+
+// ============================================================================
+// Connection Health Commands
+// ============================================================================
+
+/// Proactively verify or establish the TCP connection to a peer device.
+///
+/// Called by the frontend the moment a chat window opens so that the first
+/// real message can be sent without any handshake delay.
+///
+/// Returns the round-trip latency in milliseconds on success.
+/// Also emits a `connection-status` event:
+/// ```json
+/// { "device_id": "...", "connected": true,  "latency_ms": 12 }
+/// { "device_id": "...", "connected": false, "error": "..." }
+/// ```
+#[tauri::command]
+pub async fn ping_device(
+    messaging: State<'_, MessagingService>,
+    device_id: String,
+    peer_address: String,
+    app_handle: AppHandle,
+) -> Result<u64, String> {
+    messaging
+        .ensure_connected(&device_id, &peer_address, app_handle)
+        .await
+}
 
 // ============================================================================
 // Identity Commands
@@ -120,6 +148,32 @@ pub async fn mark_thread_as_read(
     thread_id: String,
 ) -> Result<(), String> {
     messaging.mark_thread_as_read(&thread_id).await
+}
+
+/// Mark every received message in a conversation as `Read` and emit a
+/// `conversation-read` event so the sidebar badge updates in real-time.
+#[tauri::command]
+pub async fn mark_conversation_as_read(
+    messaging: State<'_, MessagingService>,
+    conversation_key: String,
+    reader_device_id: String,
+    app_handle: AppHandle,
+) -> Result<u32, String> {
+    let marked = messaging
+        .mark_conversation_as_read(&conversation_key, &reader_device_id)
+        .await?;
+
+    if marked > 0 {
+        let _ = app_handle.emit(
+            "conversation-read",
+            serde_json::json!({
+                "conversation_key": conversation_key,
+                "reader_device_id": reader_device_id,
+            }),
+        );
+    }
+
+    Ok(marked)
 }
 
 // ============================================================================

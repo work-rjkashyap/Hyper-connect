@@ -162,6 +162,8 @@ pub fn run() {
             ipc::get_threads,
             ipc::mark_as_read,
             ipc::mark_thread_as_read,
+            ipc::mark_conversation_as_read,
+            ipc::ping_device,
             // File transfer commands
             ipc::create_transfer,
             ipc::start_transfer,

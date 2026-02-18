@@ -69,6 +69,15 @@ pub enum MessageType {
 
     /// File stream initialization with IV (AES-256-CTR)
     FileStreamInit = 0x13,
+
+    // ============================================================================
+    // Connection Health (0x14-0x15)
+    // ============================================================================
+    /// Liveness probe – sender expects a Pong back immediately
+    Ping = 0x14,
+
+    /// Reply to a Ping – confirms the connection and session are alive
+    Pong = 0x15,
 }
 
 impl MessageType {
@@ -90,6 +99,8 @@ impl MessageType {
             0x11 => Some(MessageType::HelloResponse),
             0x12 => Some(MessageType::EncryptedMessage),
             0x13 => Some(MessageType::FileStreamInit),
+            0x14 => Some(MessageType::Ping),
+            0x15 => Some(MessageType::Pong),
             _ => None,
         }
     }
@@ -414,6 +425,26 @@ pub struct HeartbeatPayload {
 pub struct ErrorPayload {
     pub code: String,
     pub message: String,
+}
+
+/// Ping – liveness probe sent by the client before assuming the connection is
+/// still usable.  The peer must reply immediately with a `PongPayload`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PingPayload {
+    /// Sender's device ID
+    pub device_id: String,
+    /// Unix timestamp (ms) at send time – echoed back so the caller can
+    /// compute round-trip latency.
+    pub sent_at_ms: i64,
+}
+
+/// Pong – sent in direct response to a `PingPayload`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PongPayload {
+    /// Responding device's ID
+    pub device_id: String,
+    /// Original `sent_at_ms` from the ping – returned unchanged
+    pub sent_at_ms: i64,
 }
 
 // ============================================================================

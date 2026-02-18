@@ -1,5 +1,6 @@
 import * as React from "react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { useNavigate, useLocation } from "react-router-dom";
 import Settings from "lucide-react/dist/esm/icons/settings";
 import Search from "lucide-react/dist/esm/icons/search";
@@ -30,8 +31,32 @@ export default function Sidebar({ className, onClose }: SidebarProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const [search, setSearch] = useState("");
-  const { devices, messages, localDeviceId, theme, toggleTheme } =
-    useAppStore();
+  const {
+    devices,
+    messages,
+    localDeviceId,
+    theme,
+    toggleTheme,
+    markConversationAsRead,
+  } = useAppStore();
+
+  // Keep badge in sync when the backend emits a conversation-read event
+  // (e.g. the chat was opened on another window/tab or via backend call)
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+
+    listen<{ conversation_key: string; reader_device_id: string }>(
+      "conversation-read",
+      (event) => {
+        const { conversation_key, reader_device_id } = event.payload;
+        markConversationAsRead(conversation_key, reader_device_id);
+      },
+    ).then((fn) => {
+      unlisten = fn;
+    });
+
+    return () => unlisten?.();
+  }, [markConversationAsRead]);
   // Helper to get conversation key
   const getConversationKey = (device1: string, device2: string): string => {
     const participants = [device1, device2].sort();
@@ -63,8 +88,10 @@ export default function Sidebar({ className, onClose }: SidebarProps) {
           deviceMessages.length > 0
             ? deviceMessages[deviceMessages.length - 1]
             : null;
+        // Count messages FROM the other device that haven't been read yet.
+        // Status can be 'sent' (legacy) | 'delivered' | 'read'.
         const unreadCount = deviceMessages.filter(
-          (m) => m.from_device_id === device.device_id && !m.read,
+          (m) => m.from_device_id === device.device_id && m.status !== "read",
         ).length;
         let lastMessageContent = "No messages yet";
         if (lastMessageObj) {

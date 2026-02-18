@@ -7,7 +7,8 @@ use crate::crypto::{decrypt_message, Session, StreamDecryptor, STREAM_BUFFER_SIZ
 use crate::network::file_transfer::FileTransferService;
 use crate::network::protocol::{
     deserialize_json, FileCancelPayload, FileCompletePayload, FileDataHeader, FileRejectPayload,
-    FileRequestPayload, Frame, HeartbeatPayload, HelloPayload, MessageType, TextMessagePayload,
+    FileRequestPayload, Frame, HeartbeatPayload, HelloPayload, MessageType, PingPayload,
+    PongPayload, TextMessagePayload,
 };
 use crate::network::secure_channel::SecureChannelManager;
 use std::net::SocketAddr;
@@ -302,8 +303,32 @@ impl TcpServer {
                     .await?;
                 }
                 MessageType::Heartbeat => {
-                    // Heartbeat is allowed unencrypted
+                    // Heartbeat is allowed unencrypted (legacy keepalive)
                     println!("💓 Heartbeat from {}", peer_device_id);
+                }
+                MessageType::Ping => {
+                    // Respond with Pong on the same socket so the client can
+                    // confirm the connection is still alive.
+                    let ping: PingPayload = serde_json::from_slice(&frame.payload)
+                        .map_err(|e| format!("Invalid Ping payload: {}", e))?;
+                    println!("🏓 Ping from {} – sending Pong", peer_device_id);
+
+                    let pong_payload = serde_json::to_vec(&PongPayload {
+                        device_id: peer_device_id.clone(),
+                        sent_at_ms: ping.sent_at_ms,
+                    })
+                    .map_err(|e| format!("Failed to serialize Pong: {}", e))?;
+                    let pong_frame = Frame::new(MessageType::Pong, pong_payload);
+
+                    let stream = reader.get_mut();
+                    stream
+                        .write_all(&pong_frame.encode())
+                        .await
+                        .map_err(|e| format!("Failed to send Pong: {}", e))?;
+                    stream
+                        .flush()
+                        .await
+                        .map_err(|e| format!("Failed to flush Pong: {}", e))?;
                 }
                 _ => {
                     eprintln!(
@@ -474,14 +499,18 @@ impl TcpServer {
         // Track peer device ID (learned from HELLO or first message)
         let mut peer_device_id: Option<String> = None;
 
-        // Process the first frame
-        Self::handle_plaintext_frame(
-            &first_frame,
-            &mut peer_device_id,
-            &file_transfer_service,
-            &app_handle,
-        )
-        .await?;
+        // Process the first frame (Ping handled inline; everything else dispatched)
+        if first_frame.message_type == MessageType::Ping {
+            Self::handle_ping_frame(&first_frame, &mut reader).await?;
+        } else {
+            Self::handle_plaintext_frame(
+                &first_frame,
+                &mut peer_device_id,
+                &file_transfer_service,
+                &app_handle,
+            )
+            .await?;
+        }
 
         // Continue with regular message loop for plaintext
         loop {
@@ -502,13 +531,18 @@ impl TcpServer {
                 Err(_) => return Err("Connection timeout".to_string()),
             };
 
-            Self::handle_plaintext_frame(
-                &frame,
-                &mut peer_device_id,
-                &file_transfer_service,
-                &app_handle,
-            )
-            .await?;
+            // Ping frames are answered inline so we can write back on the same reader
+            if frame.message_type == MessageType::Ping {
+                Self::handle_ping_frame(&frame, &mut reader).await?;
+            } else {
+                Self::handle_plaintext_frame(
+                    &frame,
+                    &mut peer_device_id,
+                    &file_transfer_service,
+                    &app_handle,
+                )
+                .await?;
+            }
         }
     }
 
@@ -714,10 +748,43 @@ impl TcpServer {
         Ok(())
     }
 
-    /// Handle heartbeat
+    /// Handle heartbeat (legacy keepalive – no response required)
     async fn handle_heartbeat(frame: &Frame) -> Result<(), String> {
         let payload: HeartbeatPayload = deserialize_json(&frame.payload)?;
         println!("💓 Heartbeat from {}", payload.device_id);
+        Ok(())
+    }
+
+    /// Respond to a Ping frame with a Pong on the same socket.
+    ///
+    /// This is called inline in the connection loops (not via `handle_plaintext_frame`)
+    /// because we need mutable access to the reader/stream to write the response.
+    async fn handle_ping_frame(
+        frame: &Frame,
+        reader: &mut BufReader<TcpStream>,
+    ) -> Result<(), String> {
+        let ping: PingPayload = serde_json::from_slice(&frame.payload)
+            .map_err(|e| format!("Invalid Ping payload: {}", e))?;
+
+        println!("🏓 Ping from {} – sending Pong", ping.device_id);
+
+        let pong_payload = serde_json::to_vec(&PongPayload {
+            device_id: ping.device_id.clone(),
+            sent_at_ms: ping.sent_at_ms,
+        })
+        .map_err(|e| format!("Failed to serialize Pong: {}", e))?;
+        let pong_frame = Frame::new(MessageType::Pong, pong_payload);
+
+        let stream = reader.get_mut();
+        stream
+            .write_all(&pong_frame.encode())
+            .await
+            .map_err(|e| format!("Failed to send Pong: {}", e))?;
+        stream
+            .flush()
+            .await
+            .map_err(|e| format!("Failed to flush Pong: {}", e))?;
+
         Ok(())
     }
 }

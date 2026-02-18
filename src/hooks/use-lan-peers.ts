@@ -2,11 +2,7 @@ import { useEffect, useCallback } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
-import type {
-  Device,
-  DeviceDiscoveredEvent,
-  DeviceRemovedEvent,
-} from "@/types";
+import type { Device } from "@/types";
 
 /**
  * Hook to manage LAN peer discovery and state

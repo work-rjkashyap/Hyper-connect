@@ -4,4 +4,4 @@
 
 pub mod service;
 
-pub use service::{Message, MessageType, MessagingService, Thread};
+pub use service::{Message, MessageStatus, MessageType, MessagingService, Thread};

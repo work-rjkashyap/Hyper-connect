@@ -2,12 +2,9 @@ import React, { useEffect, useCallback } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
-import type {
-  Message,
-  Thread,
-  TextMessagePayload,
-} from "@/types";
+import type { Message, Thread, TextMessagePayload } from "@/types";
 import { getConversationKey, getMessageContent } from "@/types";
+import type { MessageStatus } from "@/types";
 import { toast } from "@/hooks/use-toast";
 
 /**
@@ -19,6 +16,7 @@ export function useMessaging() {
     setMessages,
     setThreads,
     markMessageAsRead,
+    markConversationAsRead,
     localDeviceId,
     isOnboarded,
   } = useAppStore();
@@ -104,7 +102,7 @@ export function useMessaging() {
     [localDeviceId, addMessage],
   );
 
-  // Mark message as read
+  // Mark a single message as read
   const markRead = useCallback(
     async (messageId: string, conversationKey: string) => {
       try {
@@ -120,7 +118,24 @@ export function useMessaging() {
     [markMessageAsRead],
   );
 
-  // Mark entire thread as read
+  // Mark every received message in a conversation as read (clears the unread badge)
+  const markConversationRead = useCallback(
+    async (conversationKey: string, readerDeviceId: string) => {
+      // Optimistic local update first so the badge clears immediately
+      markConversationAsRead(conversationKey, readerDeviceId);
+      try {
+        await invoke("mark_conversation_as_read", {
+          conversationKey,
+          readerDeviceId,
+        });
+      } catch (error) {
+        console.warn("mark_conversation_as_read backend call failed:", error);
+      }
+    },
+    [markConversationAsRead],
+  );
+
+  // Mark entire thread as read (legacy helper kept for compatibility)
   const markThreadRead = useCallback(async (threadId: string) => {
     try {
       await invoke("mark_thread_as_read", { threadId });
@@ -143,18 +158,15 @@ export function useMessaging() {
     const setupListeners = async () => {
       try {
         // Listen for sent messages
-        unlistenSent = await listen<Message>(
-          "message-sent",
-          (event) => {
-            console.log("📤 Message sent event:", event.payload);
-            const msg = event.payload; // Backend emits Message directly, not wrapped
-            const conversationKey = getConversationKey(
-              msg.from_device_id,
-              msg.to_device_id,
-            );
-            addMessage(conversationKey, msg);
-          },
-        );
+        unlistenSent = await listen<Message>("message-sent", (event) => {
+          console.log("📤 Message sent event:", event.payload);
+          const msg = event.payload; // Backend emits Message directly, not wrapped
+          const conversationKey = getConversationKey(
+            msg.from_device_id,
+            msg.to_device_id,
+          );
+          addMessage(conversationKey, msg);
+        });
 
         // Listen for received messages (backend emits TextMessagePayload directly)
         unlistenReceived = await listen<TextMessagePayload>(
@@ -163,7 +175,9 @@ export function useMessaging() {
             console.log("📥 Message received event:", event.payload);
             const payload = event.payload;
 
-            // Transform TextMessagePayload to Message
+            // Transform TextMessagePayload to Message.
+            // Incoming messages start as "delivered" – they become "read" when
+            // the recipient opens the conversation.
             const msg: Message = {
               id: payload.id,
               from_device_id: payload.from_device_id,
@@ -171,7 +185,7 @@ export function useMessaging() {
               message_type: { type: "Text", content: payload.content },
               timestamp: payload.timestamp,
               thread_id: payload.thread_id,
-              read: false,
+              status: "delivered" as MessageStatus,
             };
 
             const conversationKey = getConversationKey(
@@ -183,7 +197,10 @@ export function useMessaging() {
 
             // Show toast notification for received messages (not from local device)
             // Use message ID to prevent duplicate toasts
-            if (msg.from_device_id !== localDeviceId && !shownToastsRef.current.has(msg.id)) {
+            if (
+              msg.from_device_id !== localDeviceId &&
+              !shownToastsRef.current.has(msg.id)
+            ) {
               shownToastsRef.current.add(msg.id);
 
               // Clean up old toast IDs after 10 seconds to prevent memory leak
@@ -230,6 +247,7 @@ export function useMessaging() {
     loadMessages,
     loadThreads,
     markRead,
+    markConversationRead,
     markThreadRead,
   };
 }

@@ -44,7 +44,7 @@ export function useApp() {
           "device-connected",
           (event) => {
             console.log("🔌 Device connected:", event.payload);
-            const { device_id, address } = event.payload;
+            const { device_id } = event.payload;
             setDeviceConnected(device_id);
 
             toast({

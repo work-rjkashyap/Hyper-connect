@@ -6,7 +6,15 @@ import type {
   FileTransfer,
   Thread,
   DeviceIdentity,
+  MessageStatus,
+  ConnectionStatusEvent,
 } from "@/types";
+
+export type DeviceConnectionState =
+  | "idle"
+  | "connecting"
+  | "connected"
+  | "unreachable";
 
 interface AppStore {
   // User/Identity state
@@ -27,6 +35,10 @@ interface AppStore {
   // File transfer state
   transfers: FileTransfer[];
   activeTransfers: Set<string>;
+
+  // Connection health state (per device)
+  deviceConnectionStatus: Record<string, DeviceConnectionState>;
+  deviceLatencyMs: Record<string, number>;
 
   // UI state
   theme: "light" | "dark";
@@ -54,7 +66,17 @@ interface AppStore {
   addMessage: (conversationKey: string, message: Message) => void;
   setMessages: (conversationKey: string, messages: Message[]) => void;
   markMessageAsRead: (conversationKey: string, messageId: string) => void;
+  markConversationAsRead: (
+    conversationKey: string,
+    readerDeviceId: string,
+  ) => void;
+  updateMessageStatus: (
+    conversationKey: string,
+    messageId: string,
+    status: MessageStatus,
+  ) => void;
   clearMessages: (conversationKey: string) => void;
+  getUnreadCount: (conversationKey: string, readerDeviceId: string) => number;
 
   // Thread Actions
   setThreads: (threads: Thread[]) => void;
@@ -67,6 +89,10 @@ interface AppStore {
   removeTransfer: (transferId: string) => void;
   setTransfers: (transfers: FileTransfer[]) => void;
   getTransferById: (transferId: string) => FileTransfer | undefined;
+
+  // Connection Health Actions
+  setConnectionStatus: (event: ConnectionStatusEvent) => void;
+  setDeviceConnecting: (deviceId: string) => void;
 
   // UI Actions
   toggleTheme: () => void;
@@ -90,6 +116,8 @@ const initialState = {
   activeThread: null,
   transfers: [],
   activeTransfers: new Set<string>(),
+  deviceConnectionStatus: {},
+  deviceLatencyMs: {},
   theme: "dark" as const,
   sidebarOpen: true,
 };
@@ -234,11 +262,56 @@ export const useAppStore = create<AppStore>()(
             messages: {
               ...state.messages,
               [conversationKey]: messages.map((m) =>
-                m.id === messageId ? { ...m, read: true } : m,
+                m.id === messageId
+                  ? { ...m, status: "read" as MessageStatus }
+                  : m,
               ),
             },
           };
         }),
+
+      markConversationAsRead: (conversationKey, readerDeviceId) =>
+        set((state) => {
+          const messages = state.messages[conversationKey];
+          if (!messages) return state;
+
+          const updated = messages.map((m) => {
+            // Only mark messages from the OTHER device that are not yet read.
+            if (m.from_device_id !== readerDeviceId && m.status !== "read") {
+              return { ...m, status: "read" as MessageStatus };
+            }
+            return m;
+          });
+
+          return {
+            messages: {
+              ...state.messages,
+              [conversationKey]: updated,
+            },
+          };
+        }),
+
+      updateMessageStatus: (conversationKey, messageId, status) =>
+        set((state) => {
+          const messages = state.messages[conversationKey];
+          if (!messages) return state;
+
+          return {
+            messages: {
+              ...state.messages,
+              [conversationKey]: messages.map((m) =>
+                m.id === messageId ? { ...m, status } : m,
+              ),
+            },
+          };
+        }),
+
+      getUnreadCount: (conversationKey, readerDeviceId) => {
+        const messages = get().messages[conversationKey] || [];
+        return messages.filter(
+          (m) => m.from_device_id !== readerDeviceId && m.status !== "read",
+        ).length;
+      },
 
       clearMessages: (conversationKey) =>
         set((state) => {
@@ -289,6 +362,33 @@ export const useAppStore = create<AppStore>()(
       getTransferById: (transferId) => {
         return get().transfers.find((t) => t.id === transferId);
       },
+
+      // ============================================================================
+      // Connection Health Actions
+      // ============================================================================
+
+      setConnectionStatus: (event) =>
+        set((state) => ({
+          deviceConnectionStatus: {
+            ...state.deviceConnectionStatus,
+            [event.device_id]: event.connected ? "connected" : "unreachable",
+          },
+          deviceLatencyMs:
+            event.connected && event.latency_ms != null
+              ? {
+                  ...state.deviceLatencyMs,
+                  [event.device_id]: event.latency_ms,
+                }
+              : state.deviceLatencyMs,
+        })),
+
+      setDeviceConnecting: (deviceId) =>
+        set((state) => ({
+          deviceConnectionStatus: {
+            ...state.deviceConnectionStatus,
+            [deviceId]: "connecting",
+          },
+        })),
 
       // ============================================================================
       // UI Actions
