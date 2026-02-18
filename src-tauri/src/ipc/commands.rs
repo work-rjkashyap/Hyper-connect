@@ -30,10 +30,11 @@ pub async fn ping_device(
     messaging: State<'_, MessagingService>,
     device_id: String,
     peer_address: String,
+    peer_port: Option<u16>,
     app_handle: AppHandle,
 ) -> Result<u64, String> {
     messaging
-        .ensure_connected(&device_id, &peer_address, app_handle)
+        .ensure_connected(&device_id, &peer_address, peer_port, app_handle)
         .await
 }
 
@@ -105,6 +106,7 @@ pub async fn send_message(
     to_device_id: String,
     content: String,
     peer_address: String,
+    peer_port: Option<u16>,
     app_handle: AppHandle,
 ) -> Result<Message, String> {
     let message_type = MessageType::Text { content };
@@ -114,6 +116,7 @@ pub async fn send_message(
             to_device_id,
             message_type,
             peer_address,
+            peer_port,
             app_handle,
         )
         .await

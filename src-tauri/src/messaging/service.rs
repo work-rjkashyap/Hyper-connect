@@ -77,11 +77,30 @@ impl MessagingService {
     }
 
     // -------------------------------------------------------------------------
+    // Port helper
+    // -------------------------------------------------------------------------
+
+    /// Resolve the TCP port to use when connecting to a peer.
+    ///
+    /// `peer_port` should come from the mDNS-discovered `device.port`.  When
+    /// it is `None` we fall back to the local `tcp_port`; this works correctly
+    /// when both endpoints are on the same platform (e.g. both desktop, both
+    /// port 8080) but will fail if one side uses a different default (e.g.
+    /// iOS uses 8081).  Always pass `peer_port` when it is available.
+    fn resolve_peer_port(&self, peer_port: Option<u16>) -> u16 {
+        peer_port.unwrap_or(self.tcp_port)
+    }
+
+    // -------------------------------------------------------------------------
     // Connection management
     // -------------------------------------------------------------------------
 
     /// Proactively verify or establish the TCP connection to a peer device so
     /// that the first real message can be sent without any handshake delay.
+    ///
+    /// `peer_port` should be the port advertised by the peer via mDNS
+    /// (`device.port`).  Pass `None` to fall back to the local `tcp_port`
+    /// (works when both devices share the same platform default).
     ///
     /// Returns `Ok(latency_ms)` when the connection is confirmed alive,
     /// `Err` if the device is unreachable.
@@ -89,6 +108,7 @@ impl MessagingService {
         &self,
         device_id: &str,
         peer_address: &str,
+        peer_port: Option<u16>,
         app_handle: AppHandle,
     ) -> Result<u64, String> {
         let client = self
@@ -96,9 +116,8 @@ impl MessagingService {
             .as_ref()
             .ok_or_else(|| "TCP client not initialised".to_string())?;
 
-        let result = client
-            .ensure_connected(device_id, peer_address, self.tcp_port)
-            .await;
+        let port = self.resolve_peer_port(peer_port);
+        let result = client.ensure_connected(device_id, peer_address, port).await;
 
         match &result {
             Ok(latency_ms) => {
@@ -130,12 +149,17 @@ impl MessagingService {
     // Sending
     // -------------------------------------------------------------------------
 
+    /// Send a text message to a peer device.
+    ///
+    /// `peer_port` is the TCP port the peer is listening on (from mDNS
+    /// `device.port`).  Pass `None` to fall back to the local `tcp_port`.
     pub async fn send_message(
         &self,
         from_device_id: String,
         to_device_id: String,
         message_type: MessageType,
         peer_address: String,
+        peer_port: Option<u16>,
         app_handle: AppHandle,
     ) -> Result<Message, String> {
         let message = Message {
@@ -191,9 +215,10 @@ impl MessagingService {
                 thread_id: None,
             };
 
+            let port = self.resolve_peer_port(peer_port);
             let payload_bytes = serialize_json(&payload)?;
             client
-                .send_text_message(&to_device_id, &peer_address, self.tcp_port, payload_bytes)
+                .send_text_message(&to_device_id, &peer_address, port, payload_bytes)
                 .await?;
         }
 
@@ -205,41 +230,80 @@ impl MessagingService {
     // Receiving
     // -------------------------------------------------------------------------
 
+    /// Full receive path: store the message and emit `message-received` to the
+    /// frontend with the complete `Message` payload (including `status`).
+    ///
+    /// Used when the IPC layer explicitly routes a received frame through the
+    /// service.
     pub async fn receive_message(
         &self,
         payload: TextMessagePayload,
         app_handle: AppHandle,
     ) -> Result<(), String> {
-        let message = Message {
+        let message = Self::build_received_message(payload);
+        let conversation_key =
+            Self::get_conversation_key(&message.from_device_id, &message.to_device_id);
+        self.persist_message(&message, &conversation_key).await;
+        let _ = app_handle.emit("message-received", &message);
+        Ok(())
+    }
+
+    /// Store an incoming `TextMessagePayload` **without** emitting any events.
+    ///
+    /// Called by the TCP server the moment a text-message frame is decoded so
+    /// that `get_messages` returns complete history for both sides of a
+    /// conversation (the server still emits the Tauri event separately so the
+    /// frontend's real-time listener is notified).
+    ///
+    /// De-duplicates by message ID to guard against retry scenarios.
+    pub async fn store_received_message(&self, payload: &TextMessagePayload) {
+        let message = Self::build_received_message(payload.clone());
+        let conversation_key =
+            Self::get_conversation_key(&message.from_device_id, &message.to_device_id);
+
+        let already_stored = {
+            let msgs = self.messages.read().await;
+            msgs.get(&conversation_key)
+                .map(|v| v.iter().any(|m| m.id == message.id))
+                .unwrap_or(false)
+        };
+
+        if !already_stored {
+            self.persist_message(&message, &conversation_key).await;
+        }
+    }
+
+    // ── Private helpers ──────────────────────────────────────────────────────
+
+    /// Convert a raw network payload into a `Message` with status `Delivered`.
+    fn build_received_message(payload: TextMessagePayload) -> Message {
+        Message {
             id: payload.id,
-            from_device_id: payload.from_device_id.clone(),
-            to_device_id: payload.to_device_id.clone(),
+            from_device_id: payload.from_device_id,
+            to_device_id: payload.to_device_id,
             message_type: MessageType::Text {
                 content: payload.content,
             },
             timestamp: payload.timestamp,
             thread_id: payload.thread_id,
-            // A message that has arrived on this device is "delivered".
-            // It becomes "read" when the recipient opens the conversation.
             status: MessageStatus::Delivered,
-        };
+        }
+    }
 
-        let conversation_key =
-            Self::get_conversation_key(&message.from_device_id, &message.to_device_id);
-
+    /// Write a message to the in-memory store and update the thread metadata.
+    async fn persist_message(&self, message: &Message, conversation_key: &str) {
         {
             let mut messages = self.messages.write().await;
             messages
-                .entry(conversation_key.clone())
+                .entry(conversation_key.to_string())
                 .or_insert_with(Vec::new)
                 .push(message.clone());
         }
 
-        // Update thread unread counter (only non-Read messages count).
         {
             let mut threads = self.threads.write().await;
             threads
-                .entry(conversation_key)
+                .entry(conversation_key.to_string())
                 .and_modify(|t| {
                     t.last_message_timestamp = message.timestamp;
                     t.unread_count += 1;
@@ -254,9 +318,6 @@ impl MessagingService {
                     unread_count: 1,
                 });
         }
-
-        let _ = app_handle.emit("message-received", message);
-        Ok(())
     }
 
     // -------------------------------------------------------------------------
@@ -296,8 +357,9 @@ impl MessagingService {
         Err("Message not found".to_string())
     }
 
-    /// Mark **all** messages in a conversation that were sent by `sender_device_id` as `Read`.
-    /// Called when the local user opens a chat window – clears the unread badge.
+    /// Mark **all** messages in a conversation that were sent by a peer (not by
+    /// `reader_device_id`) as `Read`.  Called when the local user opens a chat
+    /// window – clears the unread badge.
     pub async fn mark_conversation_as_read(
         &self,
         conversation_key: &str,
@@ -309,7 +371,6 @@ impl MessagingService {
             let mut messages = self.messages.write().await;
             if let Some(conversation) = messages.get_mut(conversation_key) {
                 for msg in conversation.iter_mut() {
-                    // Only mark messages that were NOT sent by the reader and are not yet read.
                     if msg.from_device_id != reader_device_id && msg.status != MessageStatus::Read {
                         msg.status = MessageStatus::Read;
                         marked += 1;
@@ -318,7 +379,7 @@ impl MessagingService {
             }
         }
 
-        // Recalculate the thread unread count.
+        // Reset thread unread counter.
         {
             let mut threads = self.threads.write().await;
             if let Some(thread) = threads.get_mut(conversation_key) {

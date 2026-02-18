@@ -58,6 +58,7 @@ export default function ChatPage() {
       const latency = await invoke<number>("ping_device", {
         deviceId: selectedDevice.device_id,
         peerAddress,
+        peerPort: selectedDevice.port,
       });
       setConnectionState("connected");
       setLatencyMs(latency);
@@ -186,6 +187,7 @@ export default function ChatPage() {
         await invoke("ping_device", {
           deviceId: selectedDevice.device_id,
           peerAddress,
+          peerPort: selectedDevice.port,
         });
         setConnectionState("connected");
       } catch {
@@ -199,6 +201,7 @@ export default function ChatPage() {
         toDeviceId: selectedDevice.device_id,
         content: text,
         peerAddress,
+        peerPort: selectedDevice.port,
       });
 
       // Optimistically add to store; 'message-sent' event will deduplicate

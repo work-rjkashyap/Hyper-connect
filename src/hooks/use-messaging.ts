@@ -68,7 +68,12 @@ export function useMessaging() {
 
   // Send a message
   const sendMessage = useCallback(
-    async (toDeviceId: string, content: string, peerAddress: string) => {
+    async (
+      toDeviceId: string,
+      content: string,
+      peerAddress: string,
+      peerPort?: number,
+    ) => {
       if (!localDeviceId) {
         console.error("Cannot send message: no local device ID");
         return null;
@@ -80,6 +85,7 @@ export function useMessaging() {
           toDeviceId,
           content,
           peerAddress,
+          peerPort: peerPort ?? null,
         });
 
         console.log("📤 Message sent:", message);
@@ -168,25 +174,40 @@ export function useMessaging() {
           addMessage(conversationKey, msg);
         });
 
-        // Listen for received messages (backend emits TextMessagePayload directly)
-        unlistenReceived = await listen<TextMessagePayload>(
+        // Listen for received messages.
+        // The backend now emits a full Message object (with status:"delivered")
+        // from MessagingService.  We also accept the legacy TextMessagePayload
+        // shape (no message_type / status fields) and normalise it.
+        unlistenReceived = await listen<Message | TextMessagePayload>(
           "message-received",
           (event) => {
             console.log("📥 Message received event:", event.payload);
-            const payload = event.payload;
+            const raw = event.payload as unknown as Record<string, unknown>;
 
-            // Transform TextMessagePayload to Message.
-            // Incoming messages start as "delivered" – they become "read" when
-            // the recipient opens the conversation.
-            const msg: Message = {
-              id: payload.id,
-              from_device_id: payload.from_device_id,
-              to_device_id: payload.to_device_id,
-              message_type: { type: "Text", content: payload.content },
-              timestamp: payload.timestamp,
-              thread_id: payload.thread_id,
-              status: "delivered" as MessageStatus,
-            };
+            // Normalise: if the payload has a top-level `content` string it is
+            // a TextMessagePayload (legacy / plaintext path); otherwise it is a
+            // full Message (encrypted path via MessagingService).
+            let msg: Message;
+            if (typeof raw.content === "string") {
+              // Legacy TextMessagePayload shape
+              const payload = raw as unknown as TextMessagePayload;
+              msg = {
+                id: payload.id,
+                from_device_id: payload.from_device_id,
+                to_device_id: payload.to_device_id,
+                message_type: { type: "Text", content: payload.content },
+                timestamp: payload.timestamp,
+                thread_id: payload.thread_id,
+                status: "delivered" as MessageStatus,
+              };
+            } else {
+              // Full Message shape from MessagingService
+              msg = raw as unknown as Message;
+              // Guarantee status is set
+              if (!msg.status) {
+                msg = { ...msg, status: "delivered" as MessageStatus };
+              }
+            }
 
             const conversationKey = getConversationKey(
               msg.from_device_id,

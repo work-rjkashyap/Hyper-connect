@@ -4,6 +4,7 @@
 //! Handles both secure (encrypted) and plaintext (legacy) connections.
 
 use crate::crypto::{decrypt_message, Session, StreamDecryptor, STREAM_BUFFER_SIZE};
+use crate::messaging::MessagingService;
 use crate::network::file_transfer::FileTransferService;
 use crate::network::protocol::{
     deserialize_json, FileCancelPayload, FileCompletePayload, FileDataHeader, FileRejectPayload,
@@ -14,7 +15,7 @@ use crate::network::secure_channel::SecureChannelManager;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 use tokio::io::{AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::Mutex;
@@ -258,7 +259,10 @@ impl TcpServer {
 
         // Clean up session on disconnect
         secure_channel_manager.remove_session(&peer_device_id).await;
-        let _ = app_handle.emit("device-disconnected", peer_device_id);
+        let _ = app_handle.emit(
+            "device-disconnected",
+            serde_json::json!({ "device_id": peer_device_id }),
+        );
 
         result
     }
@@ -377,7 +381,14 @@ impl TcpServer {
                 let msg: TextMessagePayload = serde_json::from_str(&plaintext_json)
                     .map_err(|e| format!("Invalid TEXT_MESSAGE: {}", e))?;
                 println!("💬 Decrypted text message from {}", msg.from_device_id);
-                let _ = app_handle.emit("message-received", msg);
+
+                // Persist in the MessagingService so get_messages works on
+                // the receiver side (the event below handles the real-time UI).
+                if let Some(messaging) = app_handle.try_state::<MessagingService>() {
+                    let _: () = messaging.store_received_message(&msg).await;
+                }
+
+                let _ = app_handle.emit("message-received", &msg);
             }
             Some("FILE_REQUEST") => {
                 let req: FileRequestPayload = serde_json::from_str(&plaintext_json)
@@ -523,7 +534,10 @@ impl TcpServer {
                 Ok(Ok(frame)) => frame,
                 Ok(Err(e)) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
                     if let Some(device_id) = peer_device_id {
-                        let _ = app_handle.emit("device-disconnected", device_id);
+                        let _ = app_handle.emit(
+                            "device-disconnected",
+                            serde_json::json!({ "device_id": device_id }),
+                        );
                     }
                     return Ok(());
                 }
@@ -658,7 +672,13 @@ impl TcpServer {
             payload.from_device_id, payload.content
         );
 
-        let _ = app_handle.emit("message-received", payload);
+        // Persist in the MessagingService so get_messages works on the
+        // receiver side.
+        if let Some(messaging) = app_handle.try_state::<MessagingService>() {
+            let _: () = messaging.store_received_message(&payload).await;
+        }
+
+        let _ = app_handle.emit("message-received", &payload);
         Ok(())
     }
 
