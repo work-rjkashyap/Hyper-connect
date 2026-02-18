@@ -13,7 +13,7 @@ pub use client::TcpClient;
 pub use file_transfer::{FileTransfer, FileTransferService, TransferStatus};
 pub use protocol::{
     deserialize_json, serialize_json, FileCompletePayload, FileDataHeader, FileRequestPayload,
-    Frame, HelloPayload, MessageType, TextMessagePayload, PROTOCOL_VERSION,
+    Frame, HelloPayload, MessageAckPayload, MessageType, TextMessagePayload, PROTOCOL_VERSION,
 };
 pub use secure_channel::SecureChannelManager;
 pub use server::TcpServer;

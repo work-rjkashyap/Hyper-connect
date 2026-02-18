@@ -78,6 +78,15 @@ pub enum MessageType {
 
     /// Reply to a Ping – confirms the connection and session are alive
     Pong = 0x15,
+
+    // ============================================================================
+    // Message Status ACKs (0x16-0x17)
+    // ============================================================================
+    /// Delivery acknowledgement – recipient confirms they received a message
+    MessageDelivered = 0x16,
+
+    /// Read receipt – recipient confirms they have opened and read the message(s)
+    MessageRead = 0x17,
 }
 
 impl MessageType {
@@ -101,6 +110,8 @@ impl MessageType {
             0x13 => Some(MessageType::FileStreamInit),
             0x14 => Some(MessageType::Ping),
             0x15 => Some(MessageType::Pong),
+            0x16 => Some(MessageType::MessageDelivered),
+            0x17 => Some(MessageType::MessageRead),
             _ => None,
         }
     }
@@ -425,6 +436,30 @@ pub struct HeartbeatPayload {
 pub struct ErrorPayload {
     pub code: String,
     pub message: String,
+}
+
+/// Message delivery / read acknowledgement
+///
+/// Sent from the *recipient* back to the *original sender* to update the
+/// delivery status of one or more messages.
+///
+/// - `msg_type` = `"MESSAGE_DELIVERED"` – a single message was received.
+/// - `msg_type` = `"MESSAGE_READ"`      – all messages in the conversation
+///    sent by `to_device_id` have been opened by `from_device_id`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MessageAckPayload {
+    /// Discriminant: "MESSAGE_DELIVERED" or "MESSAGE_READ"
+    #[serde(rename = "type")]
+    pub msg_type: String,
+    /// Sorted, underscore-joined participant IDs (same key used by both sides)
+    pub conversation_key: String,
+    /// Present for delivery ACKs; absent for conversation-level read receipts
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message_id: Option<String>,
+    /// Device that is sending this acknowledgement (the message recipient)
+    pub from_device_id: String,
+    /// Device that should receive this acknowledgement (the message sender)
+    pub to_device_id: String,
 }
 
 /// Ping – liveness probe sent by the client before assuming the connection is

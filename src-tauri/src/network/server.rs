@@ -4,12 +4,13 @@
 //! Handles both secure (encrypted) and plaintext (legacy) connections.
 
 use crate::crypto::{decrypt_message, Session, StreamDecryptor, STREAM_BUFFER_SIZE};
-use crate::messaging::MessagingService;
+use crate::discovery::MdnsDiscoveryService;
+use crate::messaging::{MessageStatus, MessagingService};
 use crate::network::file_transfer::FileTransferService;
 use crate::network::protocol::{
     deserialize_json, FileCancelPayload, FileCompletePayload, FileDataHeader, FileRejectPayload,
-    FileRequestPayload, Frame, HeartbeatPayload, HelloPayload, MessageType, PingPayload,
-    PongPayload, TextMessagePayload,
+    FileRequestPayload, Frame, HeartbeatPayload, HelloPayload, MessageAckPayload, MessageType,
+    PingPayload, PongPayload, TextMessagePayload,
 };
 use crate::network::secure_channel::SecureChannelManager;
 use std::net::SocketAddr;
@@ -334,6 +335,11 @@ impl TcpServer {
                         .await
                         .map_err(|e| format!("Failed to flush Pong: {}", e))?;
                 }
+                // Delivery ACKs and read receipts arrive as plaintext frames even
+                // inside an encrypted session – they carry no sensitive content.
+                MessageType::MessageDelivered | MessageType::MessageRead => {
+                    Self::handle_message_ack(&frame, &app_handle).await?;
+                }
                 _ => {
                     eprintln!(
                         "⚠️ Unexpected message type in encrypted session: {:?}",
@@ -386,9 +392,40 @@ impl TcpServer {
                 // the receiver side (the event below handles the real-time UI).
                 if let Some(messaging) = app_handle.try_state::<MessagingService>() {
                     let _: () = messaging.store_received_message(&msg).await;
+
+                    // Send a delivery ACK back to the sender
+                    Self::try_send_delivery_ack(&msg, &messaging, &app_handle).await;
                 }
 
                 let _ = app_handle.emit("message-received", &msg);
+            }
+            Some("MESSAGE_DELIVERED") => {
+                let ack: MessageAckPayload = serde_json::from_str(&plaintext_json)
+                    .map_err(|e| format!("Invalid MESSAGE_DELIVERED: {}", e))?;
+                println!("✅ Delivery ACK for message {:?}", ack.message_id);
+                if let Some(messaging) = app_handle.try_state::<MessagingService>() {
+                    if let Some(ref msg_id) = ack.message_id {
+                        let _ = messaging
+                            .update_message_status(
+                                &ack.conversation_key,
+                                msg_id,
+                                MessageStatus::Delivered,
+                            )
+                            .await;
+                    }
+                }
+                let _ = app_handle.emit("message-delivered", &ack);
+            }
+            Some("MESSAGE_READ") => {
+                let ack: MessageAckPayload = serde_json::from_str(&plaintext_json)
+                    .map_err(|e| format!("Invalid MESSAGE_READ: {}", e))?;
+                println!("👁️  Read receipt for conversation {}", ack.conversation_key);
+                if let Some(messaging) = app_handle.try_state::<MessagingService>() {
+                    messaging
+                        .mark_outgoing_as_read(&ack.conversation_key, &ack.to_device_id)
+                        .await;
+                }
+                let _ = app_handle.emit("message-read", &ack);
             }
             Some("FILE_REQUEST") => {
                 let req: FileRequestPayload = serde_json::from_str(&plaintext_json)
@@ -575,6 +612,9 @@ impl TcpServer {
             MessageType::TextMessage => {
                 Self::handle_text_message(frame, app_handle).await?;
             }
+            MessageType::MessageDelivered | MessageType::MessageRead => {
+                Self::handle_message_ack(frame, app_handle).await?;
+            }
             MessageType::FileRequest => {
                 Self::handle_file_request(frame, file_transfer_service, app_handle).await?;
             }
@@ -676,9 +716,91 @@ impl TcpServer {
         // receiver side.
         if let Some(messaging) = app_handle.try_state::<MessagingService>() {
             let _: () = messaging.store_received_message(&payload).await;
+
+            // Send a delivery ACK back to the original sender
+            Self::try_send_delivery_ack(&payload, &messaging, app_handle).await;
         }
 
         let _ = app_handle.emit("message-received", &payload);
+        Ok(())
+    }
+
+    /// Look up the sender in mDNS and fire a delivery ACK (best-effort).
+    async fn try_send_delivery_ack(
+        payload: &TextMessagePayload,
+        messaging: &MessagingService,
+        app_handle: &AppHandle,
+    ) {
+        // Derive the conversation key the same way both sides do
+        let mut parts = vec![
+            payload.from_device_id.as_str(),
+            payload.to_device_id.as_str(),
+        ];
+        parts.sort();
+        let conversation_key = parts.join("_");
+
+        // Look up the sender's current address via mDNS
+        let (peer_address, peer_port) =
+            if let Some(discovery) = app_handle.try_state::<Arc<MdnsDiscoveryService>>() {
+                let devices = discovery.get_devices().await;
+                if let Some(device) = devices.iter().find(|d| d.id == payload.from_device_id) {
+                    if let Some(addr) = device.addresses.first() {
+                        (addr.clone(), device.port)
+                    } else {
+                        return; // no address – skip
+                    }
+                } else {
+                    return; // sender not found in mDNS – skip
+                }
+            } else {
+                return; // discovery service unavailable
+            };
+
+        let _ = messaging
+            .send_delivery_ack(
+                &payload.id,
+                &conversation_key,
+                &payload.to_device_id,   // we are the recipient – ACK from us
+                &payload.from_device_id, // ACK goes to the original sender
+                &peer_address,
+                peer_port,
+            )
+            .await;
+    }
+
+    /// Handle a delivery ACK (`MessageDelivered`) or read receipt (`MessageRead`) frame.
+    async fn handle_message_ack(frame: &Frame, app_handle: &AppHandle) -> Result<(), String> {
+        let ack: MessageAckPayload = deserialize_json(&frame.payload)?;
+
+        if let Some(messaging) = app_handle.try_state::<MessagingService>() {
+            match ack.msg_type.as_str() {
+                "MESSAGE_DELIVERED" => {
+                    println!("✅ Delivery ACK for message {:?}", ack.message_id);
+                    if let Some(ref msg_id) = ack.message_id {
+                        let _ = messaging
+                            .update_message_status(
+                                &ack.conversation_key,
+                                msg_id,
+                                MessageStatus::Delivered,
+                            )
+                            .await;
+                    }
+                    let _ = app_handle.emit("message-delivered", &ack);
+                }
+                "MESSAGE_READ" => {
+                    println!("👁️  Read receipt for conversation {}", ack.conversation_key);
+                    // Mark all messages we sent in this conversation as Read
+                    messaging
+                        .mark_outgoing_as_read(&ack.conversation_key, &ack.to_device_id)
+                        .await;
+                    let _ = app_handle.emit("message-read", &ack);
+                }
+                other => {
+                    eprintln!("⚠️ Unknown ACK type: {}", other);
+                }
+            }
+        }
+
         Ok(())
     }
 

@@ -2,7 +2,13 @@ import React, { useEffect, useCallback } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
-import type { Message, Thread, TextMessagePayload } from "@/types";
+import type {
+  Message,
+  Thread,
+  TextMessagePayload,
+  MessageDeliveredEvent,
+  MessageReadEvent,
+} from "@/types";
 import { getConversationKey, getMessageContent } from "@/types";
 import type { MessageStatus } from "@/types";
 import { toast } from "@/hooks/use-toast";
@@ -17,6 +23,8 @@ export function useMessaging() {
     setThreads,
     markMessageAsRead,
     markConversationAsRead,
+    updateMessageStatus,
+    markSentMessagesAsRead,
     localDeviceId,
     isOnboarded,
   } = useAppStore();
@@ -160,6 +168,8 @@ export function useMessaging() {
 
     let unlistenSent: (() => void) | undefined;
     let unlistenReceived: (() => void) | undefined;
+    let unlistenDelivered: (() => void) | undefined;
+    let unlistenRead: (() => void) | undefined;
 
     const setupListeners = async () => {
       try {
@@ -244,6 +254,29 @@ export function useMessaging() {
           },
         );
 
+        // ── Delivery ACK ──────────────────────────────────────────────────
+        // The backend emits this when the recipient's device confirms receipt.
+        unlistenDelivered = await listen<MessageDeliveredEvent>(
+          "message-delivered",
+          (event) => {
+            const { conversation_key, message_id } = event.payload;
+            console.log("📬 Delivery ACK for message:", message_id);
+            updateMessageStatus(conversation_key, message_id, "delivered");
+          },
+        );
+
+        // ── Read receipt ──────────────────────────────────────────────────
+        // The backend emits this when the recipient opens the conversation.
+        unlistenRead = await listen<MessageReadEvent>(
+          "message-read",
+          (event) => {
+            const { conversation_key, to_device_id } = event.payload;
+            console.log("👁️  Read receipt for conversation:", conversation_key);
+            // Mark all messages we sent in this conversation as read
+            markSentMessagesAsRead(conversation_key, to_device_id);
+          },
+        );
+
         console.log("✅ Messaging listeners setup complete");
       } catch (error) {
         console.error("Failed to setup messaging listeners:", error);
@@ -255,6 +288,8 @@ export function useMessaging() {
     return () => {
       if (unlistenSent) unlistenSent();
       if (unlistenReceived) unlistenReceived();
+      if (unlistenDelivered) unlistenDelivered();
+      if (unlistenRead) unlistenRead();
       // Clear toast tracking on cleanup
       shownToastsRef.current.clear();
       console.log("🧹 Messaging listeners cleaned up");

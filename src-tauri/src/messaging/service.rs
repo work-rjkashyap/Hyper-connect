@@ -2,7 +2,10 @@
 //!
 //! Handles text message sending, receiving, and storage.
 
-use crate::network::{serialize_json, TcpClient, TextMessagePayload};
+use crate::network::{
+    serialize_json, Frame, MessageAckPayload, MessageType as FrameType, TcpClient,
+    TextMessagePayload,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -388,6 +391,121 @@ impl MessagingService {
         }
 
         Ok(marked)
+    }
+
+    // -------------------------------------------------------------------------
+    // Delivery ACK / Read receipt helpers
+    // -------------------------------------------------------------------------
+
+    /// Update the status of a single message (e.g. Sent → Delivered → Read).
+    pub async fn update_message_status(
+        &self,
+        conversation_key: &str,
+        message_id: &str,
+        new_status: MessageStatus,
+    ) -> Result<(), String> {
+        let mut messages = self.messages.write().await;
+        if let Some(conversation) = messages.get_mut(conversation_key) {
+            if let Some(msg) = conversation.iter_mut().find(|m| m.id == message_id) {
+                msg.status = new_status;
+                return Ok(());
+            }
+        }
+        Err(format!(
+            "Message {} not found in {}",
+            message_id, conversation_key
+        ))
+    }
+
+    /// Mark all messages in a conversation that were **sent by `sender_device_id`** as `Read`.
+    ///
+    /// Called on the sender's side when it receives a read-receipt from the
+    /// recipient, so that the sender's own outgoing bubbles show blue ticks.
+    pub async fn mark_outgoing_as_read(&self, conversation_key: &str, sender_device_id: &str) {
+        let mut messages = self.messages.write().await;
+        if let Some(conversation) = messages.get_mut(conversation_key) {
+            for msg in conversation.iter_mut() {
+                if msg.from_device_id == sender_device_id && msg.status != MessageStatus::Read {
+                    msg.status = MessageStatus::Read;
+                }
+            }
+        }
+    }
+
+    /// Send a delivery acknowledgement to the original message sender.
+    ///
+    /// Called by the TCP server the moment it stores a received text message.
+    pub async fn send_delivery_ack(
+        &self,
+        message_id: &str,
+        conversation_key: &str,
+        from_device_id: &str, // us – the recipient who is sending this ACK
+        to_device_id: &str,   // them – the original sender
+        peer_address: &str,
+        peer_port: u16,
+    ) -> Result<(), String> {
+        let client = match self.tcp_client.as_ref() {
+            Some(c) => c,
+            None => return Ok(()), // no client yet – skip silently
+        };
+
+        let ack = MessageAckPayload {
+            msg_type: "MESSAGE_DELIVERED".to_string(),
+            conversation_key: conversation_key.to_string(),
+            message_id: Some(message_id.to_string()),
+            from_device_id: from_device_id.to_string(),
+            to_device_id: to_device_id.to_string(),
+        };
+
+        let payload =
+            serialize_json(&ack).map_err(|e| format!("Failed to serialize ACK: {}", e))?;
+        let frame = Frame::new(FrameType::MessageDelivered, payload);
+
+        // Best-effort – don't fail the whole receive path if the ACK can't be delivered
+        if let Err(e) = client
+            .send_frame(to_device_id, peer_address, peer_port, frame)
+            .await
+        {
+            eprintln!("⚠️  Delivery ACK failed (non-fatal): {}", e);
+        }
+        Ok(())
+    }
+
+    /// Send a read receipt to the original message sender.
+    ///
+    /// Called by the IPC layer when the local user opens a conversation.
+    pub async fn send_read_receipt(
+        &self,
+        conversation_key: &str,
+        from_device_id: &str, // us – the reader
+        to_device_id: &str,   // them – the original sender
+        peer_address: &str,
+        peer_port: u16,
+    ) -> Result<(), String> {
+        let client = match self.tcp_client.as_ref() {
+            Some(c) => c,
+            None => return Ok(()),
+        };
+
+        let ack = MessageAckPayload {
+            msg_type: "MESSAGE_READ".to_string(),
+            conversation_key: conversation_key.to_string(),
+            message_id: None, // conversation-level receipt – no specific message ID
+            from_device_id: from_device_id.to_string(),
+            to_device_id: to_device_id.to_string(),
+        };
+
+        let payload =
+            serialize_json(&ack).map_err(|e| format!("Failed to serialize read receipt: {}", e))?;
+        let frame = Frame::new(FrameType::MessageRead, payload);
+
+        if let Err(e) = client
+            .send_frame(to_device_id, peer_address, peer_port, frame)
+            .await
+        {
+            eprintln!("⚠️  Read receipt failed (non-fatal): {}", e);
+        }
+        Ok(())
     }
 
     /// Reset a thread's unread counter (legacy helper, kept for compatibility).

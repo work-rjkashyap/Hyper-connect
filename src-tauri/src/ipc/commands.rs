@@ -153,11 +153,14 @@ pub async fn mark_thread_as_read(
     messaging.mark_thread_as_read(&thread_id).await
 }
 
-/// Mark every received message in a conversation as `Read` and emit a
-/// `conversation-read` event so the sidebar badge updates in real-time.
+/// Mark every received message in a conversation as `Read`, emit a
+/// `conversation-read` event so the sidebar badge updates in real-time,
+/// and send a TCP read receipt to the original sender(s) so their bubbles
+/// flip to blue double-ticks.
 #[tauri::command]
 pub async fn mark_conversation_as_read(
     messaging: State<'_, MessagingService>,
+    discovery: State<'_, Arc<MdnsDiscoveryService>>,
     conversation_key: String,
     reader_device_id: String,
     app_handle: AppHandle,
@@ -174,6 +177,31 @@ pub async fn mark_conversation_as_read(
                 "reader_device_id": reader_device_id,
             }),
         );
+
+        // Derive the peer device ID from the conversation key
+        // (conversation_key = sorted(id_a, id_b).join("_"))
+        let peer_device_id = conversation_key
+            .split('_')
+            .find(|part| *part != reader_device_id.as_str())
+            .map(|s| s.to_string());
+
+        if let Some(peer_id) = peer_device_id {
+            // Look up peer address in mDNS
+            let devices = discovery.get_devices().await;
+            if let Some(peer) = devices.iter().find(|d| d.id == peer_id) {
+                if let Some(addr) = peer.addresses.first() {
+                    let _ = messaging
+                        .send_read_receipt(
+                            &conversation_key,
+                            &reader_device_id, // we are the reader
+                            &peer_id,          // receipt goes to the original sender
+                            addr,
+                            peer.port,
+                        )
+                        .await;
+                }
+            }
+        }
     }
 
     Ok(marked)

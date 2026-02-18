@@ -181,6 +181,32 @@ export interface ConnectionStatusEvent {
   error?: string;
 }
 
+/** Emitted by the Rust backend when the recipient's device acknowledges delivery. */
+export interface MessageDeliveredEvent {
+  /** Discriminant – always "MESSAGE_DELIVERED" */
+  type: string;
+  conversation_key: string;
+  /** The specific message that was delivered */
+  message_id: string;
+  /** The device that received the message (ACK sender) */
+  from_device_id: string;
+  /** The device that originally sent the message (ACK target) */
+  to_device_id: string;
+}
+
+/** Emitted by the Rust backend when the recipient opens the conversation. */
+export interface MessageReadEvent {
+  /** Discriminant – always "MESSAGE_READ" */
+  type: string;
+  conversation_key: string;
+  /** Not present for conversation-level read receipts */
+  message_id?: string;
+  /** The device that read the messages */
+  from_device_id: string;
+  /** The device whose outgoing messages are now marked read */
+  to_device_id: string;
+}
+
 // ============================================================================
 // Helper Types
 // ============================================================================

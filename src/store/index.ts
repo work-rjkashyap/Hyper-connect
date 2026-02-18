@@ -75,6 +75,12 @@ interface AppStore {
     messageId: string,
     status: MessageStatus,
   ) => void;
+  /** Flip all messages we *sent* in a conversation to "read" (triggered by an
+   *  incoming read-receipt from the peer). */
+  markSentMessagesAsRead: (
+    conversationKey: string,
+    senderDeviceId: string,
+  ) => void;
   clearMessages: (conversationKey: string) => void;
   getUnreadCount: (conversationKey: string, readerDeviceId: string) => number;
 
@@ -302,6 +308,27 @@ export const useAppStore = create<AppStore>()(
               [conversationKey]: messages.map((m) =>
                 m.id === messageId ? { ...m, status } : m,
               ),
+            },
+          };
+        }),
+
+      markSentMessagesAsRead: (conversationKey, senderDeviceId) =>
+        set((state) => {
+          const messages = state.messages[conversationKey];
+          if (!messages) return state;
+
+          const updated = messages.map((m) => {
+            // Only touch messages that we sent and that haven't been marked read yet
+            if (m.from_device_id === senderDeviceId && m.status !== "read") {
+              return { ...m, status: "read" as MessageStatus };
+            }
+            return m;
+          });
+
+          return {
+            messages: {
+              ...state.messages,
+              [conversationKey]: updated,
             },
           };
         }),
