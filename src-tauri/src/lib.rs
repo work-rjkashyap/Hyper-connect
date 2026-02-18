@@ -53,9 +53,12 @@ pub fn run() {
                 identity_manager.device_id()
             );
 
+            // Clone identity data before wrapping manager in Mutex
+            let identity = identity_manager.identity().clone();
+
             // Initialize discovery service (wrapped in Arc for sharing)
             let discovery_service = Arc::new(
-                MdnsDiscoveryService::new(identity_manager.identity().clone())
+                MdnsDiscoveryService::new(identity.clone())
                     .expect("Failed to create discovery service"),
             );
 
@@ -75,9 +78,6 @@ pub fn run() {
                 });
 
             println!("✓ TCP port: {}", tcp_port);
-
-            // Get identity for client initialization
-            let identity = identity_manager.identity();
 
             // Initialize TCP client with encryption support
             let tcp_client = Arc::new(TcpClient::new(
@@ -115,6 +115,9 @@ pub fn run() {
                     println!("✓ TCP server started on port {}", tcp_port);
                 }
             });
+
+            // Wrap identity manager in std::sync::Mutex to allow mutable access from commands
+            let identity_manager = std::sync::Mutex::new(identity_manager);
 
             // Store services in app state
             app.manage(identity_manager);

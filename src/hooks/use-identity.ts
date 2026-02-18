@@ -8,26 +8,24 @@ import type { DeviceIdentity } from "@/types";
  * Loads identity on mount and provides update functions
  */
 export function useIdentity() {
-  const { setDeviceIdentity, deviceIdentity, setOnboarded } = useAppStore();
+  const { setDeviceIdentity, deviceIdentity } = useAppStore();
 
   // Load device identity from backend
   const loadIdentity = useCallback(async () => {
     try {
       const identity = await invoke<DeviceIdentity>("get_device_info");
       console.log("🆔 Device identity loaded:", identity);
+      // Sync backend identity into Zustand (keeps deviceName & localDeviceId fresh)
+      // NOTE: we do NOT touch isOnboarded here — that flag is owned by the
+      // onboarding flow and persisted in localStorage by the Zustand store.
       setDeviceIdentity(identity);
-
-      // If we have a display name, mark as onboarded
-      if (identity.display_name && identity.display_name.trim() !== "") {
-        setOnboarded(true);
-      }
 
       return identity;
     } catch (error) {
       console.error("Failed to load device identity:", error);
       return null;
     }
-  }, [setDeviceIdentity, setOnboarded]);
+  }, [setDeviceIdentity]);
 
   // Update display name (note: backend needs Arc<Mutex<>> wrapper for this to work)
   const updateDisplayName = useCallback(
@@ -36,16 +34,12 @@ export function useIdentity() {
         await invoke("update_display_name", { name });
         console.log("✅ Display name updated:", name);
 
-        // Reload identity
+        // Reload identity so the store stays in sync
         await loadIdentity();
 
         return true;
       } catch (error) {
         console.error("Failed to update display name:", error);
-        // This is expected with current backend - needs refactoring
-        console.warn(
-          "Note: update_display_name requires backend refactoring to support mutable state",
-        );
         return false;
       }
     },

@@ -25,8 +25,7 @@ export const identityApi = {
   },
 
   /**
-   * Update the display name
-   * Note: Currently returns error in backend - requires Arc<Mutex<>> refactor
+   * Update the display name (persists to device-identity.json on disk)
    */
   updateDisplayName: async (name: string): Promise<void> => {
     return invoke("update_display_name", { name });
@@ -99,10 +98,7 @@ export const messagingApi = {
   /**
    * Get messages between two devices
    */
-  getMessages: async (
-    device1: string,
-    device2: string,
-  ): Promise<Message[]> => {
+  getMessages: async (device1: string, device2: string): Promise<Message[]> => {
     return invoke<Message[]>("get_messages", { device1, device2 });
   },
 

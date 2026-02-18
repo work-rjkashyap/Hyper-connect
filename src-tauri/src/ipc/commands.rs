@@ -14,15 +14,24 @@ use tauri::{AppHandle, State};
 // ============================================================================
 
 #[tauri::command]
-pub fn get_device_info(identity: State<IdentityManager>) -> DeviceIdentity {
-    identity.identity().clone()
+pub fn get_device_info(
+    identity: State<std::sync::Mutex<IdentityManager>>,
+) -> Result<DeviceIdentity, String> {
+    let manager = identity
+        .lock()
+        .map_err(|_| "Identity lock poisoned".to_string())?;
+    Ok(manager.identity().clone())
 }
 
 #[tauri::command]
-pub fn update_display_name(identity: State<IdentityManager>, name: String) -> Result<(), String> {
-    // Note: IdentityManager needs to be wrapped in Arc<Mutex<>> for interior mutability
-    // For now, returning an error - this needs refactoring in the state management
-    Err("Display name update requires mutable state - to be implemented".to_string())
+pub fn update_display_name(
+    identity: State<std::sync::Mutex<IdentityManager>>,
+    name: String,
+) -> Result<(), String> {
+    let mut manager = identity
+        .lock()
+        .map_err(|_| "Identity lock poisoned".to_string())?;
+    manager.update_display_name(name)
 }
 
 // ============================================================================
