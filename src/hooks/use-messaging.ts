@@ -17,6 +17,7 @@ import {
 } from "@/types";
 import type { MessageStatus } from "@/types";
 import { toast } from "@/hooks/use-toast";
+import { playNotificationSound } from "@/lib/notificationSound";
 
 /**
  * Hook to listen for real-time messaging events from Tauri backend.
@@ -259,10 +260,18 @@ export function useMessaging() {
 			// ── Normal message handling ──────────────────────────────────
 			addMessage(conversationKey, msg);
 
-			// Show toast notification for received messages (not from local device)
+			// Show toast + play sound for received messages (not from local device).
+			// Skip entirely if:
+			//   - notifications are disabled globally
+			//   - the sender's chat is currently open on screen
+			const { activeChatDeviceId: activeChatId, notificationsEnabled } =
+				useAppStore.getState();
+
 			if (
 				msg.from_device_id !== localDeviceId &&
-				!shownToastsRef.current.has(msg.id)
+				!shownToastsRef.current.has(msg.id) &&
+				notificationsEnabled &&
+				msg.from_device_id !== activeChatId
 			) {
 				shownToastsRef.current.add(msg.id);
 
@@ -278,6 +287,9 @@ export function useMessaging() {
 				const isApproved = state.approvedDevices.includes(
 					msg.from_device_id,
 				);
+
+				// Play notification sound (respects soundEnabled setting internally)
+				playNotificationSound();
 
 				toast({
 					title: isApproved

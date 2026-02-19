@@ -44,6 +44,7 @@ export default function ChatPage() {
 		markConversationAsRead,
 		setConnectionStatus,
 		setDeviceConnecting,
+		setActiveChatDeviceId,
 		// Privacy layer
 		approvedDevices,
 		declinedDevices,
@@ -220,6 +221,16 @@ export default function ChatPage() {
 		setLatencyMs(null);
 		preConnect();
 	}, [selectedDevice?.device_id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+	// ── Track which chat is currently open (suppresses toast for active chat) ──
+	useEffect(() => {
+		if (deviceId) {
+			setActiveChatDeviceId(deviceId);
+		}
+		return () => {
+			setActiveChatDeviceId(null);
+		};
+	}, [deviceId, setActiveChatDeviceId]);
 
 	// ── Load messages from backend when chat opens ──────────────────────
 	useEffect(() => {

@@ -68,6 +68,14 @@ interface AppStore {
 	// UI state
 	theme: "light" | "dark";
 	sidebarOpen: boolean;
+	/** The device ID of the chat currently open on screen (null if no chat is open). */
+	activeChatDeviceId: string | null;
+
+	// Notification settings (persisted)
+	/** Whether push/toast notifications are enabled globally. */
+	notificationsEnabled: boolean;
+	/** Whether sound feedback is played on incoming messages (requires notificationsEnabled). */
+	soundEnabled: boolean;
 
 	// Identity Actions
 	setLocalDeviceId: (id: string) => void;
@@ -166,6 +174,12 @@ interface AppStore {
 	setTheme: (theme: "light" | "dark") => void;
 	toggleSidebar: () => void;
 	setSidebarOpen: (open: boolean) => void;
+	/** Set the device ID of the currently open chat (null to clear). */
+	setActiveChatDeviceId: (deviceId: string | null) => void;
+
+	// Notification Settings Actions
+	setNotificationsEnabled: (enabled: boolean) => void;
+	setSoundEnabled: (enabled: boolean) => void;
 
 	// Utility Actions
 	reset: () => void;
@@ -193,6 +207,10 @@ const initialState = {
 	// UI
 	theme: "dark" as const,
 	sidebarOpen: true,
+	activeChatDeviceId: null,
+	// Notification settings
+	notificationsEnabled: true,
+	soundEnabled: true,
 };
 
 export const useAppStore = create<AppStore>()(
@@ -618,6 +636,22 @@ export const useAppStore = create<AppStore>()(
 
 			setSidebarOpen: (open) => set({ sidebarOpen: open }),
 
+			setActiveChatDeviceId: (deviceId) =>
+				set({ activeChatDeviceId: deviceId }),
+
+			// ============================================================================
+			// Notification Settings Actions
+			// ============================================================================
+
+			setNotificationsEnabled: (enabled) =>
+				set((state) => ({
+					notificationsEnabled: enabled,
+					// Disable sound when notifications are turned off
+					soundEnabled: enabled ? state.soundEnabled : false,
+				})),
+
+			setSoundEnabled: (enabled) => set({ soundEnabled: enabled }),
+
 			// ============================================================================
 			// Utility Actions
 			// ============================================================================
@@ -640,6 +674,9 @@ export const useAppStore = create<AppStore>()(
 				approvedDevices: state.approvedDevices,
 				declinedDevices: state.declinedDevices,
 				chatRequestStatus: state.chatRequestStatus,
+				// Notification settings — persisted
+				notificationsEnabled: state.notificationsEnabled,
+				soundEnabled: state.soundEnabled,
 			}),
 		},
 	),
