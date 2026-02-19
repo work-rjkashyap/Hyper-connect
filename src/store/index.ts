@@ -1,458 +1,646 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import type {
-  Device,
-  Message,
-  FileTransfer,
-  Thread,
-  DeviceIdentity,
-  MessageStatus,
-  ConnectionStatusEvent,
+	Device,
+	Message,
+	FileTransfer,
+	Thread,
+	DeviceIdentity,
+	MessageStatus,
+	ConnectionStatusEvent,
 } from "@/types";
 
 export type DeviceConnectionState =
-  | "idle"
-  | "connecting"
-  | "connected"
-  | "unreachable";
+	| "idle"
+	| "connecting"
+	| "connected"
+	| "unreachable";
+
+export type ChatRequestStatus = "pending" | "accepted" | "declined";
 
 interface AppStore {
-  // User/Identity state
-  localDeviceId: string | null;
-  deviceName: string | null;
-  isOnboarded: boolean;
-  deviceIdentity: DeviceIdentity | null;
+	// User/Identity state
+	localDeviceId: string | null;
+	deviceName: string | null;
+	isOnboarded: boolean;
+	deviceIdentity: DeviceIdentity | null;
 
-  // Discovery state
-  devices: Device[];
-  connectedDevices: Set<string>;
+	// Discovery state
+	devices: Device[];
+	connectedDevices: Set<string>;
 
-  // Messaging state
-  messages: Record<string, Message[]>; // Keyed by conversation_key
-  threads: Thread[];
-  activeThread: string | null;
+	// Messaging state
+	messages: Record<string, Message[]>; // Keyed by conversation_key
+	threads: Thread[];
+	activeThread: string | null;
 
-  // File transfer state
-  transfers: FileTransfer[];
-  activeTransfers: Set<string>;
+	// File transfer state
+	transfers: FileTransfer[];
+	activeTransfers: Set<string>;
 
-  // Connection health state (per device)
-  deviceConnectionStatus: Record<string, DeviceConnectionState>;
-  deviceLatencyMs: Record<string, number>;
+	// Connection health state (per device)
+	deviceConnectionStatus: Record<string, DeviceConnectionState>;
+	deviceLatencyMs: Record<string, number>;
 
-  // UI state
-  theme: "light" | "dark";
-  sidebarOpen: boolean;
+	// ============================================================================
+	// Privacy Layer State
+	// ============================================================================
 
-  // Identity Actions
-  setLocalDeviceId: (id: string) => void;
-  setDeviceName: (name: string) => void;
-  setOnboarded: (value: boolean) => void;
-  setDeviceIdentity: (identity: DeviceIdentity) => void;
+	/** Device IDs the user has explicitly started a chat with (from Discovery). */
+	startedChats: string[];
 
-  // Discovery Actions
-  addDevice: (device: Device) => void;
-  removeDevice: (deviceId: string) => void;
-  updateDevice: (device: Device) => void;
-  setDevices: (devices: Device[]) => void;
-  clearDevices: () => void;
+	/** Device IDs whose incoming messages this user has approved (accepted). */
+	approvedDevices: string[];
 
-  // Connection state
-  setDeviceConnected: (deviceId: string) => void;
-  setDeviceDisconnected: (deviceId: string) => void;
-  isDeviceConnected: (deviceId: string) => boolean;
+	/** Device IDs whose incoming messages this user has declined. */
+	declinedDevices: string[];
 
-  // Messaging Actions
-  addMessage: (conversationKey: string, message: Message) => void;
-  setMessages: (conversationKey: string, messages: Message[]) => void;
-  markMessageAsRead: (conversationKey: string, messageId: string) => void;
-  markConversationAsRead: (
-    conversationKey: string,
-    readerDeviceId: string,
-  ) => void;
-  updateMessageStatus: (
-    conversationKey: string,
-    messageId: string,
-    status: MessageStatus,
-  ) => void;
-  /** Flip all messages we *sent* in a conversation to "read" (triggered by an
-   *  incoming read-receipt from the peer). */
-  markSentMessagesAsRead: (
-    conversationKey: string,
-    senderDeviceId: string,
-  ) => void;
-  clearMessages: (conversationKey: string) => void;
-  getUnreadCount: (conversationKey: string, readerDeviceId: string) => number;
+	/**
+	 * Tracks the approval status of our OUTGOING chat requests.
+	 * Key = remote device ID, Value = status.
+	 *
+	 * - 'pending'  → we sent a message, waiting for remote to accept/decline.
+	 * - 'accepted' → remote accepted our request, we can send freely.
+	 * - 'declined' → remote declined our request, sending is blocked.
+	 */
+	chatRequestStatus: Record<string, ChatRequestStatus>;
 
-  // Thread Actions
-  setThreads: (threads: Thread[]) => void;
-  setActiveThread: (threadId: string | null) => void;
-  updateThreadUnreadCount: (threadId: string, count: number) => void;
+	// UI state
+	theme: "light" | "dark";
+	sidebarOpen: boolean;
 
-  // File Transfer Actions
-  addTransfer: (transfer: FileTransfer) => void;
-  updateTransfer: (transferId: string, updates: Partial<FileTransfer>) => void;
-  removeTransfer: (transferId: string) => void;
-  setTransfers: (transfers: FileTransfer[]) => void;
-  getTransferById: (transferId: string) => FileTransfer | undefined;
+	// Identity Actions
+	setLocalDeviceId: (id: string) => void;
+	setDeviceName: (name: string) => void;
+	setOnboarded: (value: boolean) => void;
+	setDeviceIdentity: (identity: DeviceIdentity) => void;
 
-  // Connection Health Actions
-  setConnectionStatus: (event: ConnectionStatusEvent) => void;
-  setDeviceConnecting: (deviceId: string) => void;
+	// Discovery Actions
+	addDevice: (device: Device) => void;
+	removeDevice: (deviceId: string) => void;
+	updateDevice: (device: Device) => void;
+	setDevices: (devices: Device[]) => void;
+	clearDevices: () => void;
 
-  // UI Actions
-  toggleTheme: () => void;
-  setTheme: (theme: "light" | "dark") => void;
-  toggleSidebar: () => void;
-  setSidebarOpen: (open: boolean) => void;
+	// Connection state
+	setDeviceConnected: (deviceId: string) => void;
+	setDeviceDisconnected: (deviceId: string) => void;
+	isDeviceConnected: (deviceId: string) => boolean;
 
-  // Utility Actions
-  reset: () => void;
+	// Messaging Actions
+	addMessage: (conversationKey: string, message: Message) => void;
+	setMessages: (conversationKey: string, messages: Message[]) => void;
+	markMessageAsRead: (conversationKey: string, messageId: string) => void;
+	markConversationAsRead: (
+		conversationKey: string,
+		readerDeviceId: string,
+	) => void;
+	updateMessageStatus: (
+		conversationKey: string,
+		messageId: string,
+		status: MessageStatus,
+	) => void;
+	/** Flip all messages we *sent* in a conversation to "read" (triggered by an
+	 *  incoming read-receipt from the peer). */
+	markSentMessagesAsRead: (
+		conversationKey: string,
+		senderDeviceId: string,
+	) => void;
+	clearMessages: (conversationKey: string) => void;
+	getUnreadCount: (conversationKey: string, readerDeviceId: string) => number;
+
+	// Thread Actions
+	setThreads: (threads: Thread[]) => void;
+	setActiveThread: (threadId: string | null) => void;
+	updateThreadUnreadCount: (threadId: string, count: number) => void;
+
+	// File Transfer Actions
+	addTransfer: (transfer: FileTransfer) => void;
+	updateTransfer: (
+		transferId: string,
+		updates: Partial<FileTransfer>,
+	) => void;
+	removeTransfer: (transferId: string) => void;
+	setTransfers: (transfers: FileTransfer[]) => void;
+	getTransferById: (transferId: string) => FileTransfer | undefined;
+
+	// Connection Health Actions
+	setConnectionStatus: (event: ConnectionStatusEvent) => void;
+	setDeviceConnecting: (deviceId: string) => void;
+
+	// ============================================================================
+	// Privacy Layer Actions
+	// ============================================================================
+
+	/** Mark a device as "started chat" so it appears in the sidebar.
+	 *  Also implicitly approves the device (you initiated contact). */
+	startChat: (deviceId: string) => void;
+
+	/** Accept an incoming chat request — adds to approvedDevices, ensures it's
+	 *  in startedChats, and removes from declinedDevices if present. */
+	approveDevice: (deviceId: string) => void;
+
+	/** Decline an incoming chat request — adds to declinedDevices and removes
+	 *  from approvedDevices if present. */
+	declineDevice: (deviceId: string) => void;
+
+	/** Update the status of an outgoing chat request (called when we receive
+	 *  a system response from the remote device). */
+	setChatRequestStatus: (deviceId: string, status: ChatRequestStatus) => void;
+
+	/** Check whether a device has been approved by the local user. */
+	isDeviceApproved: (deviceId: string) => boolean;
+
+	/** Check whether a chat with a device has been explicitly started. */
+	hasChatStarted: (deviceId: string) => boolean;
+
+	/** Check whether a device has been declined by the local user. */
+	isDeviceDeclined: (deviceId: string) => boolean;
+
+	/** Add a device to startedChats without approving (used when receiving
+	 *  an incoming message from an unknown device). */
+	addToStartedChats: (deviceId: string) => void;
+
+	// UI Actions
+	toggleTheme: () => void;
+	setTheme: (theme: "light" | "dark") => void;
+	toggleSidebar: () => void;
+	setSidebarOpen: (open: boolean) => void;
+
+	// Utility Actions
+	reset: () => void;
 }
 
 const initialState = {
-  localDeviceId: null,
-  deviceName: null,
-  isOnboarded: false,
-  deviceIdentity: null,
-  devices: [],
-  connectedDevices: new Set<string>(),
-  messages: {},
-  threads: [],
-  activeThread: null,
-  transfers: [],
-  activeTransfers: new Set<string>(),
-  deviceConnectionStatus: {},
-  deviceLatencyMs: {},
-  theme: "dark" as const,
-  sidebarOpen: true,
+	localDeviceId: null,
+	deviceName: null,
+	isOnboarded: false,
+	deviceIdentity: null,
+	devices: [],
+	connectedDevices: new Set<string>(),
+	messages: {},
+	threads: [],
+	activeThread: null,
+	transfers: [],
+	activeTransfers: new Set<string>(),
+	deviceConnectionStatus: {},
+	deviceLatencyMs: {},
+	// Privacy layer
+	startedChats: [] as string[],
+	approvedDevices: [] as string[],
+	declinedDevices: [] as string[],
+	chatRequestStatus: {} as Record<string, ChatRequestStatus>,
+	// UI
+	theme: "dark" as const,
+	sidebarOpen: true,
 };
 
 export const useAppStore = create<AppStore>()(
-  persist(
-    (set, get) => ({
-      ...initialState,
+	persist(
+		(set, get) => ({
+			...initialState,
 
-      // ============================================================================
-      // Identity Actions
-      // ============================================================================
+			// ============================================================================
+			// Identity Actions
+			// ============================================================================
 
-      setLocalDeviceId: (id) => set({ localDeviceId: id }),
+			setLocalDeviceId: (id) => set({ localDeviceId: id }),
 
-      setDeviceName: (name) => set({ deviceName: name }),
+			setDeviceName: (name) => set({ deviceName: name }),
 
-      setOnboarded: (value) => set({ isOnboarded: value }),
+			setOnboarded: (value) => set({ isOnboarded: value }),
 
-      setDeviceIdentity: (identity) =>
-        set({
-          deviceIdentity: identity,
-          localDeviceId: identity.device_id,
-          deviceName: identity.display_name,
-        }),
+			setDeviceIdentity: (identity) =>
+				set({
+					deviceIdentity: identity,
+					localDeviceId: identity.device_id,
+					deviceName: identity.display_name,
+				}),
 
-      // ============================================================================
-      // Discovery Actions
-      // ============================================================================
+			// ============================================================================
+			// Discovery Actions
+			// ============================================================================
 
-      addDevice: (device) =>
-        set((state) => {
-          // Don't add self
-          if (device.device_id === state.localDeviceId) {
-            return state;
-          }
+			addDevice: (device) =>
+				set((state) => {
+					// Don't add self
+					if (device.device_id === state.localDeviceId) {
+						return state;
+					}
 
-          // Update if exists, otherwise add
-          const exists = state.devices.some(
-            (d) => d.device_id === device.device_id,
-          );
-          if (exists) {
-            return {
-              devices: state.devices.map((d) =>
-                d.device_id === device.device_id ? device : d,
-              ),
-            };
-          }
+					// Update if exists, otherwise add
+					const exists = state.devices.some(
+						(d) => d.device_id === device.device_id,
+					);
+					if (exists) {
+						return {
+							devices: state.devices.map((d) =>
+								d.device_id === device.device_id ? device : d,
+							),
+						};
+					}
 
-          return {
-            devices: [...state.devices, device],
-          };
-        }),
+					return {
+						devices: [...state.devices, device],
+					};
+				}),
 
-      removeDevice: (deviceId) =>
-        set((state) => ({
-          devices: state.devices.filter((d) => d.device_id !== deviceId),
-          connectedDevices: new Set(
-            [...state.connectedDevices].filter((id) => id !== deviceId),
-          ),
-        })),
+			removeDevice: (deviceId) =>
+				set((state) => ({
+					devices: state.devices.filter(
+						(d) => d.device_id !== deviceId,
+					),
+					connectedDevices: new Set(
+						[...state.connectedDevices].filter(
+							(id) => id !== deviceId,
+						),
+					),
+				})),
 
-      updateDevice: (device) =>
-        set((state) => ({
-          devices: state.devices.map((d) =>
-            d.device_id === device.device_id ? device : d,
-          ),
-        })),
+			updateDevice: (device) =>
+				set((state) => ({
+					devices: state.devices.map((d) =>
+						d.device_id === device.device_id ? device : d,
+					),
+				})),
 
-      setDevices: (devices) =>
-        set((state) => ({
-          devices: devices.filter((d) => d.device_id !== state.localDeviceId),
-        })),
+			setDevices: (devices) =>
+				set((state) => ({
+					devices: devices.filter(
+						(d) => d.device_id !== state.localDeviceId,
+					),
+				})),
 
-      clearDevices: () =>
-        set({
-          devices: [],
-          connectedDevices: new Set(),
-        }),
+			clearDevices: () =>
+				set({
+					devices: [],
+					connectedDevices: new Set(),
+				}),
 
-      // ============================================================================
-      // Connection State
-      // ============================================================================
+			// ============================================================================
+			// Connection State
+			// ============================================================================
 
-      setDeviceConnected: (deviceId) =>
-        set((state) => ({
-          connectedDevices: new Set([...state.connectedDevices, deviceId]),
-        })),
+			setDeviceConnected: (deviceId) =>
+				set((state) => ({
+					connectedDevices: new Set([
+						...state.connectedDevices,
+						deviceId,
+					]),
+				})),
 
-      setDeviceDisconnected: (deviceId) =>
-        set((state) => {
-          const updated = new Set(state.connectedDevices);
-          updated.delete(deviceId);
-          return { connectedDevices: updated };
-        }),
+			setDeviceDisconnected: (deviceId) =>
+				set((state) => {
+					const updated = new Set(state.connectedDevices);
+					updated.delete(deviceId);
+					return { connectedDevices: updated };
+				}),
 
-      isDeviceConnected: (deviceId) => {
-        return get().connectedDevices.has(deviceId);
-      },
+			isDeviceConnected: (deviceId) => {
+				return get().connectedDevices.has(deviceId);
+			},
 
-      // ============================================================================
-      // Messaging Actions
-      // ============================================================================
+			// ============================================================================
+			// Messaging Actions
+			// ============================================================================
 
-      addMessage: (conversationKey, message) =>
-        set((state) => {
-          const existingMessages = state.messages[conversationKey] || [];
+			addMessage: (conversationKey, message) =>
+				set((state) => {
+					const existingMessages =
+						state.messages[conversationKey] || [];
 
-          // Check for duplicates
-          const isDuplicate = existingMessages.some((m) => m.id === message.id);
-          if (isDuplicate) {
-            console.log("⚠️ Duplicate message, skipping:", message.id);
-            return state;
-          }
+					// Check for duplicates
+					const isDuplicate = existingMessages.some(
+						(m) => m.id === message.id,
+					);
+					if (isDuplicate) {
+						console.log(
+							"⚠️ Duplicate message, skipping:",
+							message.id,
+						);
+						return state;
+					}
 
-          const updatedMessages = {
-            ...state.messages,
-            [conversationKey]: [...existingMessages, message].sort(
-              (a, b) => a.timestamp - b.timestamp,
-            ),
-          };
+					const updatedMessages = {
+						...state.messages,
+						[conversationKey]: [...existingMessages, message].sort(
+							(a, b) => a.timestamp - b.timestamp,
+						),
+					};
 
-          return { messages: updatedMessages };
-        }),
+					return { messages: updatedMessages };
+				}),
 
-      setMessages: (conversationKey, messages) =>
-        set((state) => ({
-          messages: {
-            ...state.messages,
-            [conversationKey]: messages.sort(
-              (a, b) => a.timestamp - b.timestamp,
-            ),
-          },
-        })),
+			setMessages: (conversationKey, messages) =>
+				set((state) => ({
+					messages: {
+						...state.messages,
+						[conversationKey]: messages.sort(
+							(a, b) => a.timestamp - b.timestamp,
+						),
+					},
+				})),
 
-      markMessageAsRead: (conversationKey, messageId) =>
-        set((state) => {
-          const messages = state.messages[conversationKey];
-          if (!messages) return state;
+			markMessageAsRead: (conversationKey, messageId) =>
+				set((state) => {
+					const messages = state.messages[conversationKey];
+					if (!messages) return state;
 
-          return {
-            messages: {
-              ...state.messages,
-              [conversationKey]: messages.map((m) =>
-                m.id === messageId
-                  ? { ...m, status: "read" as MessageStatus }
-                  : m,
-              ),
-            },
-          };
-        }),
+					return {
+						messages: {
+							...state.messages,
+							[conversationKey]: messages.map((m) =>
+								m.id === messageId
+									? { ...m, status: "read" as MessageStatus }
+									: m,
+							),
+						},
+					};
+				}),
 
-      markConversationAsRead: (conversationKey, readerDeviceId) =>
-        set((state) => {
-          const messages = state.messages[conversationKey];
-          if (!messages) return state;
+			markConversationAsRead: (conversationKey, readerDeviceId) =>
+				set((state) => {
+					const messages = state.messages[conversationKey];
+					if (!messages) return state;
 
-          const updated = messages.map((m) => {
-            // Only mark messages from the OTHER device that are not yet read.
-            if (m.from_device_id !== readerDeviceId && m.status !== "read") {
-              return { ...m, status: "read" as MessageStatus };
-            }
-            return m;
-          });
+					const updated = messages.map((m) => {
+						// Only mark messages from the OTHER device that are not yet read.
+						if (
+							m.from_device_id !== readerDeviceId &&
+							m.status !== "read"
+						) {
+							return { ...m, status: "read" as MessageStatus };
+						}
+						return m;
+					});
 
-          return {
-            messages: {
-              ...state.messages,
-              [conversationKey]: updated,
-            },
-          };
-        }),
+					return {
+						messages: {
+							...state.messages,
+							[conversationKey]: updated,
+						},
+					};
+				}),
 
-      updateMessageStatus: (conversationKey, messageId, status) =>
-        set((state) => {
-          const messages = state.messages[conversationKey];
-          if (!messages) return state;
+			updateMessageStatus: (conversationKey, messageId, status) =>
+				set((state) => {
+					const messages = state.messages[conversationKey];
+					if (!messages) return state;
 
-          return {
-            messages: {
-              ...state.messages,
-              [conversationKey]: messages.map((m) =>
-                m.id === messageId ? { ...m, status } : m,
-              ),
-            },
-          };
-        }),
+					return {
+						messages: {
+							...state.messages,
+							[conversationKey]: messages.map((m) =>
+								m.id === messageId ? { ...m, status } : m,
+							),
+						},
+					};
+				}),
 
-      markSentMessagesAsRead: (conversationKey, senderDeviceId) =>
-        set((state) => {
-          const messages = state.messages[conversationKey];
-          if (!messages) return state;
+			markSentMessagesAsRead: (conversationKey, senderDeviceId) =>
+				set((state) => {
+					const messages = state.messages[conversationKey];
+					if (!messages) return state;
 
-          const updated = messages.map((m) => {
-            // Only touch messages that we sent and that haven't been marked read yet
-            if (m.from_device_id === senderDeviceId && m.status !== "read") {
-              return { ...m, status: "read" as MessageStatus };
-            }
-            return m;
-          });
+					const updated = messages.map((m) => {
+						// Only touch messages that we sent and that haven't been marked read yet
+						if (
+							m.from_device_id === senderDeviceId &&
+							m.status !== "read"
+						) {
+							return { ...m, status: "read" as MessageStatus };
+						}
+						return m;
+					});
 
-          return {
-            messages: {
-              ...state.messages,
-              [conversationKey]: updated,
-            },
-          };
-        }),
+					return {
+						messages: {
+							...state.messages,
+							[conversationKey]: updated,
+						},
+					};
+				}),
 
-      getUnreadCount: (conversationKey, readerDeviceId) => {
-        const messages = get().messages[conversationKey] || [];
-        return messages.filter(
-          (m) => m.from_device_id !== readerDeviceId && m.status !== "read",
-        ).length;
-      },
+			getUnreadCount: (conversationKey, readerDeviceId) => {
+				const messages = get().messages[conversationKey] || [];
+				return messages.filter(
+					(m) =>
+						m.from_device_id !== readerDeviceId &&
+						m.status !== "read",
+				).length;
+			},
 
-      clearMessages: (conversationKey) =>
-        set((state) => {
-          const { [conversationKey]: _, ...rest } = state.messages;
-          return { messages: rest };
-        }),
+			clearMessages: (conversationKey) =>
+				set((state) => {
+					const { [conversationKey]: _, ...rest } = state.messages;
+					return { messages: rest };
+				}),
 
-      // ============================================================================
-      // Thread Actions
-      // ============================================================================
+			// ============================================================================
+			// Thread Actions
+			// ============================================================================
 
-      setThreads: (threads) => set({ threads }),
+			setThreads: (threads) => set({ threads }),
 
-      setActiveThread: (threadId) => set({ activeThread: threadId }),
+			setActiveThread: (threadId) => set({ activeThread: threadId }),
 
-      updateThreadUnreadCount: (threadId, count) =>
-        set((state) => ({
-          threads: state.threads.map((t) =>
-            t.id === threadId ? { ...t, unread_count: count } : t,
-          ),
-        })),
+			updateThreadUnreadCount: (threadId, count) =>
+				set((state) => ({
+					threads: state.threads.map((t) =>
+						t.id === threadId ? { ...t, unread_count: count } : t,
+					),
+				})),
 
-      // ============================================================================
-      // File Transfer Actions
-      // ============================================================================
+			// ============================================================================
+			// File Transfer Actions
+			// ============================================================================
 
-      addTransfer: (transfer) =>
-        set((state) => ({
-          transfers: [...state.transfers, transfer],
-        })),
+			addTransfer: (transfer) =>
+				set((state) => ({
+					transfers: [...state.transfers, transfer],
+				})),
 
-      updateTransfer: (transferId, updates) =>
-        set((state) => ({
-          transfers: state.transfers.map((t) =>
-            t.id === transferId
-              ? { ...t, ...updates, updated_at: Date.now() }
-              : t,
-          ),
-        })),
+			updateTransfer: (transferId, updates) =>
+				set((state) => ({
+					transfers: state.transfers.map((t) =>
+						t.id === transferId
+							? { ...t, ...updates, updated_at: Date.now() }
+							: t,
+					),
+				})),
 
-      removeTransfer: (transferId) =>
-        set((state) => ({
-          transfers: state.transfers.filter((t) => t.id !== transferId),
-        })),
+			removeTransfer: (transferId) =>
+				set((state) => ({
+					transfers: state.transfers.filter(
+						(t) => t.id !== transferId,
+					),
+				})),
 
-      setTransfers: (transfers) => set({ transfers }),
+			setTransfers: (transfers) => set({ transfers }),
 
-      getTransferById: (transferId) => {
-        return get().transfers.find((t) => t.id === transferId);
-      },
+			getTransferById: (transferId) => {
+				return get().transfers.find((t) => t.id === transferId);
+			},
 
-      // ============================================================================
-      // Connection Health Actions
-      // ============================================================================
+			// ============================================================================
+			// Connection Health Actions
+			// ============================================================================
 
-      setConnectionStatus: (event) =>
-        set((state) => ({
-          deviceConnectionStatus: {
-            ...state.deviceConnectionStatus,
-            [event.device_id]: event.connected ? "connected" : "unreachable",
-          },
-          deviceLatencyMs:
-            event.connected && event.latency_ms != null
-              ? {
-                  ...state.deviceLatencyMs,
-                  [event.device_id]: event.latency_ms,
-                }
-              : state.deviceLatencyMs,
-        })),
+			setConnectionStatus: (event) =>
+				set((state) => ({
+					deviceConnectionStatus: {
+						...state.deviceConnectionStatus,
+						[event.device_id]: event.connected
+							? "connected"
+							: "unreachable",
+					},
+					deviceLatencyMs:
+						event.connected && event.latency_ms != null
+							? {
+									...state.deviceLatencyMs,
+									[event.device_id]: event.latency_ms,
+								}
+							: state.deviceLatencyMs,
+				})),
 
-      setDeviceConnecting: (deviceId) =>
-        set((state) => ({
-          deviceConnectionStatus: {
-            ...state.deviceConnectionStatus,
-            [deviceId]: "connecting",
-          },
-        })),
+			setDeviceConnecting: (deviceId) =>
+				set((state) => ({
+					deviceConnectionStatus: {
+						...state.deviceConnectionStatus,
+						[deviceId]: "connecting",
+					},
+				})),
 
-      // ============================================================================
-      // UI Actions
-      // ============================================================================
+			// ============================================================================
+			// Privacy Layer Actions
+			// ============================================================================
 
-      toggleTheme: () =>
-        set((state) => ({
-          theme: state.theme === "light" ? "dark" : "light",
-        })),
+			startChat: (deviceId) =>
+				set((state) => {
+					const alreadyStarted =
+						state.startedChats.includes(deviceId);
+					const alreadyApproved =
+						state.approvedDevices.includes(deviceId);
 
-      setTheme: (theme) => set({ theme }),
+					return {
+						// Add to startedChats if not already present
+						startedChats: alreadyStarted
+							? state.startedChats
+							: [...state.startedChats, deviceId],
+						// Initiator implicitly approves the device for incoming messages
+						approvedDevices: alreadyApproved
+							? state.approvedDevices
+							: [...state.approvedDevices, deviceId],
+						// Remove from declined if it was previously declined
+						declinedDevices: state.declinedDevices.filter(
+							(id) => id !== deviceId,
+						),
+						// Set outgoing request status to pending (they haven't approved us yet)
+						// unless they already accepted
+						chatRequestStatus: {
+							...state.chatRequestStatus,
+							[deviceId]:
+								state.chatRequestStatus[deviceId] === "accepted"
+									? "accepted"
+									: "pending",
+						},
+					};
+				}),
 
-      toggleSidebar: () =>
-        set((state) => ({
-          sidebarOpen: !state.sidebarOpen,
-        })),
+			approveDevice: (deviceId) =>
+				set((state) => ({
+					approvedDevices: state.approvedDevices.includes(deviceId)
+						? state.approvedDevices
+						: [...state.approvedDevices, deviceId],
+					// Also ensure it's in startedChats
+					startedChats: state.startedChats.includes(deviceId)
+						? state.startedChats
+						: [...state.startedChats, deviceId],
+					// Remove from declined
+					declinedDevices: state.declinedDevices.filter(
+						(id) => id !== deviceId,
+					),
+				})),
 
-      setSidebarOpen: (open) => set({ sidebarOpen: open }),
+			declineDevice: (deviceId) =>
+				set((state) => ({
+					declinedDevices: state.declinedDevices.includes(deviceId)
+						? state.declinedDevices
+						: [...state.declinedDevices, deviceId],
+					// Remove from approved
+					approvedDevices: state.approvedDevices.filter(
+						(id) => id !== deviceId,
+					),
+				})),
 
-      // ============================================================================
-      // Utility Actions
-      // ============================================================================
+			setChatRequestStatus: (deviceId, status) =>
+				set((state) => ({
+					chatRequestStatus: {
+						...state.chatRequestStatus,
+						[deviceId]: status,
+					},
+				})),
 
-      reset: () => set(initialState),
-    }),
-    {
-      name: "hyper-connect-storage",
-      storage: createJSONStorage(() => localStorage),
-      partialize: (state) => ({
-        localDeviceId: state.localDeviceId,
-        deviceName: state.deviceName,
-        isOnboarded: state.isOnboarded,
-        deviceIdentity: state.deviceIdentity,
-        theme: state.theme,
-        sidebarOpen: state.sidebarOpen,
-        messages: state.messages, // Persist chat history
-      }),
-    },
-  ),
+			isDeviceApproved: (deviceId) => {
+				return get().approvedDevices.includes(deviceId);
+			},
+
+			hasChatStarted: (deviceId) => {
+				return get().startedChats.includes(deviceId);
+			},
+
+			isDeviceDeclined: (deviceId) => {
+				return get().declinedDevices.includes(deviceId);
+			},
+
+			addToStartedChats: (deviceId) =>
+				set((state) => ({
+					startedChats: state.startedChats.includes(deviceId)
+						? state.startedChats
+						: [...state.startedChats, deviceId],
+				})),
+
+			// ============================================================================
+			// UI Actions
+			// ============================================================================
+
+			toggleTheme: () =>
+				set((state) => ({
+					theme: state.theme === "light" ? "dark" : "light",
+				})),
+
+			setTheme: (theme) => set({ theme }),
+
+			toggleSidebar: () =>
+				set((state) => ({
+					sidebarOpen: !state.sidebarOpen,
+				})),
+
+			setSidebarOpen: (open) => set({ sidebarOpen: open }),
+
+			// ============================================================================
+			// Utility Actions
+			// ============================================================================
+
+			reset: () => set(initialState),
+		}),
+		{
+			name: "hyper-connect-storage",
+			storage: createJSONStorage(() => localStorage),
+			partialize: (state) => ({
+				localDeviceId: state.localDeviceId,
+				deviceName: state.deviceName,
+				isOnboarded: state.isOnboarded,
+				deviceIdentity: state.deviceIdentity,
+				theme: state.theme,
+				sidebarOpen: state.sidebarOpen,
+				messages: state.messages, // Persist chat history
+				// Privacy layer — persisted so approvals survive app restart
+				startedChats: state.startedChats,
+				approvedDevices: state.approvedDevices,
+				declinedDevices: state.declinedDevices,
+				chatRequestStatus: state.chatRequestStatus,
+			}),
+		},
+	),
 );
