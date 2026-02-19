@@ -8,7 +8,10 @@ use mdns_sd::{ServiceDaemon, ServiceEvent, ServiceInfo};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::IpAddr;
-use std::sync::Arc;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
 use tauri::{AppHandle, Emitter};
 use tokio::sync::RwLock;
 
@@ -34,7 +37,13 @@ pub struct Device {
 pub struct MdnsDiscoveryService {
     mdns: Arc<ServiceDaemon>,
     devices: Arc<RwLock<HashMap<String, Device>>>,
+    /// Maps mDNS full service name → device_id for correct removal
+    fullname_to_id: Arc<RwLock<HashMap<String, String>>>,
     local_identity: DeviceIdentity,
+    /// Guards against starting discovery more than once
+    started_discovery: Arc<AtomicBool>,
+    /// Guards against registering the mDNS service more than once
+    started_advertising: Arc<AtomicBool>,
 }
 
 impl MdnsDiscoveryService {
@@ -46,12 +55,38 @@ impl MdnsDiscoveryService {
         Ok(Self {
             mdns: Arc::new(mdns),
             devices: Arc::new(RwLock::new(HashMap::new())),
+            fullname_to_id: Arc::new(RwLock::new(HashMap::new())),
             local_identity,
+            started_discovery: Arc::new(AtomicBool::new(false)),
+            started_advertising: Arc::new(AtomicBool::new(false)),
         })
     }
 
-    /// Start advertising this device
+    /// Start advertising this device on the local network.
+    ///
+    /// The call is idempotent – duplicate invocations are silently ignored so
+    /// that the backend auto-start in `lib.rs` and any subsequent frontend IPC
+    /// call do not fight each other or cause a double-registration error.
     pub fn start_advertising(&self, port: u16) -> Result<(), String> {
+        // Atomically set the flag; if it was already true another caller got
+        // here first – nothing to do.
+        if self.started_advertising.swap(true, Ordering::SeqCst) {
+            println!("⚠️  Advertising already running – ignoring duplicate start");
+            return Ok(());
+        }
+
+        let result = self.do_start_advertising(port);
+
+        // If registration failed reset the flag so a later retry can succeed.
+        if result.is_err() {
+            self.started_advertising.store(false, Ordering::SeqCst);
+        }
+
+        result
+    }
+
+    /// Inner helper that performs the actual mDNS registration.
+    fn do_start_advertising(&self, port: u16) -> Result<(), String> {
         let mut properties = HashMap::new();
         properties.insert(
             "deviceId".to_string(),
@@ -62,28 +97,37 @@ impl MdnsDiscoveryService {
             self.local_identity.display_name.clone(),
         );
         properties.insert("platform".to_string(), self.local_identity.platform.clone());
-        // Note: appVersion intentionally omitted from mDNS broadcast to minimize
-        // metadata exposure on the network. Version info is not needed for discovery.
+        // appVersion is intentionally omitted to minimise metadata exposure.
 
-        // Get local IP addresses
-        let addresses: Vec<IpAddr> = if_addrs::get_if_addrs()
+        // Collect non-loopback addresses, IPv4 first.
+        let mut addresses: Vec<IpAddr> = if_addrs::get_if_addrs()
             .unwrap_or_default()
             .into_iter()
             .filter(|iface| !iface.is_loopback())
             .map(|iface| iface.addr.ip())
             .collect();
 
+        // Sort IPv4 before IPv6 so the first entry is always the most
+        // reachable address on a typical LAN.
+        addresses.sort_by(|a, b| {
+            let a_v4 = a.is_ipv4();
+            let b_v4 = b.is_ipv4();
+            b_v4.cmp(&a_v4)
+        });
+
         if addresses.is_empty() {
             return Err("No network interfaces found".to_string());
         }
 
-        // Create hostname
+        // Use the device_id (UUID) as the mDNS *instance* name so that two
+        // devices with the same display name do not collide.
+        let instance_name = &self.local_identity.device_id;
+
+        // Derive a stable hostname from the device_id.
         let hostname = format!(
             "{}.local.",
             self.local_identity
-                .display_name
-                .to_lowercase()
-                .replace(" ", "-")
+                .device_id
                 .chars()
                 .filter(|c| c.is_alphanumeric() || *c == '-')
                 .collect::<String>()
@@ -91,7 +135,7 @@ impl MdnsDiscoveryService {
 
         let service_info = ServiceInfo::new(
             SERVICE_TYPE,
-            &self.local_identity.display_name,
+            instance_name,
             &hostname,
             &addresses[..],
             port,
@@ -101,70 +145,109 @@ impl MdnsDiscoveryService {
 
         self.mdns
             .register(service_info)
-            .map_err(|e| format!("Failed to register: {}", e))?;
+            .map_err(|e| format!("Failed to register mDNS service: {}", e))?;
 
         println!(
-            "✓ Advertising as '{}' on port {} (mDNS: {})",
-            self.local_identity.display_name, port, SERVICE_TYPE
+            "✓ Advertising as '{}' (id: {}) on port {} via mDNS",
+            self.local_identity.display_name, self.local_identity.device_id, port
         );
 
         Ok(())
     }
 
-    /// Start discovering peers
+    /// Start browsing for peers.
+    ///
+    /// The call is idempotent – duplicate invocations are silently ignored.
+    ///
+    /// The mDNS receiver channel uses a *blocking* `recv()` call, which must
+    /// not run directly inside a Tokio async task (it would park a worker
+    /// thread).  We therefore spawn a dedicated OS thread for the blocking
+    /// loop and use the Tokio runtime handle to dispatch async handlers back
+    /// onto the async runtime.
     pub fn start_discovery(&self, app_handle: AppHandle) -> Result<(), String> {
-        let receiver = self
-            .mdns
-            .browse(SERVICE_TYPE)
-            .map_err(|e| format!("Failed to start browsing: {}", e))?;
+        if self.started_discovery.swap(true, Ordering::SeqCst) {
+            println!("⚠️  Discovery already running – ignoring duplicate start");
+            return Ok(());
+        }
+
+        let receiver = self.mdns.browse(SERVICE_TYPE).map_err(|e| {
+            // Reset so a retry is possible.
+            self.started_discovery.store(false, Ordering::SeqCst);
+            format!("Failed to start mDNS browsing: {}", e)
+        })?;
 
         let devices = Arc::clone(&self.devices);
+        let fullname_to_id = Arc::clone(&self.fullname_to_id);
         let local_id = self.local_identity.device_id.clone();
 
-        tauri::async_runtime::spawn(async move {
-            while let Ok(event) = receiver.recv() {
-                match event {
-                    ServiceEvent::ServiceResolved(info) => {
-                        Self::handle_service_resolved(info, &devices, &local_id, &app_handle).await;
-                    }
-                    ServiceEvent::ServiceRemoved(_, fullname) => {
-                        Self::handle_service_removed(fullname, &devices, &app_handle).await;
-                    }
-                    _ => {}
-                }
-            }
-        });
+        // Capture the Tokio runtime handle *before* leaving the async context
+        // so the blocking OS thread can schedule async work back onto it.
+        let rt_handle = tokio::runtime::Handle::current();
 
-        println!("✓ Started mDNS discovery");
+        // Spawn a dedicated OS thread for the blocking receiver loop.
+        std::thread::Builder::new()
+            .name("mdns-discovery".to_string())
+            .spawn(move || {
+                println!("✓ mDNS discovery thread started");
+
+                while let Ok(event) = receiver.recv() {
+                    match event {
+                        ServiceEvent::ServiceResolved(info) => {
+                            let d = Arc::clone(&devices);
+                            let f = Arc::clone(&fullname_to_id);
+                            let lid = local_id.clone();
+                            let ah = app_handle.clone();
+                            rt_handle.spawn(async move {
+                                Self::handle_service_resolved(info, &d, &f, &lid, &ah).await;
+                            });
+                        }
+                        ServiceEvent::ServiceRemoved(_, fullname) => {
+                            let d = Arc::clone(&devices);
+                            let f = Arc::clone(&fullname_to_id);
+                            let ah = app_handle.clone();
+                            rt_handle.spawn(async move {
+                                Self::handle_service_removed(fullname, &d, &f, &ah).await;
+                            });
+                        }
+                        _ => {}
+                    }
+                }
+
+                println!("mDNS discovery receiver closed – thread exiting");
+            })
+            .map_err(|e| format!("Failed to spawn mDNS thread: {}", e))?;
+
+        println!("✓ mDNS discovery started (service type: {})", SERVICE_TYPE);
         Ok(())
     }
 
-    /// Handle a resolved service
+    /// Handle a resolved service event.
     async fn handle_service_resolved(
         info: ServiceInfo,
         devices: &Arc<RwLock<HashMap<String, Device>>>,
+        fullname_to_id: &Arc<RwLock<HashMap<String, String>>>,
         local_id: &str,
         app_handle: &AppHandle,
     ) {
-        // Get device ID from TXT properties
+        // Prefer the explicit TXT property; fall back to the full mDNS name.
         let id = info
             .get_property_val_str("deviceId")
             .unwrap_or_else(|| info.get_fullname())
             .to_string();
 
-        // Don't discover ourselves
+        // Skip our own advertisement.
         if id == local_id {
             return;
         }
 
-        // Filter and prioritize IPv4 addresses
+        // Filter and prioritise IPv4 addresses; drop link-local IPv6.
         let mut addresses: Vec<String> = info
             .get_addresses()
             .iter()
             .filter(|addr| match addr {
                 IpAddr::V6(ipv6) => {
                     let segments = ipv6.segments();
-                    // Filter out link-local addresses (fe80::/10)
+                    // Reject fe80::/10 link-local addresses.
                     !(segments[0] >= 0xfe80 && segments[0] <= 0xfebf)
                 }
                 IpAddr::V4(_) => true,
@@ -172,15 +255,18 @@ impl MdnsDiscoveryService {
             .map(|addr| addr.to_string())
             .collect();
 
-        // Sort: IPv4 first
+        // IPv4 first.
         addresses.sort_by(|a, b| {
-            let a_is_v4 = !a.contains(':');
-            let b_is_v4 = !b.contains(':');
-            b_is_v4.cmp(&a_is_v4)
+            let a_v4 = !a.contains(':');
+            let b_v4 = !b.contains(':');
+            b_v4.cmp(&a_v4)
         });
 
         if addresses.is_empty() {
-            eprintln!("No valid addresses for device {}", id);
+            eprintln!(
+                "Skipping device {} – no reachable addresses after filtering",
+                id
+            );
             return;
         }
 
@@ -198,55 +284,61 @@ impl MdnsDiscoveryService {
                 .get_property_val_str("platform")
                 .unwrap_or("unknown")
                 .to_string(),
-            app_version: String::new(), // Not broadcast via mDNS for security
+            app_version: String::new(), // Not broadcast for security reasons.
         };
 
         println!(
-            "✓ Discovered device: {} ({}) at {}:{}",
+            "✓ Discovered peer: '{}' ({}) at {}:{}",
             device.name, device.id, addresses[0], device.port
         );
 
-        let mut devices_lock = devices.write().await;
-        devices_lock.insert(id.clone(), device.clone());
-        drop(devices_lock);
+        // Store fullname → id so we can remove the device correctly later.
+        fullname_to_id
+            .write()
+            .await
+            .insert(info.get_fullname().to_string(), id.clone());
+
+        devices.write().await.insert(id.clone(), device.clone());
 
         let _ = app_handle.emit("device-discovered", device);
     }
 
-    /// Handle a removed service
+    /// Handle a service-removed event.
+    ///
+    /// We look up the device by its mDNS full name (which is stable) rather
+    /// than the display name (which can be identical across devices and does
+    /// not match the raw `fullname` string emitted by the daemon).
     async fn handle_service_removed(
         fullname: String,
         devices: &Arc<RwLock<HashMap<String, Device>>>,
+        fullname_to_id: &Arc<RwLock<HashMap<String, String>>>,
         app_handle: &AppHandle,
     ) {
-        let mut devices_lock = devices.write().await;
+        // Remove the fullname → id mapping and grab the id in one step.
+        let id = fullname_to_id.write().await.remove(&fullname);
 
-        // Find device by service name
-        if let Some((id, _)) = devices_lock
-            .iter()
-            .find(|(_, device)| device.name == fullname)
-        {
-            let id = id.clone();
-            devices_lock.remove(&id);
-            drop(devices_lock);
-
-            println!("✓ Device removed: {}", fullname);
+        if let Some(id) = id {
+            devices.write().await.remove(&id);
+            println!("✓ Peer left: {} ({})", fullname, id);
             let _ = app_handle.emit("device-removed", id);
+        } else {
+            // The service might have been removed before it was fully resolved
+            // (e.g. the peer quit very quickly).  This is not an error.
+            println!("ℹ️  Received remove for unknown service: {}", fullname);
         }
     }
 
-    /// Get all discovered devices
+    /// Return a snapshot of all currently known peer devices.
     pub async fn get_devices(&self) -> Vec<Device> {
-        let devices = self.devices.read().await;
-        devices.values().cloned().collect()
+        self.devices.read().await.values().cloned().collect()
     }
 
-    /// Get local device ID
+    /// Return the local device's unique identifier.
     pub fn local_device_id(&self) -> &str {
         &self.local_identity.device_id
     }
 
-    /// Get local device identity
+    /// Return the full local device identity.
     pub fn local_identity(&self) -> &DeviceIdentity {
         &self.local_identity
     }

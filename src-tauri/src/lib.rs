@@ -13,6 +13,7 @@ mod network;
 use crypto::tls::TlsConfig;
 use discovery::MdnsDiscoveryService;
 use identity::IdentityManager;
+use ipc::TcpPort;
 use messaging::MessagingService;
 use network::{FileTransferService, TcpClient, TcpServer};
 use std::sync::Arc;
@@ -81,8 +82,8 @@ pub fn run() {
             println!("✓ TCP port: {}", tcp_port);
 
             // Initialize TLS configuration (generates or loads self-signed certificate)
-            let tls_config = TlsConfig::new(&app_data_dir)
-                .expect("Failed to initialize TLS configuration");
+            let tls_config =
+                TlsConfig::new(&app_data_dir).expect("Failed to initialize TLS configuration");
             println!("✓ TLS configuration initialized");
 
             // Initialize TCP client with TLS and encryption support
@@ -132,6 +133,8 @@ pub fn run() {
             app.manage(Arc::clone(&discovery_service));
             app.manage(messaging_service);
             app.manage(file_transfer_service);
+            // Expose the actual bound TCP port to IPC commands.
+            app.manage(TcpPort(tcp_port));
 
             // Auto-start mDNS discovery and advertising
             let discovery_clone = Arc::clone(&discovery_service);

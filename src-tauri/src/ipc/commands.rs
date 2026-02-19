@@ -10,6 +10,9 @@ use std::sync::Arc;
 use tauri::Emitter;
 use tauri::{AppHandle, State};
 
+/// Newtype wrapper so `u16` can be stored as distinct managed state.
+pub struct TcpPort(pub u16);
+
 // ============================================================================
 // Connection Health Commands
 // ============================================================================
@@ -276,8 +279,8 @@ pub async fn get_transfers(
 }
 
 #[tauri::command]
-pub fn get_tcp_port() -> u16 {
-    8080
+pub fn get_tcp_port(tcp_port: State<TcpPort>) -> u16 {
+    tcp_port.0
 }
 
 // ============================================================================

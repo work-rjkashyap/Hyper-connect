@@ -5,47 +5,49 @@ import { useAppStore } from "@/store";
 import type { Device } from "@/types";
 
 /**
- * Hook to manage LAN peer discovery and state
- * Starts discovery on mount and listens for device events
+ * Hook to manage LAN peer discovery and state.
+ *
+ * The Rust backend automatically starts mDNS discovery and advertising during
+ * app setup (lib.rs).  This hook therefore only needs to:
+ *  1. Register Tauri event listeners so live updates flow into the Zustand store.
+ *  2. Fetch the initial device snapshot that was already discovered before the
+ *     frontend listeners were ready.
+ *
+ * Calling start_discovery / start_advertising from here as well would spawn
+ * duplicate browse tasks on the mDNS daemon and cause double registrations,
+ * so those calls have been removed.
  */
 export function useLanPeers() {
-  const { addDevice, removeDevice, setDevices, deviceIdentity, isOnboarded } =
-    useAppStore();
+  const { addDevice, removeDevice, setDevices, isOnboarded } = useAppStore();
 
-  const initializeDiscovery = useCallback(async () => {
+  /**
+   * Fetch the current device list from the backend and hydrate the store.
+   * Called once on mount (after listeners are in place) so that any devices
+   * discovered before the frontend was ready are not missed.
+   */
+  const loadInitialDevices = useCallback(async () => {
     try {
-      // Get initial devices
-      const initialDevices = await invoke<Device[]>("get_devices");
-      console.log("📱 Initial devices:", initialDevices);
-      setDevices(initialDevices);
-
-      // Start discovery
-      await invoke("start_discovery");
-      console.log("🔍 Discovery started");
-
-      // Start advertising if we have identity
-      if (deviceIdentity) {
-        const port = await invoke<number>("get_tcp_port");
-        await invoke("start_advertising", { port });
-        console.log("📡 Advertising started on port:", port);
-      }
+      const devices = await invoke<Device[]>("get_devices");
+      console.log("📱 Initial device snapshot:", devices);
+      setDevices(devices);
     } catch (error) {
-      console.error("Failed to initialize discovery:", error);
+      console.error("Failed to load initial devices:", error);
     }
-  }, [deviceIdentity, setDevices]);
+  }, [setDevices]);
 
   useEffect(() => {
-    if (!isOnboarded || !deviceIdentity) {
-      console.log("⏸️ Skipping discovery - not onboarded or no identity");
+    if (!isOnboarded) {
+      console.log("⏸️ Skipping discovery listeners – not yet onboarded");
       return;
     }
 
     let unlistenDiscovered: (() => void) | undefined;
     let unlistenRemoved: (() => void) | undefined;
 
-    const setupListeners = async () => {
+    const setup = async () => {
       try {
-        // Listen for device discovered events
+        // Register listeners BEFORE fetching the snapshot so no events are
+        // lost between the two operations.
         unlistenDiscovered = await listen<Device>(
           "device-discovered",
           (event) => {
@@ -54,42 +56,38 @@ export function useLanPeers() {
           },
         );
 
-        // Listen for device removed events
         unlistenRemoved = await listen<string>("device-removed", (event) => {
           console.log("❌ Device removed:", event.payload);
           removeDevice(event.payload);
         });
 
-        // Initialize discovery
-        await initializeDiscovery();
+        // Hydrate the store with devices that were already found.
+        await loadInitialDevices();
       } catch (error) {
-        console.error("Failed to setup discovery listeners:", error);
+        console.error("Failed to set up discovery listeners:", error);
       }
     };
 
-    setupListeners();
+    setup();
 
     return () => {
-      if (unlistenDiscovered) unlistenDiscovered();
-      if (unlistenRemoved) unlistenRemoved();
+      unlistenDiscovered?.();
+      unlistenRemoved?.();
       console.log("🧹 Discovery listeners cleaned up");
     };
-  }, [
-    isOnboarded,
-    deviceIdentity,
-    addDevice,
-    removeDevice,
-    initializeDiscovery,
-  ]);
+  }, [isOnboarded, addDevice, removeDevice, loadInitialDevices]);
 
-  return {
-    refreshDevices: useCallback(async () => {
-      try {
-        const devices = await invoke<Device[]>("get_devices");
-        setDevices(devices);
-      } catch (error) {
-        console.error("Failed to refresh devices:", error);
-      }
-    }, [setDevices]),
-  };
+  /**
+   * Manually refresh the device list on demand (e.g. pull-to-refresh).
+   */
+  const refreshDevices = useCallback(async () => {
+    try {
+      const devices = await invoke<Device[]>("get_devices");
+      setDevices(devices);
+    } catch (error) {
+      console.error("Failed to refresh devices:", error);
+    }
+  }, [setDevices]);
+
+  return { refreshDevices };
 }
