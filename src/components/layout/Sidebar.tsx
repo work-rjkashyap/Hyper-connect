@@ -72,18 +72,40 @@ export default function Sidebar({ className, onClose }: SidebarProps) {
 		return participants.join("_");
 	};
 
-	// Helper to format timestamp
+	// Helper to format timestamp (timestamp is Unix seconds from Rust backend)
 	const formatTimestamp = (timestamp: number) => {
-		const date = new Date(timestamp);
+		const date = new Date(timestamp * 1000);
 		const now = new Date();
-		const isToday = date.toDateString() === now.toDateString();
-		if (isToday) {
+
+		const stripTime = (d: Date) =>
+			new Date(d.getFullYear(), d.getMonth(), d.getDate());
+		const today = stripTime(now);
+		const msgDay = stripTime(date);
+		const diffDays = Math.round(
+			(today.getTime() - msgDay.getTime()) / (1000 * 60 * 60 * 24),
+		);
+
+		if (diffDays === 0) {
 			return date.toLocaleTimeString([], {
 				hour: "2-digit",
 				minute: "2-digit",
 			});
 		}
-		return date.toLocaleDateString();
+		if (diffDays === 1) return "Yesterday";
+		if (diffDays > 1 && diffDays < 7) {
+			return date.toLocaleDateString(undefined, { weekday: "long" });
+		}
+		if (date.getFullYear() === now.getFullYear()) {
+			return date.toLocaleDateString(undefined, {
+				month: "short",
+				day: "numeric",
+			});
+		}
+		return date.toLocaleDateString(undefined, {
+			month: "short",
+			day: "numeric",
+			year: "numeric",
+		});
 	};
 
 	const selectedChatId = location.pathname.startsWith("/chat/")
