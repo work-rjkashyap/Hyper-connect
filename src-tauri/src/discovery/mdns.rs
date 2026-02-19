@@ -62,10 +62,8 @@ impl MdnsDiscoveryService {
             self.local_identity.display_name.clone(),
         );
         properties.insert("platform".to_string(), self.local_identity.platform.clone());
-        properties.insert(
-            "appVersion".to_string(),
-            self.local_identity.app_version.clone(),
-        );
+        // Note: appVersion intentionally omitted from mDNS broadcast to minimize
+        // metadata exposure on the network. Version info is not needed for discovery.
 
         // Get local IP addresses
         let addresses: Vec<IpAddr> = if_addrs::get_if_addrs()
@@ -200,10 +198,7 @@ impl MdnsDiscoveryService {
                 .get_property_val_str("platform")
                 .unwrap_or("unknown")
                 .to_string(),
-            app_version: info
-                .get_property_val_str("appVersion")
-                .unwrap_or("unknown")
-                .to_string(),
+            app_version: String::new(), // Not broadcast via mDNS for security
         };
 
         println!(

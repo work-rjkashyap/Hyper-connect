@@ -56,6 +56,7 @@ pub mod handshake;
 pub mod message_crypto;
 pub mod session;
 pub mod stream_crypto;
+pub mod tls;
 
 // Re-export commonly used types
 pub use handshake::{HandshakeManager, HandshakeState, HelloResponse, HelloSecure};

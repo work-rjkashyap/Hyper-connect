@@ -15,6 +15,8 @@ use tokio::io::BufWriter;
 use tokio::net::TcpStream;
 use tokio::sync::{Mutex, RwLock};
 use tokio::time::timeout;
+use tokio_rustls::client::TlsStream;
+use tokio_rustls::TlsConnector;
 
 /// Connection timeout in seconds
 const CONNECT_TIMEOUT_SECS: u64 = 5;
@@ -32,9 +34,9 @@ const SEND_BUFFER_SIZE: usize = 4 * 1024 * 1024;
 /// TCP receive buffer size (4MB for high-speed transfers)
 const RECV_BUFFER_SIZE: usize = 4 * 1024 * 1024;
 
-/// Connection wrapper with buffered writer and optional encryption session
+/// Connection wrapper with buffered writer over TLS and optional encryption session
 pub struct Connection {
-    writer: BufWriter<TcpStream>,
+    writer: BufWriter<TlsStream<TcpStream>>,
     peer_addr: SocketAddr,
     device_id: String,
     /// Encryption session (if secure handshake completed)
@@ -42,16 +44,15 @@ pub struct Connection {
 }
 
 impl Connection {
-    /// Create a new connection from a TCP stream
-    async fn new(stream: TcpStream, device_id: String) -> Result<Self, String> {
-        let peer_addr = stream
+    /// Create a new connection from a TLS stream
+    async fn new(tls_stream: TlsStream<TcpStream>, device_id: String) -> Result<Self, String> {
+        let peer_addr = tls_stream
+            .get_ref()
+            .0
             .peer_addr()
             .map_err(|e| format!("Failed to get peer address: {}", e))?;
 
-        // Optimize socket settings for high-speed LAN transfers
-        Self::optimize_socket(&stream)?;
-
-        let writer = BufWriter::with_capacity(256 * 1024, stream); // 256KB buffer
+        let writer = BufWriter::with_capacity(256 * 1024, tls_stream); // 256KB buffer
 
         Ok(Self {
             writer,
@@ -59,38 +60,6 @@ impl Connection {
             device_id,
             session: None, // Session established separately via handshake
         })
-    }
-
-    /// Optimize TCP socket for maximum performance
-    fn optimize_socket(stream: &TcpStream) -> Result<(), String> {
-        // Disable Nagle's algorithm for low latency
-        stream
-            .set_nodelay(true)
-            .map_err(|e| format!("Failed to set TCP_NODELAY: {}", e))?;
-
-        // Use socket2 for buffer size operations
-        let socket_ref = socket2::SockRef::from(stream);
-
-        // Set large send buffer for high throughput
-        if let Err(e) = socket_ref.set_send_buffer_size(SEND_BUFFER_SIZE) {
-            eprintln!("Warning: Failed to set send buffer size: {}", e);
-        }
-
-        // Set large receive buffer
-        if let Err(e) = socket_ref.set_recv_buffer_size(RECV_BUFFER_SIZE) {
-            eprintln!("Warning: Failed to set recv buffer size: {}", e);
-        }
-
-        // Enable TCP keepalive
-        let keepalive =
-            socket2::TcpKeepalive::new().with_time(Duration::from_secs(KEEPALIVE_INTERVAL_SECS));
-
-        if let Err(e) = socket_ref.set_tcp_keepalive(&keepalive) {
-            eprintln!("Warning: Failed to set TCP keepalive: {}", e);
-        }
-
-        println!("✓ TCP socket optimized for {}", stream.peer_addr().unwrap());
-        Ok(())
     }
 
     /// Send a frame over this connection
@@ -151,7 +120,10 @@ impl Connection {
     /// TCP error on the socket (e.g. connection reset, broken pipe).
     /// Returns `true` otherwise (the socket *may* still be alive).
     pub fn has_socket_error(&self) -> bool {
-        let socket_ref = socket2::SockRef::from(self.writer.get_ref());
+        // Access the underlying TcpStream through the TLS and BufWriter layers
+        let tls_stream = self.writer.get_ref();
+        let tcp_stream = tls_stream.get_ref().0;
+        let socket_ref = socket2::SockRef::from(tcp_stream);
         match socket_ref.take_error() {
             Ok(Some(_)) => true, // pending error
             _ => false,
@@ -184,21 +156,24 @@ impl Connection {
     }
 }
 
-/// TCP Client with connection pooling and encryption support
+/// TCP Client with connection pooling, TLS encryption, and secure channel support
 pub struct TcpClient {
     /// Pool of active connections indexed by device ID
     connections: Arc<RwLock<HashMap<String, Arc<Mutex<Connection>>>>>,
-    /// Secure channel manager for encryption
+    /// Secure channel manager for application-layer encryption
     secure_channel_manager: Arc<SecureChannelManager>,
+    /// TLS connector for transport-layer encryption
+    tls_connector: TlsConnector,
 }
 
 impl TcpClient {
-    /// Create a new TCP client with encryption support
+    /// Create a new TCP client with TLS and encryption support
     pub fn new(
         local_device_id: String,
         display_name: String,
         platform: String,
         app_version: String,
+        tls_connector: TlsConnector,
     ) -> Self {
         Self {
             connections: Arc::new(RwLock::new(HashMap::new())),
@@ -208,7 +183,39 @@ impl TcpClient {
                 platform,
                 app_version,
             )),
+            tls_connector,
         }
+    }
+
+    /// Optimize TCP socket for maximum performance (called before TLS wrapping)
+    fn optimize_socket(stream: &TcpStream) -> Result<(), String> {
+        // Disable Nagle's algorithm for low latency
+        stream
+            .set_nodelay(true)
+            .map_err(|e| format!("Failed to set TCP_NODELAY: {}", e))?;
+
+        // Use socket2 for buffer size operations
+        let socket_ref = socket2::SockRef::from(stream);
+
+        // Set large send buffer for high throughput
+        if let Err(e) = socket_ref.set_send_buffer_size(SEND_BUFFER_SIZE) {
+            eprintln!("Warning: Failed to set send buffer size: {}", e);
+        }
+
+        // Set large receive buffer
+        if let Err(e) = socket_ref.set_recv_buffer_size(RECV_BUFFER_SIZE) {
+            eprintln!("Warning: Failed to set recv buffer size: {}", e);
+        }
+
+        // Enable TCP keepalive
+        let keepalive =
+            socket2::TcpKeepalive::new().with_time(Duration::from_secs(KEEPALIVE_INTERVAL_SECS));
+
+        if let Err(e) = socket_ref.set_tcp_keepalive(&keepalive) {
+            eprintln!("Warning: Failed to set TCP keepalive: {}", e);
+        }
+
+        Ok(())
     }
 
     /// Get or create a connection to a device.
@@ -284,23 +291,29 @@ impl TcpClient {
 
         println!("✓ TCP connection established to {}", socket_addr);
 
-        // Create connection wrapper
-        let mut connection = Connection::new(stream, device_id.to_string()).await?;
+        // Optimize socket before TLS wrapping
+        Self::optimize_socket(&stream)?;
 
-        // Perform secure handshake
-        match self.perform_handshake(&mut connection, device_id).await {
-            Ok(session) => {
-                connection.set_session(session);
-                println!("🔒 Secure session established with {}", device_id);
-            }
-            Err(e) => {
-                eprintln!(
-                    "⚠️ Handshake failed with {}: {} (falling back to plaintext)",
-                    device_id, e
-                );
-                // Continue without encryption for backward compatibility
-            }
-        }
+        // Wrap with TLS
+        let server_name = rustls::pki_types::ServerName::try_from("hyper-connect.local")
+            .map_err(|e| format!("Invalid server name: {}", e))?
+            .to_owned();
+        let tls_stream = self
+            .tls_connector
+            .connect(server_name, stream)
+            .await
+            .map_err(|e| format!("TLS handshake failed: {}", e))?;
+
+        println!("🔒 TLS connection established to {}", socket_addr);
+
+        // Create connection wrapper
+        let mut connection = Connection::new(tls_stream, device_id.to_string()).await?;
+
+        // Perform secure handshake (required — plaintext connections are not allowed)
+        let session = self.perform_handshake(&mut connection, device_id).await
+            .map_err(|e| format!("Secure handshake failed with {}: {} (plaintext fallback is disabled)", device_id, e))?;
+        connection.set_session(session);
+        println!("🔒 Secure session established with {}", device_id);
 
         let conn_arc = Arc::new(Mutex::new(connection));
 
@@ -482,7 +495,7 @@ impl TcpClient {
         Ok(session)
     }
 
-    /// Send a text message (encrypted if session exists)
+    /// Send a text message (always encrypted — plaintext is not supported)
     pub async fn send_text_message(
         &self,
         device_id: &str,
@@ -490,25 +503,24 @@ impl TcpClient {
         port: u16,
         payload: Vec<u8>,
     ) -> Result<(), String> {
-        // Get connection to check for session
+        // Get connection (handshake is mandatory, so session is guaranteed)
         let conn = self.get_connection(device_id, address, port).await?;
         let has_session = {
             let conn_lock = conn.lock().await;
             conn_lock.has_session()
         };
 
-        if has_session {
-            // Encrypt the message
-            let plaintext = String::from_utf8(payload)
-                .map_err(|e| format!("Invalid UTF-8 in payload: {}", e))?;
-            self.send_encrypted_message(device_id, address, port, &plaintext)
-                .await
-        } else {
-            // Fallback to plaintext (backward compatibility)
-            println!("⚠️ Sending plaintext message to {} (no session)", device_id);
-            let frame = Frame::new(MessageType::TextMessage, payload);
-            self.send_frame(device_id, address, port, frame).await
+        if !has_session {
+            return Err(format!(
+                "No encrypted session with {} — cannot send message without encryption",
+                device_id
+            ));
         }
+
+        let plaintext = String::from_utf8(payload)
+            .map_err(|e| format!("Invalid UTF-8 in payload: {}", e))?;
+        self.send_encrypted_message(device_id, address, port, &plaintext)
+            .await
     }
 
     /// Send an encrypted message (requires active session)
@@ -649,6 +661,7 @@ impl Clone for TcpClient {
         Self {
             connections: Arc::clone(&self.connections),
             secure_channel_manager: Arc::clone(&self.secure_channel_manager),
+            tls_connector: self.tls_connector.clone(),
         }
     }
 }
@@ -659,11 +672,19 @@ mod tests {
 
     #[test]
     fn test_client_creation() {
+        // Create a test TLS connector (accepts any cert for testing)
+        use crate::crypto::tls::TlsConfig;
+        let tmp_dir = std::env::temp_dir().join("hyper-connect-test-tls");
+        let _ = std::fs::create_dir_all(&tmp_dir);
+        let tls_config = TlsConfig::new(&tmp_dir).expect("Failed to create TLS config");
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+
         let client = TcpClient::new(
             "test-device".to_string(),
             "Test Device".to_string(),
             "test-platform".to_string(),
             "0.1.0".to_string(),
+            tls_config.connector,
         );
         assert_eq!(
             tokio::runtime::Runtime::new()

@@ -1,16 +1,16 @@
 //! TCP Server
 //!
-//! High-performance TCP server with encryption support.
-//! Handles both secure (encrypted) and plaintext (legacy) connections.
+//! High-performance TCP server with mandatory encryption.
+//! All connections must use the secure handshake (HelloSecure).
 
 use crate::crypto::{decrypt_message, Session, StreamDecryptor, STREAM_BUFFER_SIZE};
 use crate::discovery::MdnsDiscoveryService;
 use crate::messaging::{MessageStatus, MessagingService};
 use crate::network::file_transfer::FileTransferService;
 use crate::network::protocol::{
-    deserialize_json, FileCancelPayload, FileCompletePayload, FileDataHeader, FileRejectPayload,
-    FileRequestPayload, Frame, HeartbeatPayload, HelloPayload, MessageAckPayload, MessageType,
-    PingPayload, PongPayload, TextMessagePayload,
+    deserialize_json, FileCancelPayload, FileCompletePayload, FileRejectPayload,
+    FileRequestPayload, Frame, MessageAckPayload, MessageType, PingPayload, PongPayload,
+    TextMessagePayload,
 };
 use crate::network::secure_channel::SecureChannelManager;
 use std::net::SocketAddr;
@@ -20,6 +20,8 @@ use tauri::{AppHandle, Emitter, Manager};
 use tokio::io::{AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::Mutex;
+use tokio_rustls::server::TlsStream;
+use tokio_rustls::TlsAcceptor;
 
 /// Receive buffer size (256KB for efficient message handling)
 const RECV_BUFFER_SIZE: usize = 256 * 1024;
@@ -30,20 +32,22 @@ const SEND_BUFFER_SIZE: usize = 256 * 1024;
 /// Keep-alive interval in seconds
 const KEEPALIVE_INTERVAL_SECS: u64 = 30;
 
-/// TCP Server with encryption support
+/// TCP Server with TLS and encryption support
 pub struct TcpServer {
     file_transfer_service: Arc<Mutex<FileTransferService>>,
     secure_channel_manager: Arc<SecureChannelManager>,
+    tls_acceptor: TlsAcceptor,
 }
 
 impl TcpServer {
-    /// Create a new TCP server with encryption support
+    /// Create a new TCP server with TLS and encryption support
     pub fn new(
         file_transfer_service: Arc<Mutex<FileTransferService>>,
         local_device_id: String,
         display_name: String,
         platform: String,
         app_version: String,
+        tls_acceptor: TlsAcceptor,
     ) -> Self {
         let secure_channel_manager = Arc::new(SecureChannelManager::new(
             local_device_id,
@@ -55,6 +59,7 @@ impl TcpServer {
         Self {
             file_transfer_service,
             secure_channel_manager,
+            tls_acceptor,
         }
     }
 
@@ -77,6 +82,7 @@ impl TcpServer {
         // Clone what we need for the accept loop
         let file_transfer = Arc::clone(&self.file_transfer_service);
         let secure_channel = Arc::clone(&self.secure_channel_manager);
+        let tls_acceptor = self.tls_acceptor.clone();
 
         // Spawn accept loop
         tokio::spawn(async move {
@@ -88,11 +94,31 @@ impl TcpServer {
                         let file_transfer_clone = Arc::clone(&file_transfer);
                         let app_clone = app_handle.clone();
                         let secure_channel_clone = Arc::clone(&secure_channel);
+                        let tls_acceptor_clone = tls_acceptor.clone();
 
                         // Spawn connection handler
                         tokio::spawn(async move {
+                            // Optimize socket before TLS
+                            if let Err(e) = Self::optimize_socket(&stream) {
+                                eprintln!("Socket optimization warning from {}: {}", peer_addr, e);
+                            }
+
+                            // Perform TLS handshake
+                            let tls_stream = match tls_acceptor_clone.accept(stream).await {
+                                Ok(tls_stream) => tls_stream,
+                                Err(e) => {
+                                    eprintln!(
+                                        "TLS handshake failed from {}: {}",
+                                        peer_addr, e
+                                    );
+                                    return;
+                                }
+                            };
+
+                            println!("🔒 TLS connection established from {}", peer_addr);
+
                             if let Err(e) = Self::handle_connection(
-                                stream,
+                                tls_stream,
                                 peer_addr,
                                 file_transfer_clone,
                                 app_clone,
@@ -116,18 +142,15 @@ impl TcpServer {
         Ok(())
     }
 
-    /// Handle an incoming connection with encryption support
+    /// Handle an incoming TLS connection with application-layer encryption
     async fn handle_connection(
-        stream: TcpStream,
+        stream: TlsStream<TcpStream>,
         peer_addr: SocketAddr,
         file_transfer_service: Arc<Mutex<FileTransferService>>,
         app_handle: AppHandle,
         secure_channel_manager: Arc<SecureChannelManager>,
     ) -> Result<(), String> {
-        // Optimize socket
-        Self::optimize_socket(&stream)?;
-
-        // Create buffered reader
+        // Create buffered reader over the TLS stream
         let mut reader = BufReader::with_capacity(RECV_BUFFER_SIZE, stream);
 
         // Read first frame to determine if secure handshake
@@ -151,35 +174,43 @@ impl TcpServer {
             )
             .await
         } else {
-            // Fallback to plaintext connection (backward compatibility)
-            println!(
-                "⚠️ Plaintext connection from {} (encryption recommended)",
-                peer_addr
+            // Reject plaintext connections — encryption is mandatory
+            eprintln!(
+                "🔒 REJECTED plaintext connection from {} (encryption required, got {:?})",
+                peer_addr, first_frame.message_type
             );
 
             // Emit security warning
             let _ = app_handle.emit(
                 "security-warning",
                 serde_json::json!({
-                    "message": "Plaintext connection detected",
+                    "message": "Plaintext connection rejected — encryption is required",
                     "peer": peer_addr.to_string(),
                 }),
             );
 
-            Self::handle_plaintext_connection(
-                reader,
-                first_frame,
-                peer_addr,
-                file_transfer_service,
-                app_handle,
-            )
-            .await
+            // Send error frame before closing
+            let error_payload = serde_json::to_vec(&serde_json::json!({
+                "code": "ENCRYPTION_REQUIRED",
+                "message": "This server requires encrypted connections. Send HelloSecure to initiate."
+            }))
+            .unwrap_or_default();
+            let error_frame = Frame::new(MessageType::Error, error_payload);
+
+            let stream = reader.get_mut();
+            let _ = stream.write_all(&error_frame.encode()).await;
+            let _ = stream.flush().await;
+
+            Err(format!(
+                "Rejected plaintext connection from {} — encryption is required",
+                peer_addr
+            ))
         }
     }
 
     /// Handle secure (encrypted) connection
     async fn handle_secure_connection(
-        mut reader: BufReader<TcpStream>,
+        mut reader: BufReader<TlsStream<TcpStream>>,
         hello_frame: Frame,
         peer_addr: SocketAddr,
         secure_channel_manager: Arc<SecureChannelManager>,
@@ -270,7 +301,7 @@ impl TcpServer {
 
     /// Handle encrypted session (all messages encrypted)
     async fn handle_encrypted_session(
-        mut reader: BufReader<TcpStream>,
+        mut reader: BufReader<TlsStream<TcpStream>>,
         session: Session,
         peer_device_id: String,
         file_transfer_service: Arc<Mutex<FileTransferService>>,
@@ -461,7 +492,7 @@ impl TcpServer {
 
     /// Handle encrypted file stream
     async fn handle_encrypted_file_stream(
-        reader: &mut BufReader<TcpStream>,
+        reader: &mut BufReader<TlsStream<TcpStream>>,
         session: &Session,
         init_frame: &Frame,
         file_transfer_service: &Arc<Mutex<FileTransferService>>,
@@ -536,118 +567,6 @@ impl TcpServer {
         Ok(())
     }
 
-    /// Handle plaintext (legacy) connection
-    async fn handle_plaintext_connection(
-        mut reader: BufReader<TcpStream>,
-        first_frame: Frame,
-        _peer_addr: SocketAddr,
-        file_transfer_service: Arc<Mutex<FileTransferService>>,
-        app_handle: AppHandle,
-    ) -> Result<(), String> {
-        // Track peer device ID (learned from HELLO or first message)
-        let mut peer_device_id: Option<String> = None;
-
-        // Process the first frame (Ping handled inline; everything else dispatched)
-        if first_frame.message_type == MessageType::Ping {
-            Self::handle_ping_frame(&first_frame, &mut reader).await?;
-        } else {
-            Self::handle_plaintext_frame(
-                &first_frame,
-                &mut peer_device_id,
-                &file_transfer_service,
-                &app_handle,
-            )
-            .await?;
-        }
-
-        // Continue with regular message loop for plaintext
-        loop {
-            let frame = match tokio::time::timeout(
-                Duration::from_secs(120),
-                Frame::decode_async(&mut reader),
-            )
-            .await
-            {
-                Ok(Ok(frame)) => frame,
-                Ok(Err(e)) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
-                    if let Some(device_id) = peer_device_id {
-                        let _ = app_handle.emit(
-                            "device-disconnected",
-                            serde_json::json!({ "device_id": device_id }),
-                        );
-                    }
-                    return Ok(());
-                }
-                Ok(Err(e)) => return Err(format!("Failed to read frame: {}", e)),
-                Err(_) => return Err("Connection timeout".to_string()),
-            };
-
-            // Ping frames are answered inline so we can write back on the same reader
-            if frame.message_type == MessageType::Ping {
-                Self::handle_ping_frame(&frame, &mut reader).await?;
-            } else {
-                Self::handle_plaintext_frame(
-                    &frame,
-                    &mut peer_device_id,
-                    &file_transfer_service,
-                    &app_handle,
-                )
-                .await?;
-            }
-        }
-    }
-
-    /// Handle plaintext frame (backward compatibility)
-    async fn handle_plaintext_frame(
-        frame: &Frame,
-        peer_device_id: &mut Option<String>,
-        file_transfer_service: &Arc<Mutex<FileTransferService>>,
-        app_handle: &AppHandle,
-    ) -> Result<(), String> {
-        // Process frame based on message type
-        match frame.message_type {
-            MessageType::Hello => {
-                *peer_device_id = Self::handle_hello(frame, app_handle).await?;
-            }
-            MessageType::TextMessage => {
-                Self::handle_text_message(frame, app_handle).await?;
-            }
-            MessageType::MessageDelivered | MessageType::MessageRead => {
-                Self::handle_message_ack(frame, app_handle).await?;
-            }
-            MessageType::FileRequest => {
-                Self::handle_file_request(frame, file_transfer_service, app_handle).await?;
-            }
-            MessageType::FileData => {
-                Self::handle_file_data(frame, file_transfer_service, app_handle).await?;
-            }
-            MessageType::FileAck => {
-                // File acknowledgments can be handled if implementing windowing
-                // For now, we're doing simple streaming
-            }
-            MessageType::FileComplete => {
-                Self::handle_file_complete(frame, file_transfer_service, app_handle).await?;
-            }
-            MessageType::FileCancel => {
-                Self::handle_file_cancel(frame, app_handle).await?;
-            }
-            MessageType::FileReject => {
-                Self::handle_file_reject(frame, app_handle).await?;
-            }
-            MessageType::Heartbeat => {
-                Self::handle_heartbeat(frame).await?;
-            }
-            MessageType::Error => {
-                eprintln!("Received error message from peer");
-            }
-            _ => {
-                eprintln!("Unknown message type: {:?}", frame.message_type);
-            }
-        }
-
-        Ok(())
-    }
-
     /// Optimize TCP socket for maximum performance
     fn optimize_socket(stream: &TcpStream) -> Result<(), String> {
         // Disable Nagle's algorithm for low latency
@@ -676,52 +595,6 @@ impl TcpServer {
             eprintln!("Warning: Failed to set TCP keepalive: {}", e);
         }
 
-        Ok(())
-    }
-
-    /// Handle HELLO message
-    async fn handle_hello(frame: &Frame, app_handle: &AppHandle) -> Result<Option<String>, String> {
-        let payload: HelloPayload = deserialize_json(&frame.payload)?;
-
-        println!(
-            "👋 HELLO from {} ({})",
-            payload.display_name, payload.device_id
-        );
-
-        // Emit device-connected event
-        let _ = app_handle.emit(
-            "device-connected",
-            serde_json::json!({
-                "device_id": payload.device_id,
-                "display_name": payload.display_name,
-                "platform": payload.platform,
-                "app_version": payload.app_version,
-                "encrypted": false,
-            }),
-        );
-
-        Ok(Some(payload.device_id))
-    }
-
-    /// Handle text message
-    async fn handle_text_message(frame: &Frame, app_handle: &AppHandle) -> Result<(), String> {
-        let payload: TextMessagePayload = deserialize_json(&frame.payload)?;
-
-        println!(
-            "💬 Message from {}: {}",
-            payload.from_device_id, payload.content
-        );
-
-        // Persist in the MessagingService so get_messages works on the
-        // receiver side.
-        if let Some(messaging) = app_handle.try_state::<MessagingService>() {
-            let _: () = messaging.store_received_message(&payload).await;
-
-            // Send a delivery ACK back to the original sender
-            Self::try_send_delivery_ack(&payload, &messaging, app_handle).await;
-        }
-
-        let _ = app_handle.emit("message-received", &payload);
         Ok(())
     }
 
@@ -804,129 +677,4 @@ impl TcpServer {
         Ok(())
     }
 
-    /// Handle file request
-    async fn handle_file_request(
-        frame: &Frame,
-        _file_transfer_service: &Arc<Mutex<FileTransferService>>,
-        app_handle: &AppHandle,
-    ) -> Result<(), String> {
-        let payload: FileRequestPayload = deserialize_json(&frame.payload)?;
-
-        println!(
-            "📎 File request: {} ({} bytes) from {}",
-            payload.filename, payload.file_size, payload.from_device_id
-        );
-
-        // Register transfer
-        // Note: FileTransferService interface may need adjustment
-        // For now, just emit the event
-
-        let _ = app_handle.emit("file-request-received", payload);
-        Ok(())
-    }
-
-    /// Handle file data chunk
-    async fn handle_file_data(
-        frame: &Frame,
-        _file_transfer_service: &Arc<Mutex<FileTransferService>>,
-        app_handle: &AppHandle,
-    ) -> Result<(), String> {
-        // Decode file data header
-        let (header, header_size) = FileDataHeader::decode(&frame.payload)
-            .map_err(|e| format!("Invalid file data header: {}", e))?;
-
-        let chunk_data = &frame.payload[header_size..];
-
-        // Note: FileTransferService interface may need adjustment
-        // For now, just emit the progress
-
-        // Emit progress event
-        let _ = app_handle.emit(
-            "transfer-progress",
-            serde_json::json!({
-                "transfer_id": header.transfer_id,
-                "offset": header.offset,
-                "chunk_size": chunk_data.len(),
-            }),
-        );
-
-        Ok(())
-    }
-
-    /// Handle file complete
-    async fn handle_file_complete(
-        frame: &Frame,
-        _file_transfer_service: &Arc<Mutex<FileTransferService>>,
-        app_handle: &AppHandle,
-    ) -> Result<(), String> {
-        let payload: FileCompletePayload = deserialize_json(&frame.payload)?;
-
-        println!("✅ File transfer complete: {}", payload.transfer_id);
-
-        // Note: FileTransferService interface may need adjustment
-        // For now, just emit the event
-
-        let _ = app_handle.emit("transfer-completed", payload);
-        Ok(())
-    }
-
-    /// Handle file cancel
-    async fn handle_file_cancel(frame: &Frame, app_handle: &AppHandle) -> Result<(), String> {
-        let payload: FileCancelPayload = deserialize_json(&frame.payload)?;
-
-        println!("🛑 File transfer cancelled: {}", payload.transfer_id);
-
-        let _ = app_handle.emit("file-cancelled", payload);
-        Ok(())
-    }
-
-    /// Handle file reject
-    async fn handle_file_reject(frame: &Frame, app_handle: &AppHandle) -> Result<(), String> {
-        let payload: FileRejectPayload = deserialize_json(&frame.payload)?;
-
-        println!("❌ File transfer rejected: {}", payload.transfer_id);
-
-        let _ = app_handle.emit("file-rejected", payload);
-        Ok(())
-    }
-
-    /// Handle heartbeat (legacy keepalive – no response required)
-    async fn handle_heartbeat(frame: &Frame) -> Result<(), String> {
-        let payload: HeartbeatPayload = deserialize_json(&frame.payload)?;
-        println!("💓 Heartbeat from {}", payload.device_id);
-        Ok(())
-    }
-
-    /// Respond to a Ping frame with a Pong on the same socket.
-    ///
-    /// This is called inline in the connection loops (not via `handle_plaintext_frame`)
-    /// because we need mutable access to the reader/stream to write the response.
-    async fn handle_ping_frame(
-        frame: &Frame,
-        reader: &mut BufReader<TcpStream>,
-    ) -> Result<(), String> {
-        let ping: PingPayload = serde_json::from_slice(&frame.payload)
-            .map_err(|e| format!("Invalid Ping payload: {}", e))?;
-
-        println!("🏓 Ping from {} – sending Pong", ping.device_id);
-
-        let pong_payload = serde_json::to_vec(&PongPayload {
-            device_id: ping.device_id.clone(),
-            sent_at_ms: ping.sent_at_ms,
-        })
-        .map_err(|e| format!("Failed to serialize Pong: {}", e))?;
-        let pong_frame = Frame::new(MessageType::Pong, pong_payload);
-
-        let stream = reader.get_mut();
-        stream
-            .write_all(&pong_frame.encode())
-            .await
-            .map_err(|e| format!("Failed to send Pong: {}", e))?;
-        stream
-            .flush()
-            .await
-            .map_err(|e| format!("Failed to flush Pong: {}", e))?;
-
-        Ok(())
-    }
 }

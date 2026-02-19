@@ -26,9 +26,13 @@ const MAX_PAYLOAD_SIZE: u32 = 100 * 1024 * 1024;
 #[repr(u8)]
 pub enum MessageType {
     /// Connection handshake with device info
+    #[deprecated(note = "Plaintext Hello is no longer accepted. Use HelloSecure (0x10) instead.")]
     Hello = 0x01,
 
     /// Text message between devices
+    #[deprecated(
+        note = "Plaintext TextMessage is no longer accepted. Send text inside EncryptedMessage (0x12) instead."
+    )]
     TextMessage = 0x02,
 
     /// File transfer request (includes metadata)
@@ -90,7 +94,11 @@ pub enum MessageType {
 }
 
 impl MessageType {
-    /// Convert from byte to MessageType
+    /// Convert from byte to MessageType.
+    ///
+    /// Note: deprecated variants are still parsed here so the server can
+    /// produce a meaningful rejection error when a legacy client connects.
+    #[allow(deprecated)]
     pub fn from_u8(value: u8) -> Option<Self> {
         match value {
             0x01 => Some(MessageType::Hello),
@@ -234,6 +242,7 @@ impl Frame {
 // ============================================================================
 
 /// Hello handshake message sent on connection establishment
+#[deprecated(note = "Use HelloSecure from the crypto module instead. Plaintext Hello is no longer accepted.")]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HelloPayload {
     pub protocol_version: u8,
@@ -425,6 +434,7 @@ fn default_file_reject_type() -> String {
 }
 
 /// Heartbeat message
+#[deprecated(note = "Heartbeat keepalives within encrypted sessions use inline handling. This payload struct is unused.")]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HeartbeatPayload {
     pub device_id: String,
@@ -497,6 +507,7 @@ pub fn deserialize_json<'a, T: Deserialize<'a>>(data: &'a [u8]) -> Result<T, Str
 }
 
 #[cfg(test)]
+#[allow(deprecated)]
 mod tests {
     use super::*;
 

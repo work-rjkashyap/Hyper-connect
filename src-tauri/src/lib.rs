@@ -10,6 +10,7 @@ mod ipc;
 mod messaging;
 mod network;
 
+use crypto::tls::TlsConfig;
 use discovery::MdnsDiscoveryService;
 use identity::IdentityManager;
 use messaging::MessagingService;
@@ -79,12 +80,18 @@ pub fn run() {
 
             println!("✓ TCP port: {}", tcp_port);
 
-            // Initialize TCP client with encryption support
+            // Initialize TLS configuration (generates or loads self-signed certificate)
+            let tls_config = TlsConfig::new(&app_data_dir)
+                .expect("Failed to initialize TLS configuration");
+            println!("✓ TLS configuration initialized");
+
+            // Initialize TCP client with TLS and encryption support
             let tcp_client = Arc::new(TcpClient::new(
                 identity.device_id.clone(),
                 identity.display_name.clone(),
                 identity.platform.clone(),
                 identity.app_version.clone(),
+                tls_config.connector,
             ));
 
             // Initialize messaging service
@@ -97,13 +104,14 @@ pub fn run() {
             file_transfer_service.set_tcp_client(Arc::clone(&tcp_client));
             file_transfer_service.set_tcp_port(tcp_port);
 
-            // Initialize TCP server with encryption support
+            // Initialize TCP server with TLS and encryption support
             let tcp_server = TcpServer::new(
                 Arc::new(Mutex::new(file_transfer_service.clone())),
                 identity.device_id.clone(),
                 identity.display_name.clone(),
                 identity.platform.clone(),
                 identity.app_version.clone(),
+                tls_config.acceptor,
             );
 
             // Start TCP server
