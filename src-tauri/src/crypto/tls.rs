@@ -50,6 +50,13 @@ impl TlsConfig {
     /// # Arguments
     /// * `data_dir` - Directory to store/load certificate files
     pub fn new(data_dir: &Path) -> Result<Self, String> {
+        // Explicitly install `ring` as the process-wide CryptoProvider.
+        // Cargo feature-unification can merge both `ring` and `aws-lc-rs`
+        // features on rustls (e.g. via tauri-plugin-updater → reqwest),
+        // which prevents rustls from auto-selecting a provider at runtime.
+        // The Err case just means it was already installed — safe to ignore.
+        let _ = rustls::crypto::ring::default_provider().install_default();
+
         let cert_path = data_dir.join(CERT_FILENAME);
         let key_path = data_dir.join(KEY_FILENAME);
 
