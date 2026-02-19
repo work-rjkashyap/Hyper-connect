@@ -146,6 +146,7 @@ impl SecureChannelManager {
             .map_err(|e| format!("Failed to deserialize HELLO_SECURE: {}", e))?;
 
         let peer_device_id = hello.device_id.clone();
+        let handshake_id = hello.handshake_id.clone();
         println!("🔑 Received HELLO_SECURE from {}", peer_device_id);
 
         // Generate response
@@ -171,10 +172,14 @@ impl SecureChannelManager {
             .await
             .map_err(|e| format!("Failed to flush: {}", e))?;
 
-        // Finalize handshake
-        let session = self
-            .handshake_manager
-            .finalize_handshake(&peer_device_id, &hello.public_key)?;
+        // Finalize handshake – use handshake_id (not peer_device_id) so that
+        // concurrent incoming connections from the same device look up
+        // independent keypairs and cannot overwrite each other.
+        let session = self.handshake_manager.finalize_handshake(
+            &peer_device_id,
+            &hello.public_key,
+            &handshake_id,
+        )?;
 
         // Store session
         self.sessions

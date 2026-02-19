@@ -93,7 +93,7 @@ mod integration_tests {
 
         let alice_session = alice_manager.complete_handshake(response).unwrap();
         let bob_session = bob_manager
-            .finalize_handshake("alice", &hello.public_key)
+            .finalize_handshake("alice", &hello.public_key, &hello.handshake_id)
             .unwrap();
 
         // Message encryption

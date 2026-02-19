@@ -107,10 +107,7 @@ impl TcpServer {
                             let tls_stream = match tls_acceptor_clone.accept(stream).await {
                                 Ok(tls_stream) => tls_stream,
                                 Err(e) => {
-                                    eprintln!(
-                                        "TLS handshake failed from {}: {}",
-                                        peer_addr, e
-                                    );
+                                    eprintln!("TLS handshake failed from {}: {}", peer_addr, e);
                                     return;
                                 }
                             };
@@ -224,21 +221,18 @@ impl TcpServer {
             .map_err(|e| format!("Invalid HELLO_SECURE: {}", e))?;
 
         let peer_device_id = hello.device_id.clone();
-        println!("🔑 Received HELLO_SECURE from {}", peer_device_id);
-
-        // We need to parse the hello first to handle it properly
-        // The secure channel manager expects to read the hello itself
-        // So we need to recreate the frame or adjust our approach
-
-        // For now, let's manually handle the handshake here
-        // This avoids the complex double-read issue
+        let handshake_id = hello.handshake_id.clone();
+        println!(
+            "🔑 Received HELLO_SECURE from {} (handshake: {})",
+            peer_device_id, handshake_id
+        );
 
         use crate::crypto::HandshakeManager;
 
         let handshake_manager = HandshakeManager::new();
 
-        // Clone hello for response generation
-        let public_key = hello.public_key.clone();
+        // Clone fields needed after `hello` is consumed by handle_hello_secure.
+        let public_key = hello.public_key;
 
         // Generate response
         let response = handshake_manager.handle_hello_secure(
@@ -264,8 +258,12 @@ impl TcpServer {
             .await
             .map_err(|e| format!("Failed to flush: {}", e))?;
 
-        // Finalize handshake and get session
-        let session = handshake_manager.finalize_handshake(&peer_device_id, &public_key)?;
+        // Finalize handshake and get session.
+        // Pass `handshake_id` (not just `peer_device_id`) so the lookup in
+        // `pending_keypairs` is unambiguous even when multiple connections from
+        // the same peer device arrive concurrently.
+        let session =
+            handshake_manager.finalize_handshake(&peer_device_id, &public_key, &handshake_id)?;
 
         println!("✓ Secure session established with {}", peer_device_id);
 
@@ -676,5 +674,4 @@ impl TcpServer {
 
         Ok(())
     }
-
 }

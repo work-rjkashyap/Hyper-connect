@@ -160,6 +160,23 @@ impl Connection {
 pub struct TcpClient {
     /// Pool of active connections indexed by device ID
     connections: Arc<RwLock<HashMap<String, Arc<Mutex<Connection>>>>>,
+    /// Per-device mutex that serialises connection-creation attempts.
+    ///
+    /// Without this guard two concurrent callers (e.g. `ensure_connected` and
+    /// `send_message`) can both find the pool empty at the same instant and
+    /// each race to open a TCP connection + perform the ECDH handshake.
+    /// `HandshakeManager::pending_keypairs` is keyed by *peer device-id*, so
+    /// the second `initiate_handshake` call silently overwrites the first
+    /// caller's ephemeral keypair.  When the first caller later calls
+    /// `complete_handshake` it picks up the wrong keypair, derives the wrong
+    /// shared secret, and every subsequent AES-GCM decryption fails with
+    /// "authentication tag mismatch".
+    ///
+    /// The fix: before touching the pool or starting a handshake acquire the
+    /// per-device `Mutex<()>`.  A racing caller blocks until the first one
+    /// finishes, then re-checks the pool and reuses the already-established
+    /// connection.
+    connecting_locks: Arc<Mutex<HashMap<String, Arc<Mutex<()>>>>>,
     /// Secure channel manager for application-layer encryption
     secure_channel_manager: Arc<SecureChannelManager>,
     /// TLS connector for transport-layer encryption
@@ -177,6 +194,7 @@ impl TcpClient {
     ) -> Self {
         Self {
             connections: Arc::new(RwLock::new(HashMap::new())),
+            connecting_locks: Arc::new(Mutex::new(HashMap::new())),
             secure_channel_manager: Arc::new(SecureChannelManager::new(
                 local_device_id,
                 display_name,
@@ -237,22 +255,19 @@ impl TcpClient {
         address: &str,
         port: u16,
     ) -> Result<Arc<Mutex<Connection>>, String> {
-        // Check if we already have a pooled connection
+        // ── Fast path ────────────────────────────────────────────────────────
+        // Check the pool without acquiring any exclusive lock.  This is the
+        // common case: the connection already exists and is healthy.
         {
             let connections = self.connections.read().await;
             if let Some(conn) = connections.get(device_id) {
-                // Fast OS-level check first (no network round-trip)
-                let has_error = {
-                    let c = conn.lock().await;
-                    c.has_socket_error()
-                };
-
+                let has_error = conn.lock().await.has_socket_error();
                 if has_error {
                     println!(
-                        "⚠️ Pooled connection to {} has a socket error – evicting",
+                        "⚠️ Pooled connection to {} has a socket error – will reconnect",
                         device_id
                     );
-                    // Fall through to reconnect; eviction happens below
+                    // Fall through to the slow path below.
                 } else {
                     println!("✓ Reusing existing connection to {}", device_id);
                     return Ok(Arc::clone(conn));
@@ -260,13 +275,46 @@ impl TcpClient {
             }
         }
 
-        // Evict any stale/errored entry before creating a fresh connection
+        // ── Slow path: acquire the per-device creation lock ──────────────────
+        // Only one task per device-id may reach this point at a time.
+        // Any other caller that lost the race will:
+        //   1. Block here until we finish.
+        //   2. Re-check the pool (double-checked locking pattern).
+        //   3. Find the connection we just stored and return it directly,
+        //      skipping the expensive TCP + TLS + ECDH setup entirely.
+        let device_lock = {
+            let mut locks = self.connecting_locks.lock().await;
+            Arc::clone(
+                locks
+                    .entry(device_id.to_string())
+                    .or_insert_with(|| Arc::new(Mutex::new(()))),
+            )
+        };
+        let _creation_guard = device_lock.lock().await;
+
+        // Re-check the pool now that we hold the per-device lock.  A concurrent
+        // caller may have established the connection while we were waiting.
+        {
+            let connections = self.connections.read().await;
+            if let Some(conn) = connections.get(device_id) {
+                let has_error = conn.lock().await.has_socket_error();
+                if !has_error {
+                    println!(
+                        "✓ Connection to {} was established while waiting; reusing it",
+                        device_id
+                    );
+                    return Ok(Arc::clone(conn));
+                }
+            }
+        }
+
+        // Evict any stale/errored entry before creating a fresh connection.
         {
             let mut connections = self.connections.write().await;
             connections.remove(device_id);
         }
 
-        // Need to create a new connection
+        // Need to create a new connection.
         println!(
             "→ Connecting to {}:{} (device: {})",
             address, port, device_id
@@ -310,8 +358,15 @@ impl TcpClient {
         let mut connection = Connection::new(tls_stream, device_id.to_string()).await?;
 
         // Perform secure handshake (required — plaintext connections are not allowed)
-        let session = self.perform_handshake(&mut connection, device_id).await
-            .map_err(|e| format!("Secure handshake failed with {}: {} (plaintext fallback is disabled)", device_id, e))?;
+        let session = self
+            .perform_handshake(&mut connection, device_id)
+            .await
+            .map_err(|e| {
+                format!(
+                    "Secure handshake failed with {}: {} (plaintext fallback is disabled)",
+                    device_id, e
+                )
+            })?;
         connection.set_session(session);
         println!("🔒 Secure session established with {}", device_id);
 
@@ -517,8 +572,8 @@ impl TcpClient {
             ));
         }
 
-        let plaintext = String::from_utf8(payload)
-            .map_err(|e| format!("Invalid UTF-8 in payload: {}", e))?;
+        let plaintext =
+            String::from_utf8(payload).map_err(|e| format!("Invalid UTF-8 in payload: {}", e))?;
         self.send_encrypted_message(device_id, address, port, &plaintext)
             .await
     }
@@ -660,6 +715,7 @@ impl Clone for TcpClient {
     fn clone(&self) -> Self {
         Self {
             connections: Arc::clone(&self.connections),
+            connecting_locks: Arc::clone(&self.connecting_locks),
             secure_channel_manager: Arc::clone(&self.secure_channel_manager),
             tls_connector: self.tls_connector.clone(),
         }
