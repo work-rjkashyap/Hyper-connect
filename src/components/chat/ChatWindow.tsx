@@ -26,12 +26,15 @@ import {
 } from "@/components/ui/dropdown-menu";
 import MessageBubble from "./MessageBubble";
 import ChatInput from "./ChatInput";
+import DateSeparator, { getDateKey } from "./DateSeparator";
 
 export interface UIMessage {
 	id: string;
 	content: string;
 	sender: "me" | "them";
 	timestamp: string;
+	/** Unix timestamp in seconds – used for date separator grouping */
+	rawTimestamp: number;
 	status: "sent" | "delivered" | "read";
 	type: "text" | "image";
 	imageUrl?: string;
@@ -430,21 +433,37 @@ export function ChatWindow({
 					</div>
 				) : (
 					<div className="flex flex-col gap-3 sm:gap-4 pb-4">
-						{messages.map((msg, index) => (
-							<MessageBubble
-								key={msg.id}
-								id={msg.id}
-								content={msg.content}
-								sender={msg.sender}
-								timestamp={msg.timestamp}
-								status={msg.status}
-								type={msg.type}
-								imageUrl={msg.imageUrl}
-								recipientName={recipientName}
-								recipientAvatar={recipientAvatar}
-								animationDelay={index * 50}
-							/>
-						))}
+						{messages.map((msg, index) => {
+							// Show a date separator when the calendar day changes
+							const prevMsg =
+								index > 0 ? messages[index - 1] : null;
+							const showDateSeparator =
+								!prevMsg ||
+								getDateKey(msg.rawTimestamp) !==
+									getDateKey(prevMsg.rawTimestamp);
+
+							return (
+								<div key={msg.id}>
+									{showDateSeparator && (
+										<DateSeparator
+											timestamp={msg.rawTimestamp}
+										/>
+									)}
+									<MessageBubble
+										id={msg.id}
+										content={msg.content}
+										sender={msg.sender}
+										timestamp={msg.timestamp}
+										status={msg.status}
+										type={msg.type}
+										imageUrl={msg.imageUrl}
+										recipientName={recipientName}
+										recipientAvatar={recipientAvatar}
+										animationDelay={index * 50}
+									/>
+								</div>
+							);
+						})}
 					</div>
 				)}
 			</ScrollArea>

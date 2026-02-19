@@ -461,6 +461,7 @@ export default function ChatPage() {
 						minute: "2-digit",
 					},
 				),
+				rawTimestamp: msg.timestamp,
 				status: msg.status as "sent" | "delivered" | "read",
 				type: "text",
 			}))}
