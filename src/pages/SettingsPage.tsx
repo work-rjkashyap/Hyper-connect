@@ -5,9 +5,21 @@ import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+    AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import { useAppStore } from '@/store';
 import { useState, useEffect } from 'react';
 import { cn } from '@/lib/utils';
+import { invoke } from '@tauri-apps/api/core';
 import {
     User,
     Palette,
@@ -22,13 +34,16 @@ import {
     Trash2,
     RefreshCw,
     Lock,
-    ExternalLink
+    ExternalLink,
+    AlertTriangle
 } from 'lucide-react';
 export default function SettingsPage() {
     const { deviceName, theme, toggleTheme, setDeviceName } = useAppStore();
     const [localDeviceName, setLocalDeviceName] = useState(deviceName || 'My Device');
     const [isSaving, setIsSaving] = useState(false);
     const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+    const [isResetting, setIsResetting] = useState(false);
+    const [isClearingCache, setIsClearingCache] = useState(false);
     // Mock settings state (in real app these would be in the store)
     const [settings, setSettings] = useState({
         autoDiscovery: true,
@@ -56,6 +71,55 @@ export default function SettingsPage() {
             setIsSaving(false);
             setHasUnsavedChanges(false);
         }, 800);
+    };
+
+    const handleResetApp = async () => {
+        setIsResetting(true);
+        try {
+            // Clear backend in-memory state (messages, threads, transfers, connections)
+            await invoke('clear_all_data');
+
+            // Clear the persisted Zustand store from localStorage
+            localStorage.removeItem('hyper-connect-storage');
+
+            // Reset in-memory Zustand store (sets isOnboarded = false, clears everything)
+            useAppStore.getState().reset();
+
+            // Reload the app — route guards will redirect to onboarding
+            window.location.reload();
+        } catch (err) {
+            console.error('Failed to reset app:', err);
+            setIsResetting(false);
+        }
+    };
+
+    const handleClearCache = async () => {
+        setIsClearingCache(true);
+        try {
+            // Clear backend in-memory messages and transfers
+            await invoke('clear_all_data');
+
+            // Clear only messages and transfers from the frontend store
+            // (keep identity, device name, theme, onboarding status)
+            const store = useAppStore.getState();
+            useAppStore.setState({
+                messages: {},
+                threads: [],
+                activeThread: null,
+                transfers: [],
+                activeTransfers: new Set<string>(),
+                devices: [],
+                connectedDevices: new Set<string>(),
+                deviceConnectionStatus: {},
+                deviceLatencyMs: {},
+            });
+            // Persist the cleared state
+            void store;
+        } catch (err) {
+            console.error('Failed to clear cache:', err);
+        } finally {
+            setIsClearingCache(false);
+        }
     };
     return (
         <div className="flex flex-col h-full bg-background overflow-hidden">
@@ -412,13 +476,35 @@ export default function SettingsPage() {
                                 />
                                 <div className="flex justify-between items-center bg-muted/30 p-3 rounded-lg border border-border/50">
                                     <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                                        <RefreshCw className="h-3.5 w-3.5" />
+                                        <RefreshCw className={cn("h-3.5 w-3.5", isClearingCache && "animate-spin")} />
                                         Buffered file chunk storage
                                     </div>
-                                    <Button variant="outline" size="sm" className="h-8 px-3 text-[10px] font-bold text-destructive hover:bg-destructive/10 border-destructive/20 transition-all">
-                                        <Trash2 className="h-3.5 w-3.5 mr-1.5" />
-                                        Clear Cache
-                                    </Button>
+                                    <AlertDialog>
+                                        <AlertDialogTrigger asChild>
+                                            <Button variant="outline" size="sm" className="h-8 px-3 text-[10px] font-bold text-destructive hover:bg-destructive/10 border-destructive/20 transition-all" disabled={isClearingCache}>
+                                                <Trash2 className="h-3.5 w-3.5 mr-1.5" />
+                                                {isClearingCache ? 'Clearing...' : 'Clear Cache'}
+                                            </Button>
+                                        </AlertDialogTrigger>
+                                        <AlertDialogContent>
+                                            <AlertDialogHeader>
+                                                <AlertDialogTitle>Clear Cache</AlertDialogTitle>
+                                                <AlertDialogDescription>
+                                                    This will clear all cached messages, file transfers, and discovered devices.
+                                                    Your identity, device name, and preferences will be preserved.
+                                                </AlertDialogDescription>
+                                            </AlertDialogHeader>
+                                            <AlertDialogFooter>
+                                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                                <AlertDialogAction
+                                                    onClick={handleClearCache}
+                                                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                                >
+                                                    Clear Cache
+                                                </AlertDialogAction>
+                                            </AlertDialogFooter>
+                                        </AlertDialogContent>
+                                    </AlertDialog>
                                 </div>
                             </div>
                         </Card>
@@ -477,6 +563,72 @@ export default function SettingsPage() {
                                     <Shield className="h-3.5 w-3.5 text-primary" />
                                     Licenses
                                 </Button>
+                            </div>
+                        </Card>
+                    </section>
+                    {/* Danger Zone */}
+                    <section id="danger-zone">
+                        <div className="flex items-center gap-3 mb-4">
+                            <div className="p-2 rounded-xl bg-destructive/10 shadow-inner">
+                                <AlertTriangle className="h-5 w-5 text-destructive" />
+                            </div>
+                            <div>
+                                <h2 className="text-xl font-bold tracking-tight text-foreground">Danger Zone</h2>
+                                <p className="text-xs text-muted-foreground">Irreversible actions that affect your data</p>
+                            </div>
+                        </div>
+                        <Card className="border-destructive/20 shadow-sm overflow-hidden bg-card/60 backdrop-blur-md">
+                            <div className="p-6 space-y-4">
+                                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                                    <div className="space-y-1">
+                                        <h3 className="text-sm font-bold text-foreground">Reset App</h3>
+                                        <p className="text-xs text-muted-foreground max-w-md">
+                                            Permanently delete all messages, file transfers, discovered devices, and your device identity.
+                                            You will be taken through onboarding again.
+                                        </p>
+                                    </div>
+                                    <AlertDialog>
+                                        <AlertDialogTrigger asChild>
+                                            <Button
+                                                variant="destructive"
+                                                size="sm"
+                                                className="h-9 px-4 text-xs font-bold gap-2 shrink-0"
+                                                disabled={isResetting}
+                                            >
+                                                {isResetting ? (
+                                                    <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                                                ) : (
+                                                    <Trash2 className="h-3.5 w-3.5" />
+                                                )}
+                                                {isResetting ? 'Resetting...' : 'Reset App'}
+                                            </Button>
+                                        </AlertDialogTrigger>
+                                        <AlertDialogContent>
+                                            <AlertDialogHeader>
+                                                <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                                                <AlertDialogDescription>
+                                                    This action cannot be undone. This will permanently delete:
+                                                </AlertDialogDescription>
+                                                <ul className="text-sm text-muted-foreground list-disc list-inside space-y-1 pt-2">
+                                                    <li>All messages and chat history</li>
+                                                    <li>All file transfer records</li>
+                                                    <li>Discovered devices and connections</li>
+                                                    <li>Your device identity and display name</li>
+                                                    <li>All app preferences and settings</li>
+                                                </ul>
+                                            </AlertDialogHeader>
+                                            <AlertDialogFooter>
+                                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                                <AlertDialogAction
+                                                    onClick={handleResetApp}
+                                                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                                >
+                                                    Yes, reset everything
+                                                </AlertDialogAction>
+                                            </AlertDialogFooter>
+                                        </AlertDialogContent>
+                                    </AlertDialog>
+                                </div>
                             </div>
                         </Card>
                     </section>

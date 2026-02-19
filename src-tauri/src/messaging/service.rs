@@ -519,6 +519,21 @@ impl MessagingService {
         }
     }
 
+    /// Clear all in-memory messages, threads, and close TCP connections.
+    ///
+    /// Called by the `clear_all_data` IPC command when the user resets the app.
+    pub async fn clear_all(&self) {
+        self.messages.write().await.clear();
+        self.threads.write().await.clear();
+
+        // Also close all pooled TCP connections so stale sessions aren't reused.
+        if let Some(ref client) = self.tcp_client {
+            client.close_all().await;
+        }
+
+        println!("✓ Cleared all messages, threads, and TCP connections");
+    }
+
     // -------------------------------------------------------------------------
     // Internals
     // -------------------------------------------------------------------------

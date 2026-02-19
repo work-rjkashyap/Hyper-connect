@@ -181,6 +181,8 @@ pub fn run() {
             ipc::cancel_transfer,
             ipc::get_transfers,
             ipc::get_tcp_port,
+            // App reset commands
+            ipc::clear_all_data,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

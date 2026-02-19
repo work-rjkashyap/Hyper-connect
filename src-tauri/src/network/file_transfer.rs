@@ -655,6 +655,15 @@ impl FileTransferService {
         let active = self.active_transfers.lock().await;
         *active
     }
+
+    /// Clear all in-memory transfers.
+    ///
+    /// Called by the `clear_all_data` IPC command when the user resets the app.
+    pub async fn clear_all(&self) {
+        self.transfers.lock().await.clear();
+        *self.active_transfers.lock().await = 0;
+        println!("✓ Cleared all file transfers");
+    }
 }
 
 impl Clone for FileTransferService {

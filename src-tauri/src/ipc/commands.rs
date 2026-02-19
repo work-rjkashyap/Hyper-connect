@@ -279,3 +279,24 @@ pub async fn get_transfers(
 pub fn get_tcp_port() -> u16 {
     8080
 }
+
+// ============================================================================
+// App Reset Commands
+// ============================================================================
+
+/// Clear all in-memory application data: messages, threads, file transfers,
+/// and pooled TCP connections.
+///
+/// Called by the frontend "Reset App" / "Clear All Data" button. The frontend
+/// is responsible for also clearing its own persisted Zustand store and
+/// localStorage after this command succeeds.
+#[tauri::command]
+pub async fn clear_all_data(
+    messaging: State<'_, MessagingService>,
+    file_transfer: State<'_, FileTransferService>,
+) -> Result<(), String> {
+    messaging.clear_all().await;
+    file_transfer.clear_all().await;
+    println!("✓ All application data cleared via IPC");
+    Ok(())
+}
