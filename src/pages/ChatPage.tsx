@@ -162,6 +162,29 @@ export default function ChatPage() {
     markAsRead();
   }, [markAsRead]);
 
+  // ── Auto-mark as read when new messages arrive while chat is open ─────────
+  // When a message-received event fires, use-messaging adds it with status
+  // "delivered". We watch the message count for this conversation and
+  // immediately call markAsRead so the sidebar badge never lights up while
+  // the chat window is already open.
+  const conversationKey =
+    localDeviceId && selectedDevice
+      ? getConversationKey(localDeviceId, selectedDevice.device_id)
+      : null;
+
+  const incomingMessageCount =
+    conversationKey !== null
+      ? (messages[conversationKey] || []).filter(
+          (m) => m.from_device_id !== localDeviceId,
+        ).length
+      : 0;
+
+  useEffect(() => {
+    if (!conversationKey || !localDeviceId) return;
+    markAsRead();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [incomingMessageCount, conversationKey]);
+
   // ── Send a message ────────────────────────────────────────────────────────
   const handleSendMessage = async (text: string) => {
     if (!selectedDevice || !localDeviceId) {

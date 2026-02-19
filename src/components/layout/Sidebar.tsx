@@ -75,6 +75,10 @@ export default function Sidebar({ className, onClose }: SidebarProps) {
     }
     return date.toLocaleDateString();
   };
+  const selectedChatId = location.pathname.startsWith("/chat/")
+    ? location.pathname.split("/chat/")[1]
+    : null;
+
   const chats = React.useMemo(() => {
     return devices
       .map((device) => {
@@ -90,9 +94,15 @@ export default function Sidebar({ className, onClose }: SidebarProps) {
             : null;
         // Count messages FROM the other device that haven't been read yet.
         // Status can be 'sent' (legacy) | 'delivered' | 'read'.
-        const unreadCount = deviceMessages.filter(
-          (m) => m.from_device_id === device.device_id && m.status !== "read",
-        ).length;
+        // If this conversation is currently open, treat it as fully read so
+        // the badge never shows while the chat window is active.
+        const unreadCount =
+          selectedChatId === device.device_id
+            ? 0
+            : deviceMessages.filter(
+                (m) =>
+                  m.from_device_id === device.device_id && m.status !== "read",
+              ).length;
         let lastMessageContent = "No messages yet";
         if (lastMessageObj) {
           if (lastMessageObj.message_type.type === "Text") {
@@ -121,9 +131,6 @@ export default function Sidebar({ className, onClose }: SidebarProps) {
   const filteredChats = chats.filter((chat) =>
     chat.name.toLowerCase().includes(search.toLowerCase()),
   );
-  const selectedChatId = location.pathname.startsWith("/chat/")
-    ? location.pathname.split("/chat/")[1]
-    : null;
   return (
     <div
       className={cn(

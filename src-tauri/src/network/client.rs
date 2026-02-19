@@ -578,7 +578,19 @@ impl TcpClient {
             .await
     }
 
-    /// Send an encrypted message (requires active session)
+    /// Send an encrypted message (requires active session).
+    ///
+    /// Encryption and transmission are kept **atomic per connection**: the
+    /// message is encrypted with the session that belongs to the connection
+    /// that will actually carry the frame.  If the first attempt fails (e.g.
+    /// stale pooled connection from an old chat) the connection is evicted,
+    /// a fresh TCP + TLS + ECDH handshake establishes a *new* session, and
+    /// the plaintext is **re-encrypted** with that new session before the
+    /// retry is sent.
+    ///
+    /// This prevents the "authentication tag mismatch" that occurs when the
+    /// old encrypted bytes are delivered over a new connection whose session
+    /// key is completely different.
     async fn send_encrypted_message(
         &self,
         device_id: &str,
@@ -586,27 +598,73 @@ impl TcpClient {
         port: u16,
         plaintext_json: &str,
     ) -> Result<(), String> {
-        // Get connection and session
-        let conn = self.get_connection(device_id, address, port).await?;
-        let session = {
-            let conn_lock = conn.lock().await;
-            conn_lock
-                .session()
-                .cloned()
-                .ok_or("No active session for device")? // COMPLICATION: Connection exists but no session!
-        };
+        // First attempt — encrypt with whatever session the pooled connection
+        // currently holds and try to send.
+        match self
+            .try_send_encrypted_once(device_id, address, port, plaintext_json)
+            .await
+        {
+            Ok(()) => {
+                println!("🔒 Encrypted message sent to {}", device_id);
+                return Ok(());
+            }
+            Err(e) => {
+                eprintln!(
+                    "⚠️ Encrypted send to {} failed ({}); evicting stale connection and retrying",
+                    device_id, e
+                );
+            }
+        }
 
-        // Encrypt message
+        // Evict the stale connection so that `try_send_encrypted_once` below
+        // will create a brand-new TCP connection and run a fresh ECDH
+        // handshake, producing a new session.  The plaintext will then be
+        // re-encrypted with *that* session before it is sent, so the bytes
+        // on the wire always match the key the server derived.
+        self.close_connection(device_id).await;
+
+        self.try_send_encrypted_once(device_id, address, port, plaintext_json)
+            .await?;
+
+        println!(
+            "🔒 Encrypted message sent to {} (after reconnect)",
+            device_id
+        );
+        Ok(())
+    }
+
+    /// Single attempt: get (or create) a connection, encrypt the plaintext
+    /// with **that connection's** session, and send — all without any
+    /// internal retry or reconnection.  The caller is responsible for
+    /// evicting the connection and retrying if this returns an error.
+    async fn try_send_encrypted_once(
+        &self,
+        device_id: &str,
+        address: &str,
+        port: u16,
+        plaintext_json: &str,
+    ) -> Result<(), String> {
+        let conn = self.get_connection(device_id, address, port).await?;
+        let mut conn_lock = conn.lock().await;
+
+        // Borrow the session that belongs to *this* connection.  If somehow
+        // the connection has no session (should never happen after a mandatory
+        // ECDH handshake) surface a clear error instead of a crypto failure.
+        let session = conn_lock
+            .session()
+            .cloned()
+            .ok_or_else(|| format!("No active session for {} — cannot encrypt", device_id))?;
+
+        // Encrypt with THIS connection's session key.
         let encrypted = encrypt_message(&session, plaintext_json)?;
         let encrypted_json = serde_json::to_vec(&encrypted)
             .map_err(|e| format!("Failed to serialize encrypted message: {}", e))?;
 
-        // Send encrypted frame
         let frame = Frame::new(MessageType::EncryptedMessage, encrypted_json);
-        self.send_frame(device_id, address, port, frame).await?;
 
-        println!("🔒 Encrypted message sent to {}", device_id);
-        Ok(())
+        // Send directly on the same locked connection — no further routing or
+        // reconnection can happen here, guaranteeing key/ciphertext coherence.
+        conn_lock.send_frame(&frame).await
     }
 
     /// Send a file request
