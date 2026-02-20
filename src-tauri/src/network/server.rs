@@ -8,9 +8,9 @@ use crate::discovery::MdnsDiscoveryService;
 use crate::messaging::{MessageStatus, MessagingService};
 use crate::network::file_transfer::FileTransferService;
 use crate::network::protocol::{
-    deserialize_json, FileCancelPayload, FileCompletePayload, FileRejectPayload,
-    FileRequestPayload, Frame, MessageAckPayload, MessageType, PingPayload, PongPayload,
-    TextMessagePayload,
+    deserialize_json, FileAckPayload, FileCancelPayload, FileCompletePayload,
+    FileRejectPayload, FileRequestPayload, Frame, MessageAckPayload, MessageType,
+    PingPayload, PongPayload, TextMessagePayload,
 };
 use crate::network::secure_channel::SecureChannelManager;
 use std::net::SocketAddr;
@@ -323,7 +323,13 @@ impl TcpServer {
             match frame.message_type {
                 MessageType::EncryptedMessage => {
                     // Decrypt and handle message
-                    Self::handle_encrypted_message(&session, &frame, &app_handle).await?;
+                    Self::handle_encrypted_message(
+                        &session,
+                        &frame,
+                        &file_transfer_service,
+                        &app_handle,
+                    )
+                    .await?;
                 }
                 MessageType::FileStreamInit => {
                     // Handle encrypted file stream
@@ -369,6 +375,86 @@ impl TcpServer {
                 MessageType::MessageDelivered | MessageType::MessageRead => {
                     Self::handle_message_ack(&frame, &app_handle).await?;
                 }
+
+                // ── File transfer frames (sent over TLS, not double-encrypted) ──
+                MessageType::FileRequest => {
+                    let req: FileRequestPayload = deserialize_json(&frame.payload)
+                        .map_err(|e| format!("Invalid FILE_REQUEST frame: {}", e))?;
+                    println!("📎 File request from {}", req.from_device_id);
+                    let service = file_transfer_service.lock().await;
+                    service
+                        .receive_file_request(req, app_handle.clone())
+                        .await?;
+                }
+                MessageType::FileData => {
+                    let service = file_transfer_service.lock().await;
+                    service
+                        .receive_file_chunk(frame.payload, app_handle.clone())
+                        .await?;
+                }
+                MessageType::FileComplete => {
+                    let complete: FileCompletePayload = deserialize_json(&frame.payload)
+                        .map_err(|e| format!("Invalid FILE_COMPLETE frame: {}", e))?;
+                    println!("✅ File complete: {}", complete.transfer_id);
+                    let service = file_transfer_service.lock().await;
+                    service
+                        .handle_complete(complete, app_handle.clone())
+                        .await?;
+                }
+                MessageType::FileAck => {
+                    let ack: FileAckPayload = deserialize_json(&frame.payload)
+                        .map_err(|e| format!("Invalid FILE_ACK frame: {}", e))?;
+                    println!("✅ File accepted by receiver: {}", ack.transfer_id);
+                    // Update the sender's local transfer status to InProgress
+                    // so perform_transfer can start streaming data.
+                    let service = file_transfer_service.lock().await;
+                    let mut transfers = service.transfers.lock().await;
+                    if let Some(t) = transfers.get_mut(&ack.transfer_id) {
+                        t.status = crate::network::file_transfer::TransferStatus::InProgress;
+                        t.updated_at = chrono::Utc::now().timestamp();
+                    }
+                    drop(transfers);
+                    drop(service);
+                    let _ = app_handle.emit(
+                        "file-accepted",
+                        serde_json::json!({ "transfer_id": ack.transfer_id }),
+                    );
+                }
+                MessageType::FileCancel => {
+                    let cancel: FileCancelPayload = deserialize_json(&frame.payload)
+                        .map_err(|e| format!("Invalid FILE_CANCEL frame: {}", e))?;
+                    println!("🛑 File cancelled: {}", cancel.transfer_id);
+                    let service = file_transfer_service.lock().await;
+                    let mut transfers = service.transfers.lock().await;
+                    if let Some(t) = transfers.get_mut(&cancel.transfer_id) {
+                        t.status = crate::network::file_transfer::TransferStatus::Cancelled;
+                        t.updated_at = chrono::Utc::now().timestamp();
+                    }
+                    drop(transfers);
+                    drop(service);
+                    let _ = app_handle.emit(
+                        "file-cancelled",
+                        serde_json::json!({ "transfer_id": cancel.transfer_id }),
+                    );
+                }
+                MessageType::FileReject => {
+                    let reject: FileRejectPayload = deserialize_json(&frame.payload)
+                        .map_err(|e| format!("Invalid FILE_REJECT frame: {}", e))?;
+                    println!("❌ File rejected: {}", reject.transfer_id);
+                    let service = file_transfer_service.lock().await;
+                    let mut transfers = service.transfers.lock().await;
+                    if let Some(t) = transfers.get_mut(&reject.transfer_id) {
+                        t.status = crate::network::file_transfer::TransferStatus::Rejected;
+                        t.updated_at = chrono::Utc::now().timestamp();
+                    }
+                    drop(transfers);
+                    drop(service);
+                    let _ = app_handle.emit(
+                        "file-rejected",
+                        serde_json::json!({ "transfer_id": reject.transfer_id }),
+                    );
+                }
+
                 _ => {
                     eprintln!(
                         "⚠️ Unexpected message type in encrypted session: {:?}",
@@ -385,6 +471,7 @@ impl TcpServer {
     async fn handle_encrypted_message(
         session: &Session,
         frame: &Frame,
+        file_transfer_service: &Arc<Mutex<FileTransferService>>,
         app_handle: &AppHandle,
     ) -> Result<(), String> {
         use crate::crypto::EncryptedMessagePayload;
@@ -460,25 +547,72 @@ impl TcpServer {
                 let req: FileRequestPayload = serde_json::from_str(&plaintext_json)
                     .map_err(|e| format!("Invalid FILE_REQUEST: {}", e))?;
                 println!("📎 Decrypted file request from {}", req.from_device_id);
-                let _ = app_handle.emit("file-request-received", req);
+                // Create backend transfer record so accept/reject IPC works
+                let service = file_transfer_service.lock().await;
+                service
+                    .receive_file_request(req, app_handle.clone())
+                    .await?;
+            }
+            Some("FILE_ACK") => {
+                let ack: FileAckPayload = serde_json::from_str(&plaintext_json)
+                    .map_err(|e| format!("Invalid FILE_ACK: {}", e))?;
+                println!("✅ Decrypted file accepted: {}", ack.transfer_id);
+                // Update sender's transfer status to InProgress
+                let service = file_transfer_service.lock().await;
+                let mut transfers = service.transfers.lock().await;
+                if let Some(t) = transfers.get_mut(&ack.transfer_id) {
+                    t.status = crate::network::file_transfer::TransferStatus::InProgress;
+                    t.updated_at = chrono::Utc::now().timestamp();
+                }
+                drop(transfers);
+                drop(service);
+                let _ = app_handle.emit(
+                    "file-accepted",
+                    serde_json::json!({ "transfer_id": ack.transfer_id }),
+                );
             }
             Some("FILE_COMPLETE") => {
                 let complete: FileCompletePayload = serde_json::from_str(&plaintext_json)
                     .map_err(|e| format!("Invalid FILE_COMPLETE: {}", e))?;
                 println!("✅ Decrypted file complete: {}", complete.transfer_id);
-                let _ = app_handle.emit("transfer-completed", complete);
+                let service = file_transfer_service.lock().await;
+                service
+                    .handle_complete(complete, app_handle.clone())
+                    .await?;
             }
             Some("FILE_CANCEL") => {
                 let cancel: FileCancelPayload = serde_json::from_str(&plaintext_json)
                     .map_err(|e| format!("Invalid FILE_CANCEL: {}", e))?;
                 println!("🛑 Decrypted file cancel: {}", cancel.transfer_id);
-                let _ = app_handle.emit("file-cancelled", cancel);
+                let service = file_transfer_service.lock().await;
+                let mut transfers = service.transfers.lock().await;
+                if let Some(t) = transfers.get_mut(&cancel.transfer_id) {
+                    t.status = crate::network::file_transfer::TransferStatus::Cancelled;
+                    t.updated_at = chrono::Utc::now().timestamp();
+                }
+                drop(transfers);
+                drop(service);
+                let _ = app_handle.emit(
+                    "file-cancelled",
+                    serde_json::json!({ "transfer_id": cancel.transfer_id }),
+                );
             }
             Some("FILE_REJECT") => {
                 let reject: FileRejectPayload = serde_json::from_str(&plaintext_json)
                     .map_err(|e| format!("Invalid FILE_REJECT: {}", e))?;
                 println!("❌ Decrypted file reject: {}", reject.transfer_id);
-                let _ = app_handle.emit("file-rejected", reject);
+                let service = file_transfer_service.lock().await;
+                let mut transfers = service.transfers.lock().await;
+                if let Some(t) = transfers.get_mut(&reject.transfer_id) {
+                    t.status = crate::network::file_transfer::TransferStatus::Rejected;
+                    t.updated_at = chrono::Utc::now().timestamp();
+                }
+                drop(transfers);
+                drop(service);
+                let _ = app_handle.emit(
+                    "file-rejected",
+                    serde_json::json!({ "transfer_id": reject.transfer_id }),
+                );
             }
             _ => {
                 return Err("Unknown message type in encrypted message".to_string());

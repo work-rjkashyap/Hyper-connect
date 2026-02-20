@@ -16,7 +16,12 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Progress } from "@/components/ui/progress";
-import { TransferStatus, formatFileSize, formatSpeed, formatETA } from "@/types";
+import {
+	TransferStatus,
+	formatFileSize,
+	formatSpeed,
+	formatETA,
+} from "@/types";
 import type { FileTransfer } from "@/types";
 
 function MessageStatusIcon({
@@ -47,10 +52,31 @@ function MessageStatusIcon({
 /** Maps a file extension to a user-friendly category label. */
 function getFileCategory(filename: string): string {
 	const ext = filename.split(".").pop()?.toLowerCase() || "";
-	const imageExts = ["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "tiff", "ico"];
+	const imageExts = [
+		"png",
+		"jpg",
+		"jpeg",
+		"gif",
+		"webp",
+		"bmp",
+		"svg",
+		"tiff",
+		"ico",
+	];
 	const videoExts = ["mp4", "mov", "avi", "mkv", "webm", "flv", "wmv"];
 	const audioExts = ["mp3", "wav", "ogg", "flac", "aac", "m4a", "wma"];
-	const docExts = ["pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "txt", "rtf", "odt"];
+	const docExts = [
+		"pdf",
+		"doc",
+		"docx",
+		"xls",
+		"xlsx",
+		"ppt",
+		"pptx",
+		"txt",
+		"rtf",
+		"odt",
+	];
 	const archiveExts = ["zip", "rar", "7z", "tar", "gz", "bz2", "xz"];
 
 	if (imageExts.includes(ext)) return "Image";
@@ -107,9 +133,8 @@ export default function FileMessageBubble({
 			? Math.round((transfer.transferred / transfer.size) * 100)
 			: 0;
 
-	const isPending =
-		status === TransferStatus.Pending ||
-		status === ("AwaitingAcceptance" as TransferStatus);
+	const isAwaitingAcceptance = status === TransferStatus.AwaitingAcceptance;
+	const isPending = status === TransferStatus.Pending || isAwaitingAcceptance;
 	const isInProgress = status === TransferStatus.InProgress;
 	const isCompleted = status === TransferStatus.Completed;
 	const isFailed = status === TransferStatus.Failed;
@@ -154,6 +179,8 @@ export default function FileMessageBubble({
 		if (isPaused) return "Paused";
 		if (isInProgress) return `${progress}%`;
 		if (isPending && isReceiver) return "Awaiting your response";
+		if (isAwaitingAcceptance && !isReceiver)
+			return "Waiting for acceptance…";
 		if (isPending && !isReceiver) return "Sending…";
 		return "";
 	})();

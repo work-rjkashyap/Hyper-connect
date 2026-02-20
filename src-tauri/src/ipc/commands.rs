@@ -5,6 +5,7 @@
 use crate::discovery::{Device, MdnsDiscoveryService};
 use crate::identity::{DeviceIdentity, IdentityManager};
 use crate::messaging::{Message, MessageType, MessagingService, Thread};
+use crate::network::protocol::{serialize_json, FileAckPayload, FileRejectPayload};
 use crate::network::{FileTransfer, FileTransferService};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -248,17 +249,94 @@ pub async fn start_transfer(
 #[tauri::command]
 pub async fn accept_transfer(
     file_transfer: State<'_, FileTransferService>,
+    discovery: State<'_, Arc<MdnsDiscoveryService>>,
     transfer_id: String,
+    app_handle: AppHandle,
 ) -> Result<(), String> {
-    file_transfer.accept_transfer(&transfer_id).await
+    // 1. Accept locally (sets status to InProgress, assigns download path)
+    file_transfer.accept_transfer(&transfer_id).await?;
+
+    // 2. Look up the sender's address so we can send the ACK back
+    let sender_device_id = {
+        let transfers = file_transfer.transfers.lock().await;
+        let t = transfers
+            .get(&transfer_id)
+            .ok_or("Transfer not found after accept")?;
+        t.from_device_id.clone()
+    };
+
+    // Get the TCP port from managed state
+    let tcp_port = app_handle
+        .try_state::<TcpPort>()
+        .map(|p| p.0)
+        .unwrap_or(8080);
+
+    let devices = discovery.get_devices().await;
+    if let Some(sender) = devices.iter().find(|d| d.id == sender_device_id) {
+        if let Some(addr) = sender.addresses.first() {
+            // Send FILE_ACK so the sender knows to start streaming
+            let ack = FileAckPayload {
+                transfer_id: transfer_id.clone(),
+                offset: 0,
+            };
+            if let Ok(payload) = serialize_json(&ack) {
+                if let Some(ref tcp_client) = file_transfer.tcp_client_ref() {
+                    let _ = tcp_client
+                        .send_file_ack(&sender_device_id, addr, tcp_port, payload)
+                        .await;
+                    println!("✓ Sent FILE_ACK to {}", sender_device_id);
+                }
+            }
+        }
+    }
+
+    Ok(())
 }
 
 #[tauri::command]
 pub async fn reject_transfer(
     file_transfer: State<'_, FileTransferService>,
+    discovery: State<'_, Arc<MdnsDiscoveryService>>,
     transfer_id: String,
+    app_handle: AppHandle,
 ) -> Result<(), String> {
-    file_transfer.reject_transfer(&transfer_id).await
+    // 1. Reject locally (sets status to Cancelled)
+    file_transfer.reject_transfer(&transfer_id).await?;
+
+    // 2. Look up the sender's address so we can notify them
+    let sender_device_id = {
+        let transfers = file_transfer.transfers.lock().await;
+        let t = transfers
+            .get(&transfer_id)
+            .ok_or("Transfer not found after reject")?;
+        t.from_device_id.clone()
+    };
+
+    let tcp_port = app_handle
+        .try_state::<TcpPort>()
+        .map(|p| p.0)
+        .unwrap_or(8080);
+
+    let devices = discovery.get_devices().await;
+    if let Some(sender) = devices.iter().find(|d| d.id == sender_device_id) {
+        if let Some(addr) = sender.addresses.first() {
+            let reject = FileRejectPayload {
+                msg_type: "FILE_REJECT".to_string(),
+                transfer_id: transfer_id.clone(),
+                reason: "Declined by receiver".to_string(),
+            };
+            if let Ok(payload) = serialize_json(&reject) {
+                if let Some(ref tcp_client) = file_transfer.tcp_client_ref() {
+                    let _ = tcp_client
+                        .send_file_reject(&sender_device_id, addr, tcp_port, payload)
+                        .await;
+                    println!("✓ Sent FILE_REJECT to {}", sender_device_id);
+                }
+            }
+        }
+    }
+
+    Ok(())
 }
 
 #[tauri::command]

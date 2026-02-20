@@ -1,88 +1,206 @@
 import { useEffect } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { useAppStore } from "@/store";
-import { fileTransferSchema } from "@/lib/schemas";
-import type { FileTransfer } from "@/types";
+import type {
+	FileTransfer,
+	TransferProgressEvent,
+	TransferCompletedEvent,
+	TransferFailedEvent,
+	FileCancelledEvent,
+	FileRejectedEvent,
+} from "@/types";
 import { TransferStatus } from "@/types";
+import { toast } from "@/hooks/use-toast";
 
 /**
- * Coerce Zod-parsed transfer data to the canonical FileTransfer type.
- * The Zod schema infers plain string literals for `status` and `undefined`
- * for optional fields, while the store expects `TransferStatus` enum values
- * and `null` for absent fields.
+ * Payload emitted by the backend when the receiver accepts a file transfer.
+ * The sender receives this so it knows to start streaming data.
  */
-function toFileTransfer(
-  data: ReturnType<typeof fileTransferSchema.parse>,
-): FileTransfer {
-  return {
-    ...data,
-    status: data.status as TransferStatus,
-    file_path: data.file_path ?? null,
-    checksum: data.checksum ?? null,
-    // Fields not present in the Zod schema get sensible defaults
-    error: null,
-    speed_bps: 0,
-    eta_seconds: null,
-  };
+interface FileAcceptedEvent {
+	transfer_id: string;
 }
 
 /**
- * Hook to listen for file transfer events from Tauri backend.
- * Validates transfer data with Zod and updates the app store.
+ * Global hook that listens for ALL file transfer events from the Tauri backend.
+ *
+ * This hook is mounted once in RootLayout so events are captured regardless of
+ * which page the user is on.  The per-chat `useFileTransfer()` hook only
+ * exposes action functions (create, start, accept, reject, etc.) — it no
+ * longer registers its own event listeners to avoid duplicate handling.
  */
 export function useFileTransfers() {
-  const { addTransfer, updateTransfer } = useAppStore();
+	const { addTransfer, updateTransfer, devices } = useAppStore();
 
-  useEffect(() => {
-    // Listen for transfer progress updates
-    const unlistenProgress = listen<unknown>("transfer-progress", (event) => {
-      const result = fileTransferSchema.safeParse(event.payload);
-      if (result.success) {
-        const { id, ...rest } = toFileTransfer(result.data);
-        updateTransfer(id, rest);
-      } else {
-        console.error("Invalid transfer progress data:", result.error.errors);
-      }
-    });
+	useEffect(() => {
+		let unlistenRequest: (() => void) | undefined;
+		let unlistenProgress: (() => void) | undefined;
+		let unlistenAccepted: (() => void) | undefined;
+		let unlistenCompleted: (() => void) | undefined;
+		let unlistenFailed: (() => void) | undefined;
+		let unlistenCancelled: (() => void) | undefined;
+		let unlistenRejected: (() => void) | undefined;
 
-    // Listen for transfer status updates
-    const unlistenStatus = listen<unknown>("transfer-status", (event) => {
-      const result = fileTransferSchema.safeParse(event.payload);
-      if (result.success) {
-        const { id, ...rest } = toFileTransfer(result.data);
-        updateTransfer(id, rest);
-      } else {
-        console.error("Invalid transfer status data:", result.error.errors);
-      }
-    });
+		const setup = async () => {
+			try {
+				// ── Incoming file request ────────────────────────────────
+				// The Rust backend emits the FileTransfer struct directly
+				// as the event payload (not wrapped in { transfer: ... }).
+				unlistenRequest = await listen<FileTransfer>(
+					"file-request-received",
+					(event) => {
+						console.log("📥 File request received:", event.payload);
+						const transfer = event.payload;
+						addTransfer(transfer);
 
-    // Listen for new transfers
-    const unlistenNew = listen<unknown>("transfer-created", (event) => {
-      const result = fileTransferSchema.safeParse(event.payload);
-      if (result.success) {
-        addTransfer(toFileTransfer(result.data));
-      } else {
-        console.error("Invalid transfer creation data:", result.error.errors);
-      }
-    });
+						const sender = devices.find(
+							(d) => d.device_id === transfer.from_device_id,
+						);
+						const senderName =
+							sender?.display_name || "Unknown Device";
 
-    // Listen for transfer completion
-    const unlistenComplete = listen<{ transfer_id: string }>(
-      "transfer-completed",
-      (event) => {
-        console.log("Transfer completed:", event.payload.transfer_id);
-        updateTransfer(event.payload.transfer_id, {
-          status: TransferStatus.Completed,
-        });
-      },
-    );
+						toast({
+							title: "File Transfer Request",
+							description: `${senderName} wants to send ${transfer.filename}`,
+							duration: 10000,
+						});
+					},
+				);
 
-    // Cleanup listeners on unmount
-    return () => {
-      unlistenProgress.then((fn) => fn());
-      unlistenStatus.then((fn) => fn());
-      unlistenNew.then((fn) => fn());
-      unlistenComplete.then((fn) => fn());
-    };
-  }, [addTransfer, updateTransfer]);
+				// ── Transfer progress ────────────────────────────────────
+				unlistenProgress = await listen<TransferProgressEvent>(
+					"transfer-progress",
+					(event) => {
+						const {
+							transfer_id,
+							transferred,
+							speed_bps,
+							eta_seconds,
+						} = event.payload;
+
+						updateTransfer(transfer_id, {
+							transferred,
+							speed_bps,
+							eta_seconds,
+							status: TransferStatus.InProgress,
+						});
+					},
+				);
+
+				// ── File accepted (sender side) ──────────────────────────
+				// Receiver accepted our file — sender's backend will start
+				// streaming automatically; update the UI status.
+				unlistenAccepted = await listen<FileAcceptedEvent>(
+					"file-accepted",
+					(event) => {
+						console.log(
+							"✅ File accepted by receiver:",
+							event.payload,
+						);
+						const { transfer_id } = event.payload;
+
+						updateTransfer(transfer_id, {
+							status: TransferStatus.InProgress,
+						});
+
+						toast({
+							title: "Transfer accepted",
+							description:
+								"Receiver accepted — file transfer starting",
+						});
+					},
+				);
+
+				// ── Transfer completed ────────────────────────────────────
+				unlistenCompleted = await listen<TransferCompletedEvent>(
+					"transfer-completed",
+					(event) => {
+						console.log("✅ Transfer completed:", event.payload);
+						const { transfer_id, checksum } = event.payload;
+
+						updateTransfer(transfer_id, {
+							status: TransferStatus.Completed,
+							checksum,
+						});
+
+						toast({
+							title: "Transfer Complete",
+							description: "File transfer finished successfully",
+						});
+					},
+				);
+
+				// ── Transfer failed ──────────────────────────────────────
+				unlistenFailed = await listen<TransferFailedEvent>(
+					"transfer-failed",
+					(event) => {
+						console.error("❌ Transfer failed:", event.payload);
+						const { transfer_id, error } = event.payload;
+
+						updateTransfer(transfer_id, {
+							status: TransferStatus.Failed,
+							error,
+						});
+
+						toast({
+							title: "Transfer Failed",
+							description: error,
+							variant: "destructive",
+						});
+					},
+				);
+
+				// ── Transfer cancelled ────────────────────────────────────
+				unlistenCancelled = await listen<FileCancelledEvent>(
+					"file-cancelled",
+					(event) => {
+						console.log("🛑 Transfer cancelled:", event.payload);
+						const { transfer_id } = event.payload;
+
+						updateTransfer(transfer_id, {
+							status: TransferStatus.Cancelled,
+						});
+					},
+				);
+
+				// ── Transfer rejected ─────────────────────────────────────
+				unlistenRejected = await listen<FileRejectedEvent>(
+					"file-rejected",
+					(event) => {
+						console.log("❌ Transfer rejected:", event.payload);
+						const { transfer_id } = event.payload;
+
+						updateTransfer(transfer_id, {
+							status: TransferStatus.Rejected,
+						});
+
+						toast({
+							title: "Transfer Declined",
+							description:
+								"The receiver declined the file transfer",
+						});
+					},
+				);
+
+				console.log("✅ Global file transfer listeners setup complete");
+			} catch (error) {
+				console.error(
+					"Failed to setup file transfer listeners:",
+					error,
+				);
+			}
+		};
+
+		setup();
+
+		return () => {
+			unlistenRequest?.();
+			unlistenProgress?.();
+			unlistenAccepted?.();
+			unlistenCompleted?.();
+			unlistenFailed?.();
+			unlistenCancelled?.();
+			unlistenRejected?.();
+			console.log("🧹 Global file transfer listeners cleaned up");
+		};
+	}, [addTransfer, updateTransfer, devices]);
 }

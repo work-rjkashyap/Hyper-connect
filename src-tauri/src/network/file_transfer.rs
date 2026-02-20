@@ -42,6 +42,7 @@ pub enum TransferStatus {
     Completed,
     Failed,
     Cancelled,
+    Rejected,
     AwaitingAcceptance,
 }
 
@@ -87,7 +88,7 @@ impl FileTransfer {
 
 /// File transfer service
 pub struct FileTransferService {
-    transfers: Arc<Mutex<HashMap<String, FileTransfer>>>,
+    pub(crate) transfers: Arc<Mutex<HashMap<String, FileTransfer>>>,
     transfer_dir: PathBuf,
     tcp_client: Option<Arc<TcpClient>>,
     tcp_port: u16,
@@ -119,6 +120,11 @@ impl FileTransferService {
     /// Set TCP client
     pub fn set_tcp_client(&mut self, tcp_client: Arc<TcpClient>) {
         self.tcp_client = Some(tcp_client);
+    }
+
+    /// Get a reference to the TCP client (used by IPC commands to send ACKs)
+    pub fn tcp_client_ref(&self) -> Option<&Arc<TcpClient>> {
+        self.tcp_client.as_ref()
     }
 
     /// Create a new file transfer
@@ -200,7 +206,8 @@ impl FileTransferService {
                 ));
             }
 
-            transfer.status = TransferStatus::InProgress;
+            // Mark as awaiting the receiver's acceptance — NOT InProgress yet.
+            transfer.status = TransferStatus::AwaitingAcceptance;
             transfer.updated_at = chrono::Utc::now().timestamp();
             transfer.clone()
         };
@@ -245,7 +252,13 @@ impl FileTransferService {
                 eprintln!("Transfer failed: {}", e);
                 Self::update_status(&transfers_arc, &transfer_id_clone, TransferStatus::Failed)
                     .await;
-                let _ = app_handle.emit("transfer-failed", transfer_id_clone);
+                let _ = app_handle.emit(
+                    "transfer-failed",
+                    serde_json::json!({
+                        "transfer_id": transfer_id_clone,
+                        "error": e,
+                    }),
+                );
             }
         });
 
@@ -267,15 +280,7 @@ impl FileTransferService {
             .ok_or("File path not set")?
             .clone();
 
-        // Open file for reading
-        let mut file = tokio::fs::File::open(&file_path)
-            .await
-            .map_err(|e| format!("Failed to open file: {}", e))?;
-
-        // Calculate checksum while reading
-        let checksum = Self::calculate_checksum(&file_path).await?;
-
-        // Send file request with metadata
+        // Send file request with metadata (checksum sent later with FILE_COMPLETE)
         let request = FileRequestPayload {
             msg_type: "FILE_REQUEST".to_string(),
             transfer_id: transfer.id.clone(),
@@ -283,7 +288,7 @@ impl FileTransferService {
             file_size: transfer.size,
             from_device_id: transfer.from_device_id.clone(),
             to_device_id: transfer.to_device_id.clone(),
-            checksum: checksum.clone(),
+            checksum: String::new(), // Will be calculated during streaming
         };
 
         let request_bytes = serialize_json(&request)?;
@@ -298,10 +303,67 @@ impl FileTransferService {
 
         println!("✓ Sent file request: {}", transfer.filename);
 
-        // Stream file data in chunks
+        // Emit "awaiting acceptance" event so the UI shows proper status
+        let _ = app_handle.emit(
+            "transfer-progress",
+            serde_json::json!({
+                "transfer_id": transfer.id,
+                "transferred": 0u64,
+                "total": transfer.size,
+                "speed_bps": 0.0f64,
+                "eta_seconds": Option::<u64>::None,
+            }),
+        );
+
+        // ── Wait for receiver to accept ──────────────────────────────────
+        // The receiver will send a FILE_ACK which the server handler sets
+        // our local status to InProgress.  Poll until that happens, or
+        // until cancelled / rejected / timed out.
+        let wait_timeout = std::time::Duration::from_secs(300); // 5 min
+        let poll_interval = std::time::Duration::from_millis(500);
+        let wait_start = std::time::Instant::now();
+
+        loop {
+            if wait_start.elapsed() > wait_timeout {
+                return Err("Timed out waiting for receiver to accept".to_string());
+            }
+
+            {
+                let transfers_lock = transfers.lock().await;
+                if let Some(current) = transfers_lock.get(&transfer.id) {
+                    match current.status {
+                        TransferStatus::InProgress => {
+                            println!("✓ Receiver accepted, starting data stream");
+                            break; // Accepted! Start streaming.
+                        }
+                        TransferStatus::Cancelled | TransferStatus::Rejected => {
+                            println!("Transfer declined/cancelled: {}", transfer.id);
+                            return Ok(());
+                        }
+                        TransferStatus::AwaitingAcceptance => {
+                            // Still waiting, continue polling
+                        }
+                        _ => {}
+                    }
+                } else {
+                    return Err("Transfer disappeared from store".to_string());
+                }
+            }
+
+            tokio::time::sleep(poll_interval).await;
+        }
+
+        // ── Stream file data ─────────────────────────────────────────────
+        // Open file for reading
+        let mut file = tokio::fs::File::open(&file_path)
+            .await
+            .map_err(|e| format!("Failed to open file: {}", e))?;
+
         let start_time = std::time::Instant::now();
         let mut buffer = vec![0u8; CHUNK_SIZE];
         let mut offset = 0u64;
+        // Calculate checksum incrementally while streaming
+        let mut hasher = Sha256::new();
 
         loop {
             // Check if transfer was cancelled or paused
@@ -332,6 +394,9 @@ impl FileTransferService {
             if bytes_read == 0 {
                 break; // EOF
             }
+
+            // Update incremental checksum
+            hasher.update(&buffer[..bytes_read]);
 
             // Create file data header
             let header = FileDataHeader {
@@ -370,9 +435,21 @@ impl FileTransferService {
                 }
             }
 
-            // Emit progress event (throttled - every 256KB)
-            let _ = app_handle.emit("transfer-progress", transfer.clone());
+            // Emit progress event with expected fields
+            let _ = app_handle.emit(
+                "transfer-progress",
+                serde_json::json!({
+                    "transfer_id": transfer.id,
+                    "transferred": transfer.transferred,
+                    "total": transfer.size,
+                    "speed_bps": transfer.speed_bps,
+                    "eta_seconds": transfer.eta_seconds,
+                }),
+            );
         }
+
+        // Finalize checksum
+        let checksum = format!("{:x}", hasher.finalize());
 
         // Send completion notification
         let complete = FileCompletePayload {
@@ -396,20 +473,30 @@ impl FileTransferService {
             let mut transfers_lock = transfers.lock().await;
             if let Some(t) = transfers_lock.get_mut(&transfer.id) {
                 t.status = TransferStatus::Completed;
-                t.checksum = Some(checksum);
+                t.checksum = Some(checksum.clone());
                 t.updated_at = chrono::Utc::now().timestamp();
                 transfer = t.clone();
             }
         }
 
         let elapsed = start_time.elapsed().as_secs_f64();
-        let speed_mbps = (transfer.size as f64 / elapsed) / (1024.0 * 1024.0);
+        let speed_mbps = if elapsed > 0.0 {
+            (transfer.size as f64 / elapsed) / (1024.0 * 1024.0)
+        } else {
+            0.0
+        };
         println!(
             "✓ File transfer completed: {} ({:.2} MB/s)",
             transfer.filename, speed_mbps
         );
 
-        let _ = app_handle.emit("transfer-completed", transfer);
+        let _ = app_handle.emit(
+            "transfer-completed",
+            serde_json::json!({
+                "transfer_id": transfer.id,
+                "checksum": checksum,
+            }),
+        );
         Ok(())
     }
 
@@ -450,6 +537,12 @@ impl FileTransferService {
         payload: FileRequestPayload,
         app_handle: AppHandle,
     ) -> Result<(), String> {
+        let checksum = if payload.checksum.is_empty() {
+            None
+        } else {
+            Some(payload.checksum)
+        };
+
         let transfer = FileTransfer {
             id: payload.transfer_id.clone(),
             filename: payload.filename,
@@ -459,7 +552,7 @@ impl FileTransferService {
             status: TransferStatus::AwaitingAcceptance,
             from_device_id: payload.from_device_id,
             to_device_id: payload.to_device_id,
-            checksum: Some(payload.checksum),
+            checksum,
             created_at: chrono::Utc::now().timestamp(),
             updated_at: chrono::Utc::now().timestamp(),
             speed_bps: 0.0,
@@ -470,7 +563,9 @@ impl FileTransferService {
         transfers.insert(transfer.id.clone(), transfer.clone());
 
         println!("✓ Received file request: {}", transfer.filename);
-        let _ = app_handle.emit("file-request-received", transfer);
+
+        // Emit with the transfer wrapped so the frontend can access it directly
+        let _ = app_handle.emit("file-request-received", &transfer);
 
         Ok(())
     }
@@ -503,7 +598,7 @@ impl FileTransferService {
             return Err("Transfer is not awaiting acceptance".to_string());
         }
 
-        transfer.status = TransferStatus::Cancelled;
+        transfer.status = TransferStatus::Rejected;
         transfer.updated_at = chrono::Utc::now().timestamp();
 
         println!("✓ Rejected file transfer: {}", transfer.filename);
@@ -529,6 +624,12 @@ impl FileTransferService {
             .ok_or("Transfer not found")?;
 
         if transfer.status != TransferStatus::InProgress {
+            // If the receiver hasn't accepted yet, silently drop the chunk.
+            // The sender should be waiting for acceptance, but in edge cases
+            // a stale chunk may arrive.
+            if transfer.status == TransferStatus::AwaitingAcceptance {
+                return Ok(());
+            }
             return Err(format!(
                 "Transfer is not in progress: {:?}",
                 transfer.status
@@ -542,6 +643,7 @@ impl FileTransferService {
             .ok_or("File path not set")?
             .clone();
 
+        let transfer_size = transfer.size;
         drop(transfers); // Release lock before I/O
 
         // Append data to file
@@ -574,8 +676,17 @@ impl FileTransferService {
             transfer.transferred = header.offset + header.chunk_size as u64;
             transfer.updated_at = chrono::Utc::now().timestamp();
 
-            // Emit progress event
-            let _ = app_handle.emit("transfer-progress", transfer.clone());
+            // Emit progress event with expected fields
+            let _ = app_handle.emit(
+                "transfer-progress",
+                serde_json::json!({
+                    "transfer_id": header.transfer_id,
+                    "transferred": transfer.transferred,
+                    "total": transfer_size,
+                    "speed_bps": transfer.speed_bps,
+                    "eta_seconds": transfer.eta_seconds,
+                }),
+            );
         }
 
         Ok(())
@@ -592,25 +703,39 @@ impl FileTransferService {
             .get_mut(&payload.transfer_id)
             .ok_or("Transfer not found")?;
 
-        // Verify checksum
-        if let Some(file_path) = &transfer.file_path {
-            let calculated_checksum = Self::calculate_checksum(file_path).await?;
-
-            if calculated_checksum != payload.checksum {
-                transfer.status = TransferStatus::Failed;
-                return Err("Checksum verification failed".to_string());
+        // Verify checksum if one was provided and we have a local file
+        if !payload.checksum.is_empty() {
+            if let Some(file_path) = &transfer.file_path {
+                let calculated_checksum = Self::calculate_checksum(file_path).await?;
+                if calculated_checksum != payload.checksum {
+                    transfer.status = TransferStatus::Failed;
+                    let _ = app_handle.emit(
+                        "transfer-failed",
+                        serde_json::json!({
+                            "transfer_id": payload.transfer_id,
+                            "error": "Checksum verification failed",
+                        }),
+                    );
+                    return Err("Checksum verification failed".to_string());
+                }
             }
         }
 
         transfer.status = TransferStatus::Completed;
-        transfer.checksum = Some(payload.checksum);
+        transfer.checksum = Some(payload.checksum.clone());
         transfer.updated_at = chrono::Utc::now().timestamp();
 
         println!(
             "✓ File transfer completed and verified: {}",
             transfer.filename
         );
-        let _ = app_handle.emit("transfer-completed", transfer.clone());
+        let _ = app_handle.emit(
+            "transfer-completed",
+            serde_json::json!({
+                "transfer_id": payload.transfer_id,
+                "checksum": payload.checksum,
+            }),
+        );
 
         Ok(())
     }

@@ -80,6 +80,7 @@ export enum TransferStatus {
 	Failed = "Failed",
 	Cancelled = "Cancelled",
 	Rejected = "Rejected",
+	AwaitingAcceptance = "AwaitingAcceptance",
 }
 
 export interface FileTransfer {
@@ -139,9 +140,9 @@ export interface MessageSentEvent {
 	message: Message;
 }
 
-export interface FileRequestReceivedEvent {
-	transfer: FileTransfer;
-}
+// The Rust backend emits the FileTransfer struct directly as the event payload
+// (not wrapped in { transfer: ... }).
+export type FileRequestReceivedEvent = FileTransfer;
 
 export interface TransferProgressEvent {
 	transfer_id: string;
