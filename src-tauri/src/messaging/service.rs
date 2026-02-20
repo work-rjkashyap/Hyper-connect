@@ -2,6 +2,8 @@
 //!
 //! Handles text message sending, receiving, and storage.
 
+#![allow(dead_code)]
+
 use crate::network::{
     serialize_json, Frame, MessageAckPayload, MessageType as FrameType, TcpClient,
     TextMessagePayload,

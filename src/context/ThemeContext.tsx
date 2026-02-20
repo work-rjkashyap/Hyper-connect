@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect } from 'react';
 import { useAppStore } from '../store';
+import { getAccentColor } from '@/lib/accent-colors';
 
 interface ThemeContextType {
     theme: 'light' | 'dark';
@@ -9,13 +10,19 @@ interface ThemeContextType {
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-    const { theme, toggleTheme } = useAppStore();
+    const { theme, toggleTheme, accentColor } = useAppStore();
 
     useEffect(() => {
         const root = document.documentElement;
         root.classList.remove('light', 'dark');
         root.classList.add(theme);
     }, [theme]);
+
+    useEffect(() => {
+        const accent = getAccentColor(accentColor);
+        const value = theme === 'dark' ? accent.dark : accent.light;
+        document.documentElement.style.setProperty('--primary', value);
+    }, [accentColor, theme]);
 
     return (
         <ThemeContext.Provider value={{ theme, toggleTheme }}>

@@ -3,6 +3,8 @@
 //! Handles device discovery on the local network using Multicast DNS (mDNS).
 //! Advertises local device and discovers peers running the same application.
 
+#![allow(dead_code)]
+
 use crate::identity::DeviceIdentity;
 use mdns_sd::{ServiceDaemon, ServiceEvent, ServiceInfo};
 use serde::{Deserialize, Serialize};

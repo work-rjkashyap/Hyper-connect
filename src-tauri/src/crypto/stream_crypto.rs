@@ -3,6 +3,8 @@
 //! High-performance streaming encryption/decryption for file transfers using AES-256-CTR.
 //! Designed for near-native LAN throughput with minimal overhead.
 
+#![allow(dead_code)]
+
 use crate::crypto::session::{FileStreamCipher, Session};
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};

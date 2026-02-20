@@ -3,6 +3,8 @@
 //! Handles encryption and decryption of protocol messages using AES-256-GCM.
 //! All control messages (TEXT_MESSAGE, FILE_REQUEST, etc.) are encrypted.
 
+#![allow(dead_code)]
+
 use crate::crypto::session::{EncryptedMessage, Session};
 use serde::{Deserialize, Serialize};
 

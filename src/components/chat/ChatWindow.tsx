@@ -25,8 +25,10 @@ import {
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import MessageBubble from "./MessageBubble";
+import FileMessageBubble from "./FileMessageBubble";
 import ChatInput from "./ChatInput";
 import DateSeparator, { getDateKey } from "./DateSeparator";
+import type { FileTransfer } from "@/types";
 
 export interface UIMessage {
 	id: string;
@@ -36,8 +38,10 @@ export interface UIMessage {
 	/** Unix timestamp in seconds – used for date separator grouping */
 	rawTimestamp: number;
 	status: "sent" | "delivered" | "read";
-	type: "text" | "image";
+	type: "text" | "image" | "file";
 	imageUrl?: string;
+	/** File transfer record – present when `type === "file"`. */
+	fileTransfer?: FileTransfer;
 }
 
 type ConnectionState = "idle" | "connecting" | "connected" | "unreachable";
@@ -52,7 +56,7 @@ type ApprovalState =
 interface ChatWindowProps {
 	messages: UIMessage[];
 	onSendMessage: (text: string) => void;
-	onFileSelect?: (file: File) => void;
+	onFileSelect?: (file?: File) => void;
 	recipientName?: string;
 	recipientAvatar?: string;
 	recipientStatus?: "online" | "offline";
@@ -63,6 +67,11 @@ interface ChatWindowProps {
 	approvalState?: ApprovalState;
 	onAcceptRequest?: () => void;
 	onDeclineRequest?: () => void;
+	// File transfer action callbacks
+	onAcceptFile?: (transferId: string) => void;
+	onRejectFile?: (transferId: string) => void;
+	onCancelFile?: (transferId: string) => void;
+	onPauseFile?: (transferId: string) => void;
 }
 
 // ── Connection badge ──────────────────────────────────────────────────────────
@@ -251,8 +260,14 @@ export function ChatWindow({
 	approvalState = "approved",
 	onAcceptRequest,
 	onDeclineRequest,
+	onAcceptFile,
+	onRejectFile,
+	onCancelFile,
+	onPauseFile,
 }: ChatWindowProps) {
 	const scrollRef = useRef<HTMLDivElement>(null);
+
+	const isOffline = recipientStatus === "offline";
 
 	// Whether the standard chat input should be shown
 	const showChatInput =
@@ -449,18 +464,38 @@ export function ChatWindow({
 											timestamp={msg.rawTimestamp}
 										/>
 									)}
-									<MessageBubble
-										id={msg.id}
-										content={msg.content}
-										sender={msg.sender}
-										timestamp={msg.timestamp}
-										status={msg.status}
-										type={msg.type}
-										imageUrl={msg.imageUrl}
-										recipientName={recipientName}
-										recipientAvatar={recipientAvatar}
-										animationDelay={index * 50}
-									/>
+									{msg.type === "file" && msg.fileTransfer ? (
+										<FileMessageBubble
+											transfer={msg.fileTransfer}
+											sender={msg.sender}
+											timestamp={msg.timestamp}
+											messageStatus={msg.status}
+											recipientName={recipientName}
+											recipientAvatar={recipientAvatar}
+											animationDelay={index * 50}
+											onAccept={onAcceptFile}
+											onReject={onRejectFile}
+											onCancel={onCancelFile}
+											onPause={onPauseFile}
+										/>
+									) : (
+										<MessageBubble
+											id={msg.id}
+											content={msg.content}
+											sender={msg.sender}
+											timestamp={msg.timestamp}
+											status={msg.status}
+											type={
+												msg.type === "file"
+													? "text"
+													: msg.type
+											}
+											imageUrl={msg.imageUrl}
+											recipientName={recipientName}
+											recipientAvatar={recipientAvatar}
+											animationDelay={index * 50}
+										/>
+									)}
 								</div>
 							);
 						})}
@@ -468,11 +503,20 @@ export function ChatWindow({
 				)}
 			</ScrollArea>
 
+			{/* ── Offline notice ─────────────────────────────────────────── */}
+			{showChatInput && isOffline && (
+				<div className="flex items-center justify-center gap-2 px-4 py-1.5 bg-muted/50 border-t border-border text-muted-foreground text-xs font-medium">
+					<WifiOff className="h-3 w-3 shrink-0" />
+					Device is offline — messages and files are disabled
+				</div>
+			)}
+
 			{/* ── Input area or disabled banner ──────────────────────────── */}
 			{showChatInput ? (
 				<ChatInput
 					onSendMessage={onSendMessage}
 					onFileSelect={onFileSelect}
+					disabled={isOffline}
 				/>
 			) : (
 				<DisabledInputBanner

@@ -3,6 +3,8 @@
 //! High-performance binary protocol optimized for LAN file transfers.
 //! Uses a frame-based approach with minimal overhead.
 //!
+
+#![allow(dead_code)]
 //! Frame Structure:
 //! - [4 bytes] Payload length (big-endian u32)
 //! - [1 byte]  Message type

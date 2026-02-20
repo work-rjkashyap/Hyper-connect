@@ -4,6 +4,8 @@
 //! Implements connection reuse, automatic reconnection, secure handshake, and network tuning for
 //! maximum throughput on LAN transfers.
 
+#![allow(dead_code)]
+
 use crate::crypto::{encrypt_message, Session};
 use crate::network::protocol::{Frame, MessageType, PingPayload, PongPayload};
 use crate::network::secure_channel::SecureChannelManager;

@@ -23,7 +23,7 @@
 //!
 //! ## Usage
 //!
-//! ```rust
+//! ```rust,ignore
 //! use crate::crypto::{HandshakeManager, session::Session};
 //!
 //! // Setup
@@ -59,18 +59,13 @@ pub mod stream_crypto;
 pub mod tls;
 
 // Re-export commonly used types
-pub use handshake::{HandshakeManager, HandshakeState, HelloResponse, HelloSecure};
-pub use message_crypto::{
-    decrypt_json, decrypt_message, encrypt_json, encrypt_message, EncryptedMessagePayload,
-};
-pub use session::{EncryptedMessage, FileStreamCipher, Keypair, Session};
+pub use handshake::{HandshakeManager, HelloResponse, HelloSecure};
+pub use message_crypto::{decrypt_message, encrypt_message, EncryptedMessagePayload};
+pub use session::Session;
 pub use stream_crypto::{FileStreamInit, StreamDecryptor, StreamEncryptor};
 
 /// Recommended buffer size for file streaming (256KB)
 pub const STREAM_BUFFER_SIZE: usize = 256 * 1024;
-
-/// Maximum message size (1MB - prevents DoS)
-pub const MAX_MESSAGE_SIZE: usize = 1024 * 1024;
 
 #[cfg(test)]
 mod integration_tests {

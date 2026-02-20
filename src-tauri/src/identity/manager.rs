@@ -4,6 +4,8 @@
 //! The device ID is generated once on first launch and persists across app restarts.
 //! This ensures consistent identification across the network.
 
+#![allow(dead_code)]
+
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;

@@ -5,6 +5,8 @@
 //! handshakes to the same peer device never share a key in `pending_keypairs` and
 //! can never overwrite each other's ephemeral keypair.
 
+#![allow(dead_code)]
+
 use crate::crypto::session::{Keypair, Session};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -86,7 +88,7 @@ impl HandshakeManager {
         display_name: &str,
         platform: &str,
         app_version: &str,
-        peer_device_id: &str,
+        _peer_device_id: &str,
     ) -> Result<HelloSecure, String> {
         // Generate ephemeral keypair and a unique per-handshake ID.
         let keypair = Keypair::generate();
@@ -314,7 +316,7 @@ mod tests {
         assert_eq!(bob_manager.pending_count(), 1);
 
         // Bob finalizes his side using the handshake_id
-        let bob_session = bob_manager
+        let _bob_session = bob_manager
             .finalize_handshake(alice_id, &hello.public_key, &hello.handshake_id)
             .unwrap();
 
@@ -323,7 +325,7 @@ mod tests {
         assert!(bob_manager.has_session(alice_id));
 
         // Alice receives HELLO_RESPONSE and completes handshake
-        let alice_session = alice_manager.complete_handshake(response).unwrap();
+        let _alice_session = alice_manager.complete_handshake(response).unwrap();
 
         assert_eq!(alice_manager.session_count(), 1);
         assert_eq!(alice_manager.pending_count(), 0);

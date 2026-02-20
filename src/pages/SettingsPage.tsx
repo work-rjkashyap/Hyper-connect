@@ -20,6 +20,8 @@ import { useAppStore } from "@/store";
 import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { invoke } from "@tauri-apps/api/core";
+import { open } from "@tauri-apps/plugin-dialog";
+import { ACCENT_COLORS } from "@/lib/accent-colors";
 import {
 	User,
 	Palette,
@@ -36,17 +38,24 @@ import {
 	Lock,
 	ExternalLink,
 	AlertTriangle,
+	FolderOpen,
+	Download,
 } from "lucide-react";
+
 export default function SettingsPage() {
 	const {
 		deviceName,
 		theme,
 		toggleTheme,
 		setDeviceName,
+		accentColor,
+		setAccentColor,
 		notificationsEnabled,
 		soundEnabled,
 		setNotificationsEnabled,
 		setSoundEnabled,
+		downloadDir,
+		setDownloadDir,
 	} = useAppStore();
 	const [localDeviceName, setLocalDeviceName] = useState(
 		deviceName || "My Device",
@@ -55,7 +64,11 @@ export default function SettingsPage() {
 	const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 	const [isResetting, setIsResetting] = useState(false);
 	const [isClearingCache, setIsClearingCache] = useState(false);
-	// Mock settings state (notifications & sound are now in the Zustand store)
+	const [displayDownloadDir, setDisplayDownloadDir] = useState(
+		downloadDir || "",
+	);
+	const [isLoadingDir, setIsLoadingDir] = useState(false);
+
 	const [settings, setSettings] = useState({
 		autoDiscovery: true,
 		autoUpdate: true,
@@ -65,17 +78,30 @@ export default function SettingsPage() {
 		blockUnknown: false,
 		port: "5353",
 		cacheSize: "500",
-		deviceDescription: "John's MacBook Pro",
 	});
+
+	// Load the effective download directory from the backend on mount
+	useEffect(() => {
+		const loadDownloadDir = async () => {
+			try {
+				const dir = await invoke<string>("get_default_downloads_dir");
+				setDisplayDownloadDir(downloadDir || dir);
+			} catch (err) {
+				console.error("Failed to load download dir:", err);
+			}
+		};
+		loadDownloadDir();
+	}, []); // eslint-disable-line react-hooks/exhaustive-deps
+
 	useEffect(() => {
 		setHasUnsavedChanges(localDeviceName !== deviceName);
 	}, [localDeviceName, deviceName]);
+
 	const handleSave = () => {
 		setIsSaving(true);
 		if (localDeviceName.trim()) {
 			setDeviceName(localDeviceName);
 		}
-		// Simulate API call
 		setTimeout(() => {
 			setIsSaving(false);
 			setHasUnsavedChanges(false);
@@ -85,16 +111,9 @@ export default function SettingsPage() {
 	const handleResetApp = async () => {
 		setIsResetting(true);
 		try {
-			// Clear backend in-memory state (messages, threads, transfers, connections)
 			await invoke("clear_all_data");
-
-			// Clear the persisted Zustand store from localStorage
 			localStorage.removeItem("hyper-connect-storage");
-
-			// Reset in-memory Zustand store (sets isOnboarded = false, clears everything)
 			useAppStore.getState().reset();
-
-			// Reload the app — route guards will redirect to onboarding
 			window.location.reload();
 		} catch (err) {
 			console.error("Failed to reset app:", err);
@@ -102,14 +121,39 @@ export default function SettingsPage() {
 		}
 	};
 
+	const handleChangeDownloadDir = async () => {
+		setIsLoadingDir(true);
+		try {
+			const selected = await open({
+				directory: true,
+				multiple: false,
+				title: "Choose download folder",
+			});
+			if (selected && typeof selected === "string") {
+				await invoke("set_download_dir", { path: selected });
+				setDownloadDir(selected);
+				setDisplayDownloadDir(selected);
+			}
+		} catch (err) {
+			console.error("Failed to set download dir:", err);
+		} finally {
+			setIsLoadingDir(false);
+		}
+	};
+
+	const handleOpenDownloadDir = async () => {
+		if (!displayDownloadDir) return;
+		try {
+			await invoke("open_file_location", { path: displayDownloadDir });
+		} catch (err) {
+			console.error("Failed to open download dir:", err);
+		}
+	};
+
 	const handleClearCache = async () => {
 		setIsClearingCache(true);
 		try {
-			// Clear backend in-memory messages and transfers
 			await invoke("clear_all_data");
-
-			// Clear only messages and transfers from the frontend store
-			// (keep identity, device name, theme, onboarding status)
 			const store = useAppStore.getState();
 			useAppStore.setState({
 				messages: {},
@@ -122,7 +166,6 @@ export default function SettingsPage() {
 				deviceConnectionStatus: {},
 				deviceLatencyMs: {},
 			});
-			// Persist the cleared state
 			void store;
 		} catch (err) {
 			console.error("Failed to clear cache:", err);
@@ -130,78 +173,55 @@ export default function SettingsPage() {
 			setIsClearingCache(false);
 		}
 	};
+
 	return (
 		<div className="flex flex-col h-full bg-background overflow-hidden">
 			{/* Header */}
-			<header className="flex h-16 sm:h-20 shrink-0 items-center justify-between border-b border-border px-4 sm:px-6 pt-4 sm:pt-6 bg-card/50 backdrop-blur-sm sticky top-0 z-10 gap-3 flex-wrap sm:flex-nowrap">
-				<div className="flex items-center gap-2 sm:gap-4 min-w-0">
-					<div className="h-7 w-7 sm:h-8 sm:w-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-						<SettingsIcon className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
+			<header className="flex h-14 shrink-0 items-center border-b border-border px-6 bg-background sticky top-0 z-10">
+				<div className="flex items-center gap-3">
+					<div className="flex h-8 w-8 items-center justify-center rounded-lg bg-muted shrink-0">
+						<SettingsIcon className="h-4 w-4 text-foreground/70" />
 					</div>
-					<div className="min-w-0">
-						<h1 className="text-sm sm:text-lg font-semibold tracking-tight text-foreground">
+					<div>
+						<h1 className="text-sm font-semibold tracking-tight">
 							App Settings
 						</h1>
-						<p className="text-[10px] sm:text-xs text-muted-foreground">
+						<p className="text-xs text-muted-foreground">
 							Configure your Hyper Connect experience
 						</p>
 					</div>
 				</div>
-				<div className="flex items-center gap-2 shrink-0">
-					{hasUnsavedChanges && (
-						<span className="text-[10px] sm:text-xs text-amber-500 font-medium animate-pulse hidden sm:inline">
-							Unsaved changes
-						</span>
-					)}
-					<Button
-						onClick={handleSave}
-						size="sm"
-						disabled={!hasUnsavedChanges || isSaving}
-						className="gap-2 px-3 sm:px-4 h-8 sm:h-9 text-xs sm:text-sm shadow-sm"
-					>
-						{isSaving ? (
-							<RefreshCw className="h-3.5 w-3.5 sm:h-4 sm:w-4 animate-spin" />
-						) : (
-							<Save className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-						)}
-						<span className="hidden sm:inline">
-							{isSaving ? "Saving..." : "Save Changes"}
-						</span>
-						<span className="sm:hidden">
-							{isSaving ? "..." : "Save"}
-						</span>
-					</Button>
-				</div>
 			</header>
+
 			{/* Content Area */}
-			<ScrollArea className="flex-1 bg-background/50">
-				<div className="max-w-3xl mx-auto p-4 sm:p-6 space-y-6 sm:space-y-10">
-					{/* General Section */}
+			<ScrollArea className="flex-1">
+				<div className="max-w-2xl mx-auto p-6 space-y-8">
+					{/* ── General ── */}
 					<section id="general">
-						<div className="flex items-start sm:items-center gap-2 sm:gap-3 mb-3 sm:mb-4">
-							<div className="p-2 rounded-xl bg-violet-500/10 dark:bg-violet-500/20 shadow-inner shrink-0">
-								<User className="h-4 w-4 sm:h-5 sm:w-5 text-violet-600 dark:text-violet-400" />
+						<div className="flex items-center gap-3 mb-4">
+							<div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-violet-500/10">
+								<User className="h-4 w-4 text-violet-600 dark:text-violet-400" />
 							</div>
 							<div>
-								<h2 className="text-lg sm:text-xl font-bold tracking-tight text-foreground">
+								<h2 className="text-sm font-semibold tracking-tight">
 									General
 								</h2>
-								<p className="text-[10px] sm:text-xs text-muted-foreground">
+								<p className="text-xs text-muted-foreground">
 									Personalize how your device appears to
 									others
 								</p>
 							</div>
 						</div>
-						<Card className="overflow-hidden border-border/50 shadow-sm">
-							<CardContent className="p-4 sm:p-6 space-y-4 sm:space-y-6">
-								<div className="grid gap-2">
+						<Card className="shadow-sm">
+							<CardContent className="p-6 space-y-4">
+								<div className="space-y-2">
 									<Label
 										htmlFor="device-name"
-										className="text-xs sm:text-sm font-bold"
+										className="text-sm font-medium"
 									>
 										Display Name
 									</Label>
-									<div className="flex gap-2 sm:gap-3 flex-col sm:flex-row">
+									<div className="flex items-center gap-2">
 										<Input
 											id="device-name"
 											value={localDeviceName}
@@ -211,75 +231,52 @@ export default function SettingsPage() {
 												)
 											}
 											placeholder="Enter device name"
-											className="h-9 sm:h-10 focus-visible:ring-primary text-xs sm:text-sm sm:max-w-md"
+											className="max-w-xs"
 										/>
 										<Badge
 											variant="outline"
-											className="h-9 sm:h-10 px-2 sm:px-3 bg-muted/30 border-dashed text-[9px] sm:text-[10px] font-semibold shrink-0"
+											className="h-9 px-3 font-medium text-xs shrink-0"
 										>
 											Active
 										</Badge>
 									</div>
-									<p className="text-[10px] sm:text-xs text-muted-foreground">
+									<p className="text-xs text-muted-foreground">
 										This name will be broadcasted via mDNS
 										to other LAN peers.
-									</p>
-								</div>
-								<div className="grid gap-2">
-									<Label
-										htmlFor="device-description"
-										className="text-xs sm:text-sm font-bold"
-									>
-										Description
-									</Label>
-									<Input
-										id="device-description"
-										value={settings.deviceDescription}
-										onChange={(e) =>
-											setSettings({
-												...settings,
-												deviceDescription:
-													e.target.value,
-											})
-										}
-										placeholder="e.g., John's MacBook Pro"
-										className="h-9 sm:h-10 focus-visible:ring-primary text-xs sm:text-sm sm:max-w-md"
-									/>
-									<p className="text-[10px] sm:text-xs text-muted-foreground">
-										A short note to help peers identify this
-										hardware.
 									</p>
 								</div>
 							</CardContent>
 						</Card>
 					</section>
-					{/* Appearance Section */}
+
+					{/* ── Appearance ── */}
 					<section id="appearance">
-						<div className="flex items-start sm:items-center gap-2 sm:gap-3 mb-3 sm:mb-4">
-							<div className="p-2 rounded-xl bg-blue-500/10 dark:bg-blue-500/20 shadow-inner shrink-0">
-								<Palette className="h-4 w-4 sm:h-5 sm:w-5 text-blue-600 dark:text-blue-400" />
+						<div className="flex items-center gap-3 mb-4">
+							<div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-500/10">
+								<Palette className="h-4 w-4 text-blue-600 dark:text-blue-400" />
 							</div>
 							<div>
-								<h2 className="text-lg sm:text-xl font-bold tracking-tight text-foreground">
+								<h2 className="text-sm font-semibold tracking-tight">
 									Appearance
 								</h2>
-								<p className="text-[10px] sm:text-xs text-muted-foreground">
+								<p className="text-xs text-muted-foreground">
 									Customize the visual experience
 								</p>
 							</div>
 						</div>
-						<Card className="border-border/50 shadow-sm overflow-hidden">
+						<Card className="shadow-sm">
 							<CardContent className="p-0">
-								<div className="flex flex-col sm:flex-row sm:items-center sm:justify-between p-4 sm:p-6 border-b border-border/50 bg-muted/5 gap-3 sm:gap-0">
+								{/* Theme toggle row */}
+								<div className="flex items-center justify-between p-4 border-b border-border">
 									<div className="space-y-0.5">
-										<Label className="text-sm sm:text-base font-bold">
+										<Label className="text-sm font-medium">
 											Interface Theme
 										</Label>
-										<p className="text-[10px] sm:text-xs text-muted-foreground">
+										<p className="text-xs text-muted-foreground">
 											Switch between light and dark modes
 										</p>
 									</div>
-									<div className="flex items-center gap-1 bg-muted/50 p-1 rounded-lg border border-border/50 shrink-0">
+									<div className="flex items-center gap-0.5 bg-muted rounded-md p-1 border border-border shrink-0">
 										<Button
 											variant={
 												theme === "light"
@@ -291,7 +288,7 @@ export default function SettingsPage() {
 												theme !== "light" &&
 												toggleTheme()
 											}
-											className="h-7 sm:h-8 px-3 sm:px-4 rounded-md font-medium text-xs"
+											className="h-7 px-3 text-xs font-medium rounded-sm"
 										>
 											Light
 										</Button>
@@ -306,92 +303,86 @@ export default function SettingsPage() {
 												theme !== "dark" &&
 												toggleTheme()
 											}
-											className="h-7 sm:h-8 px-3 sm:px-4 rounded-md font-medium text-xs"
+											className="h-7 px-3 text-xs font-medium rounded-sm"
 										>
 											Dark
 										</Button>
 									</div>
 								</div>
-								<div className="p-4 sm:p-6 space-y-3 sm:space-y-4">
-									<Label className="text-xs sm:text-sm font-bold">
+
+								{/* Accent color row */}
+								<div className="p-4 space-y-3">
+									<Label className="text-sm font-medium">
 										Accent Color
 									</Label>
-									<div className="flex flex-wrap gap-3 sm:gap-4">
-										{[
-											{
-												name: "Violet",
-												value: "oklch(0.6333 0.0309 154.9039)",
-											},
-											{
-												name: "Blue",
-												value: "oklch(0.5624 0.1743 260.1433)",
-											},
-											{
-												name: "Green",
-												value: "oklch(0.6744 0.1427 156.0110)",
-											},
-											{
-												name: "Orange",
-												value: "oklch(0.7209 0.1489 60.9474)",
-											},
-										].map((color) => (
-											<div
-												key={color.name}
-												className="flex flex-col items-center gap-1 sm:gap-2 text-center group"
-											>
-												<button
-													className={cn(
-														"w-8 h-8 sm:w-10 sm:h-10 rounded-xl transition-all duration-300 transform hover:scale-105 flex items-center justify-center shadow-md",
-														color.name === "Violet"
-															? "ring-2 ring-primary ring-offset-2 ring-offset-background"
-															: "hover:ring-2 hover:ring-muted-foreground/30 ring-offset-1 ring-offset-background",
-													)}
-													style={{
-														backgroundColor:
-															color.value,
-													}}
+									<div className="flex flex-wrap gap-4">
+										{ACCENT_COLORS.map((color) => {
+											const isSelected =
+												accentColor === color.name;
+											return (
+												<div
+													key={color.name}
+													className="flex flex-col items-center gap-1.5 text-center"
 												>
-													{color.name ===
-														"Violet" && (
-														<Check className="h-3 w-3 sm:h-4 sm:w-4 text-white drop-shadow-sm" />
-													)}
-												</button>
-												<span className="text-[9px] sm:text-[10px] font-bold text-muted-foreground group-hover:text-foreground transition-colors">
-													{color.name}
-												</span>
-											</div>
-										))}
+													<button
+														onClick={() =>
+															setAccentColor(
+																color.name,
+															)
+														}
+														className={cn(
+															"w-9 h-9 rounded-lg transition-all flex items-center justify-center shadow-sm",
+															isSelected
+																? "ring-2 ring-primary ring-offset-2 ring-offset-background"
+																: "hover:ring-2 hover:ring-muted-foreground/30 ring-offset-1 ring-offset-background",
+														)}
+														style={{
+															backgroundColor:
+																color.swatch,
+														}}
+													>
+														{isSelected && (
+															<Check className="h-4 w-4 text-white drop-shadow-sm" />
+														)}
+													</button>
+													<span className="text-[10px] font-medium text-muted-foreground">
+														{color.name}
+													</span>
+												</div>
+											);
+										})}
 									</div>
 								</div>
 							</CardContent>
 						</Card>
 					</section>
-					{/* Notifications */}
+
+					{/* ── Notifications ── */}
 					<section id="notifications">
-						<div className="flex items-start sm:items-center gap-2 sm:gap-3 mb-3 sm:mb-4">
-							<div className="p-2 rounded-xl bg-amber-500/10 dark:bg-amber-500/20 shadow-inner shrink-0">
-								<Bell className="h-4 w-4 sm:h-5 sm:w-5 text-amber-600 dark:text-amber-400" />
+						<div className="flex items-center gap-3 mb-4">
+							<div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-amber-500/10">
+								<Bell className="h-4 w-4 text-amber-600 dark:text-amber-400" />
 							</div>
 							<div>
-								<h2 className="text-lg sm:text-xl font-bold tracking-tight text-foreground">
+								<h2 className="text-sm font-semibold tracking-tight">
 									Notifications
 								</h2>
-								<p className="text-[10px] sm:text-sm text-muted-foreground transition-colors group-hover:text-foreground">
+								<p className="text-xs text-muted-foreground">
 									Manage your alerts and sounds
 								</p>
 							</div>
 						</div>
-						<Card className="border-border/50 shadow-sm divide-y divide-border/50 overflow-hidden">
-							<div className="flex flex-col sm:flex-row sm:items-center sm:justify-between p-4 sm:p-6 hover:bg-muted/5 transition-colors gap-3 sm:gap-0">
-								<div className="flex gap-3 sm:gap-4">
-									<div className="h-8 w-8 sm:h-10 sm:w-10 rounded-xl bg-muted flex items-center justify-center shrink-0 shadow-inner">
-										<Bell className="h-4 w-4 sm:h-5 sm:w-5 text-muted-foreground" />
+						<Card className="shadow-sm divide-y divide-border">
+							<div className="flex items-center justify-between p-4">
+								<div className="flex items-center gap-3">
+									<div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-muted">
+										<Bell className="h-4 w-4 text-muted-foreground" />
 									</div>
 									<div className="space-y-0.5">
-										<Label className="text-sm sm:text-base font-bold">
+										<Label className="text-sm font-medium">
 											Enable Notifications
 										</Label>
-										<p className="text-[10px] sm:text-xs text-muted-foreground">
+										<p className="text-xs text-muted-foreground">
 											Push notifications for messages and
 											files
 										</p>
@@ -399,22 +390,20 @@ export default function SettingsPage() {
 								</div>
 								<Switch
 									checked={notificationsEnabled}
-									onCheckedChange={(val) =>
-										setNotificationsEnabled(val)
-									}
+									onCheckedChange={setNotificationsEnabled}
 									className="shrink-0"
 								/>
 							</div>
-							<div className="flex flex-col sm:flex-row sm:items-center sm:justify-between p-4 sm:p-6 hover:bg-muted/5 transition-colors group gap-3 sm:gap-0">
-								<div className="flex gap-3 sm:gap-4">
-									<div className="h-8 w-8 sm:h-10 sm:w-10 rounded-xl bg-muted flex items-center justify-center shrink-0 shadow-inner">
-										<Globe className="h-4 w-4 sm:h-5 sm:w-5 text-muted-foreground" />
+							<div className="flex items-center justify-between p-4">
+								<div className="flex items-center gap-3">
+									<div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-muted">
+										<Globe className="h-4 w-4 text-muted-foreground" />
 									</div>
 									<div className="space-y-0.5">
-										<Label className="text-sm sm:text-base font-bold">
+										<Label className="text-sm font-medium">
 											Sound Feedback
 										</Label>
-										<p className="text-[10px] sm:text-xs text-muted-foreground">
+										<p className="text-xs text-muted-foreground">
 											Play unique sounds for different
 											events
 										</p>
@@ -422,38 +411,37 @@ export default function SettingsPage() {
 								</div>
 								<Switch
 									checked={soundEnabled}
-									onCheckedChange={(val) =>
-										setSoundEnabled(val)
-									}
+									onCheckedChange={setSoundEnabled}
 									disabled={!notificationsEnabled}
 									className="shrink-0"
 								/>
 							</div>
 						</Card>
 					</section>
-					{/* Network */}
+
+					{/* ── Network & Discovery ── */}
 					<section id="network">
-						<div className="flex items-start sm:items-center gap-2 sm:gap-3 mb-3 sm:mb-4">
-							<div className="p-2 rounded-xl bg-emerald-500/10 dark:bg-emerald-500/20 shadow-inner shrink-0">
-								<Wifi className="h-4 w-4 sm:h-5 sm:w-5 text-emerald-600 dark:text-emerald-400" />
+						<div className="flex items-center gap-3 mb-4">
+							<div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-500/10">
+								<Wifi className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
 							</div>
 							<div>
-								<h2 className="text-lg sm:text-xl font-bold tracking-tight text-foreground">
+								<h2 className="text-sm font-semibold tracking-tight">
 									Network & Discovery
 								</h2>
-								<p className="text-[10px] sm:text-xs text-muted-foreground">
+								<p className="text-xs text-muted-foreground">
 									Control local network visibility
 								</p>
 							</div>
 						</div>
-						<Card className="border-border/50 shadow-sm overflow-hidden">
-							<CardContent className="p-4 sm:p-6 space-y-4 sm:space-y-6">
-								<div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-0">
+						<Card className="shadow-sm">
+							<CardContent className="p-6 space-y-6">
+								<div className="flex items-center justify-between">
 									<div className="space-y-0.5">
-										<Label className="text-sm sm:text-base font-bold">
+										<Label className="text-sm font-medium">
 											Global Visibility
 										</Label>
-										<p className="text-[10px] sm:text-xs text-muted-foreground">
+										<p className="text-xs text-muted-foreground">
 											Allow any device on this network to
 											find you
 										</p>
@@ -469,18 +457,20 @@ export default function SettingsPage() {
 										className="shrink-0"
 									/>
 								</div>
-								<div className="space-y-3 p-3 sm:p-4 rounded-xl bg-muted/40 border border-border/50 border-dashed">
-									<div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-0">
+
+								{/* Port config panel */}
+								<div className="space-y-3 p-4 rounded-lg bg-muted/50 border border-border">
+									<div className="flex items-center justify-between">
 										<Label
 											htmlFor="port"
-											className="text-xs sm:text-sm font-bold"
+											className="text-sm font-medium"
 										>
 											mDNS Discovery Port
 										</Label>
 										<div className="flex items-center gap-2">
 											<Badge
 												variant="secondary"
-												className="font-mono text-[8px] sm:text-[9px] uppercase px-1.5"
+												className="font-mono text-xs"
 											>
 												UDP/TCP
 											</Badge>
@@ -494,12 +484,12 @@ export default function SettingsPage() {
 														port: e.target.value,
 													})
 												}
-												className="w-20 h-8 sm:h-9 text-right bg-background font-mono text-xs font-bold"
+												className="w-20 h-8 text-right font-mono text-xs font-medium"
 											/>
 										</div>
 									</div>
-									<p className="text-[10px] text-muted-foreground leading-relaxed flex items-start gap-1.5">
-										<Info className="h-3 w-3 mt-0.5 shrink-0" />
+									<p className="text-xs text-muted-foreground flex items-start gap-1.5">
+										<Info className="h-3.5 w-3.5 mt-0.5 shrink-0" />
 										Advanced: Standard is 5353. Only change
 										if you experience network conflicts.
 									</p>
@@ -507,14 +497,15 @@ export default function SettingsPage() {
 							</CardContent>
 						</Card>
 					</section>
-					{/* Security */}
+
+					{/* ── Privacy & Security ── */}
 					<section id="security">
 						<div className="flex items-center gap-3 mb-4">
-							<div className="p-2 rounded-xl bg-rose-500/10 dark:bg-rose-500/20 shadow-inner">
-								<Shield className="h-5 w-5 text-rose-600 dark:text-rose-400" />
+							<div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-rose-500/10">
+								<Shield className="h-4 w-4 text-rose-600 dark:text-rose-400" />
 							</div>
 							<div>
-								<h2 className="text-xl font-bold tracking-tight text-foreground">
+								<h2 className="text-sm font-semibold tracking-tight">
 									Privacy & Security
 								</h2>
 								<p className="text-xs text-muted-foreground">
@@ -522,25 +513,23 @@ export default function SettingsPage() {
 								</p>
 							</div>
 						</div>
-						<Card className="border-border/50 shadow-sm overflow-hidden">
+						<Card className="shadow-sm overflow-hidden">
 							<CardContent className="p-0">
-								<div className="p-6 flex items-start gap-4 bg-emerald-500/5 dark:bg-emerald-500/10 border-b border-border/50 relative overflow-hidden">
-									<div className="absolute top-0 right-0 p-2 opacity-5">
-										<Lock className="h-16 w-16 rotate-12" />
-									</div>
-									<div className="mt-1 p-1 bg-emerald-500 rounded-full shadow-md shadow-emerald-500/20">
+								{/* Encryption banner */}
+								<div className="flex items-start gap-3 p-4 bg-emerald-500/5 border-b border-border">
+									<div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-500 shadow-sm mt-0.5">
 										<Check className="h-3 w-3 text-white" />
 									</div>
-									<div className="space-y-1 relative z-10">
+									<div className="space-y-1">
 										<div className="flex items-center gap-2">
-											<h3 className="text-base font-bold text-emerald-800 dark:text-emerald-400">
+											<h3 className="text-sm font-semibold text-emerald-800 dark:text-emerald-400">
 												Post-Quantum Encryption
 											</h3>
-											<Badge className="bg-emerald-500 hover:bg-emerald-600 text-[9px] uppercase font-black tracking-widest px-1.5">
+											<Badge className="bg-emerald-500 hover:bg-emerald-600 text-[10px] uppercase font-semibold tracking-wide px-1.5">
 												Active
 											</Badge>
 										</div>
-										<p className="text-xs text-muted-foreground max-w-xl leading-relaxed">
+										<p className="text-xs text-muted-foreground leading-relaxed">
 											All transfers and messages are
 											secured with AES-256-GCM. Hyper
 											Connect uses perfect forward secrecy
@@ -548,10 +537,12 @@ export default function SettingsPage() {
 										</p>
 									</div>
 								</div>
-								<div className="p-6 space-y-6">
-									<div className="flex items-center justify-between">
+
+								{/* Security toggle rows */}
+								<div className="divide-y divide-border">
+									<div className="flex items-center justify-between p-4">
 										<div className="space-y-0.5">
-											<Label className="text-base font-bold">
+											<Label className="text-sm font-medium">
 												Strict Verification
 											</Label>
 											<p className="text-xs text-muted-foreground">
@@ -567,11 +558,12 @@ export default function SettingsPage() {
 													requireApproval: val,
 												})
 											}
+											className="shrink-0"
 										/>
 									</div>
-									<div className="flex items-center justify-between">
+									<div className="flex items-center justify-between p-4">
 										<div className="space-y-0.5">
-											<Label className="text-base font-bold">
+											<Label className="text-sm font-medium">
 												Stealth Mode
 											</Label>
 											<p className="text-xs text-muted-foreground">
@@ -587,20 +579,80 @@ export default function SettingsPage() {
 													blockUnknown: val,
 												})
 											}
+											className="shrink-0"
 										/>
 									</div>
 								</div>
 							</CardContent>
 						</Card>
 					</section>
-					{/* Advanced */}
-					<section id="advanced">
+
+					{/* ── Downloads ── */}
+					<section id="downloads">
 						<div className="flex items-center gap-3 mb-4">
-							<div className="p-2 rounded-xl bg-slate-500/10 dark:bg-slate-500/20 shadow-inner">
-								<SettingsIcon className="h-5 w-5 text-slate-600 dark:text-slate-400" />
+							<div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-cyan-500/10">
+								<Download className="h-4 w-4 text-cyan-600 dark:text-cyan-400" />
 							</div>
 							<div>
-								<h2 className="text-xl font-bold tracking-tight text-foreground">
+								<h2 className="text-sm font-semibold tracking-tight">
+									Downloads
+								</h2>
+								<p className="text-xs text-muted-foreground">
+									Choose where received files are saved
+								</p>
+							</div>
+						</div>
+						<Card className="shadow-sm">
+							<CardContent className="p-6 space-y-4">
+								<div className="space-y-2">
+									<Label className="text-sm font-medium">
+										Download Folder
+									</Label>
+									<div className="flex items-center gap-2">
+										<div className="flex-1 min-w-0 flex items-center gap-2 px-3 py-2 rounded-lg bg-muted/50 border border-border">
+											<FolderOpen className="h-4 w-4 text-muted-foreground shrink-0" />
+											<span className="text-sm text-foreground truncate font-mono">
+												{displayDownloadDir ||
+													"Loading…"}
+											</span>
+										</div>
+										<Button
+											variant="outline"
+											size="sm"
+											className="h-9 px-3 text-xs font-medium shrink-0"
+											onClick={handleChangeDownloadDir}
+											disabled={isLoadingDir}
+										>
+											{isLoadingDir ? "…" : "Change"}
+										</Button>
+										<Button
+											variant="ghost"
+											size="sm"
+											className="h-9 w-9 shrink-0 text-muted-foreground hover:text-foreground"
+											onClick={handleOpenDownloadDir}
+											title="Open folder"
+										>
+											<ExternalLink className="h-4 w-4" />
+										</Button>
+									</div>
+									<p className="text-xs text-muted-foreground">
+										Files received from other devices will
+										be saved to this folder. Click "Change"
+										to pick a different location.
+									</p>
+								</div>
+							</CardContent>
+						</Card>
+					</section>
+
+					{/* ── Advanced ── */}
+					<section id="advanced">
+						<div className="flex items-center gap-3 mb-4">
+							<div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-500/10">
+								<SettingsIcon className="h-4 w-4 text-slate-600 dark:text-slate-400" />
+							</div>
+							<div>
+								<h2 className="text-sm font-semibold tracking-tight">
 									Advanced
 								</h2>
 								<p className="text-xs text-muted-foreground">
@@ -608,125 +660,131 @@ export default function SettingsPage() {
 								</p>
 							</div>
 						</div>
-						<Card className="border-border/50 shadow-sm p-6 space-y-6">
-							<div className="flex items-center justify-between">
-								<div className="space-y-0.5">
-									<Label className="text-base font-bold">
-										Hardware Acceleration
-									</Label>
-									<p className="text-xs text-muted-foreground">
-										Optimize file checksums and UI using GPU
-										resources
-										<Badge
-											variant="secondary"
-											className="ml-2 text-[9px] uppercase"
-										>
-											Recommended
-										</Badge>
-									</p>
-								</div>
-								<Switch
-									checked={settings.hardwareAcceleration}
-									onCheckedChange={(val) =>
-										setSettings({
-											...settings,
-											hardwareAcceleration: val,
-										})
-									}
-								/>
-							</div>
-							<div className="space-y-4 pt-4 border-t border-border/50">
+						<Card className="shadow-sm">
+							<CardContent className="p-6 space-y-6">
 								<div className="flex items-center justify-between">
-									<div className="flex items-center gap-2">
-										<Label className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+									<div className="space-y-0.5">
+										<Label className="text-sm font-medium">
+											Hardware Acceleration
+										</Label>
+										<p className="text-xs text-muted-foreground">
+											Optimize file checksums and UI using
+											GPU resources
+											<Badge
+												variant="secondary"
+												className="ml-2 text-[10px] font-medium"
+											>
+												Recommended
+											</Badge>
+										</p>
+									</div>
+									<Switch
+										checked={settings.hardwareAcceleration}
+										onCheckedChange={(val) =>
+											setSettings({
+												...settings,
+												hardwareAcceleration: val,
+											})
+										}
+										className="shrink-0"
+									/>
+								</div>
+
+								<div className="space-y-4 pt-4 border-t border-border">
+									<div className="flex items-center justify-between">
+										<Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
 											Cache Allocation
 										</Label>
+										<Badge
+											variant="outline"
+											className="font-mono font-semibold text-primary bg-primary/5 border-primary/20 text-xs"
+										>
+											{settings.cacheSize} MB
+										</Badge>
 									</div>
-									<Badge
-										variant="outline"
-										className="font-black text-primary px-2 py-0.5 bg-primary/5 border-primary/20 text-xs"
-									>
-										{settings.cacheSize} MB
-									</Badge>
-								</div>
-								<Input
-									type="range"
-									min="100"
-									max="5000"
-									step="100"
-									value={settings.cacheSize}
-									onChange={(e) =>
-										setSettings({
-											...settings,
-											cacheSize: e.target.value,
-										})
-									}
-									className="h-1.5 bg-muted accent-primary cursor-pointer border-none p-0 appearance-none rounded-full"
-								/>
-								<div className="flex justify-between items-center bg-muted/30 p-3 rounded-lg border border-border/50">
-									<div className="flex items-center gap-2 text-xs text-muted-foreground">
-										<RefreshCw
-											className={cn(
-												"h-3.5 w-3.5",
-												isClearingCache &&
-													"animate-spin",
-											)}
-										/>
-										Buffered file chunk storage
-									</div>
-									<AlertDialog>
-										<AlertDialogTrigger asChild>
-											<Button
-												variant="outline"
-												size="sm"
-												className="h-8 px-3 text-[10px] font-bold text-destructive hover:bg-destructive/10 border-destructive/20 transition-all"
-												disabled={isClearingCache}
-											>
-												<Trash2 className="h-3.5 w-3.5 mr-1.5" />
-												{isClearingCache
-													? "Clearing..."
-													: "Clear Cache"}
-											</Button>
-										</AlertDialogTrigger>
-										<AlertDialogContent>
-											<AlertDialogHeader>
-												<AlertDialogTitle>
-													Clear Cache
-												</AlertDialogTitle>
-												<AlertDialogDescription>
-													This will clear all cached
-													messages, file transfers,
-													and discovered devices. Your
-													identity, device name, and
-													preferences will be
-													preserved.
-												</AlertDialogDescription>
-											</AlertDialogHeader>
-											<AlertDialogFooter>
-												<AlertDialogCancel>
-													Cancel
-												</AlertDialogCancel>
-												<AlertDialogAction
-													onClick={handleClearCache}
-													className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+									<Input
+										type="range"
+										min="100"
+										max="5000"
+										step="100"
+										value={settings.cacheSize}
+										onChange={(e) =>
+											setSettings({
+												...settings,
+												cacheSize: e.target.value,
+											})
+										}
+										className="h-1.5 bg-muted accent-primary cursor-pointer border-none p-0 appearance-none rounded-full"
+									/>
+									<div className="flex items-center justify-between rounded-lg bg-muted/50 p-3 border border-border">
+										<div className="flex items-center gap-2 text-xs text-muted-foreground">
+											<RefreshCw
+												className={cn(
+													"h-3.5 w-3.5",
+													isClearingCache &&
+														"animate-spin",
+												)}
+											/>
+											Buffered file chunk storage
+										</div>
+										<AlertDialog>
+											<AlertDialogTrigger asChild>
+												<Button
+													variant="outline"
+													size="sm"
+													className="h-8 px-3 text-xs font-medium text-destructive hover:bg-destructive/10 border-destructive/30 transition-colors"
+													disabled={isClearingCache}
 												>
-													Clear Cache
-												</AlertDialogAction>
-											</AlertDialogFooter>
-										</AlertDialogContent>
-									</AlertDialog>
+													<Trash2 className="h-3.5 w-3.5 mr-1.5" />
+													{isClearingCache
+														? "Clearing..."
+														: "Clear Cache"}
+												</Button>
+											</AlertDialogTrigger>
+											<AlertDialogContent>
+												<AlertDialogHeader>
+													<AlertDialogTitle>
+														Clear Cache
+													</AlertDialogTitle>
+													<AlertDialogDescription>
+														This will clear all
+														cached messages, file
+														transfers, and
+														discovered devices. Your
+														identity, device name,
+														and preferences will be
+														preserved.
+													</AlertDialogDescription>
+												</AlertDialogHeader>
+												<AlertDialogFooter>
+													<AlertDialogCancel>
+														Cancel
+													</AlertDialogCancel>
+													<AlertDialogAction
+														onClick={
+															handleClearCache
+														}
+														className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+													>
+														Clear Cache
+													</AlertDialogAction>
+												</AlertDialogFooter>
+											</AlertDialogContent>
+										</AlertDialog>
+									</div>
 								</div>
-							</div>
+							</CardContent>
 						</Card>
 					</section>
-					{/* About */}
+
+					{/* ── About ── */}
 					<section id="about">
 						<div className="flex items-center gap-3 mb-4">
-							<div className="p-2 rounded-xl bg-primary/10 shadow-inner">
-								<Info className="h-5 w-5 text-primary" />
+							<div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10">
+								<Info className="h-4 w-4 text-primary" />
 							</div>
 							<div>
-								<h2 className="text-xl font-bold tracking-tight text-foreground">
+								<h2 className="text-sm font-semibold tracking-tight">
 									About
 								</h2>
 								<p className="text-xs text-muted-foreground">
@@ -734,28 +792,30 @@ export default function SettingsPage() {
 								</p>
 							</div>
 						</div>
-						<Card className="border-border/50 shadow-sm overflow-hidden bg-card/60 backdrop-blur-md">
-							<div className="p-8 flex flex-col items-center text-center space-y-4 relative overflow-hidden">
-								<div className="absolute inset-0 bg-primary/5 mask-[radial-gradient(ellipse_at_center,transparent_20%,black)]" />
-								<div className="h-16 w-16 rounded-2xl bg-primary flex items-center justify-center shadow-lg shadow-primary/30 rotate-3 transform transition-transform hover:rotate-0 duration-500 relative z-10">
-									<RefreshCw className="h-8 w-8 text-primary-foreground animate-spin-slow" />
+						<Card className="shadow-sm overflow-hidden">
+							{/* Branding block */}
+							<div className="flex flex-col items-center text-center p-8 space-y-3 border-b border-border bg-muted/30">
+								<div className="h-14 w-14 rounded-2xl bg-primary flex items-center justify-center shadow-md">
+									<RefreshCw className="h-7 w-7 text-primary-foreground animate-spin-slow" />
 								</div>
-								<div className="relative z-10">
-									<h3 className="text-xl font-black tracking-tighter">
+								<div>
+									<h3 className="text-base font-bold tracking-tight">
 										Hyper Connect
 									</h3>
-									<p className="text-xs font-medium text-muted-foreground">
-										v0.1.0-alpha.5 Build 2026
+									<p className="text-xs text-muted-foreground mt-0.5">
+										v0.1.0-alpha.5 · Build 2026
 									</p>
 								</div>
 								<Badge
 									variant="secondary"
-									className="bg-primary/20 text-primary hover:bg-primary/30 border-none px-4 py-1 text-[9px] font-black uppercase tracking-widest relative z-10"
+									className="text-[10px] uppercase font-semibold tracking-widest"
 								>
 									Release Candidate
 								</Badge>
 							</div>
-							<div className="border-t border-border/50 bg-muted/20">
+
+							{/* Info rows */}
+							<div className="divide-y divide-border">
 								{[
 									{
 										label: "Platform",
@@ -771,19 +831,19 @@ export default function SettingsPage() {
 								].map((item) => (
 									<div
 										key={item.label}
-										className="px-6 py-3 flex items-center justify-between hover:bg-muted/30 transition-colors"
+										className="flex items-center justify-between px-6 py-3 hover:bg-muted/50 transition-colors"
 									>
-										<div className="flex items-center gap-3">
-											<item.icon className="h-4 w-4 text-muted-foreground/70" />
-											<span className="text-xs font-bold text-foreground/80">
+										<div className="flex items-center gap-2">
+											<item.icon className="h-4 w-4 text-muted-foreground" />
+											<span className="text-xs font-medium">
 												{item.label}
 											</span>
 										</div>
 										<span
 											className={cn(
-												"text-[10px] text-muted-foreground truncate max-w-[200px] font-medium",
+												"text-xs text-muted-foreground truncate max-w-[200px]",
 												item.isMono &&
-													"font-mono bg-background/50 px-1.5 py-0.5 rounded",
+													"font-mono bg-muted px-1.5 py-0.5 rounded-md",
 											)}
 										>
 											{item.value}
@@ -791,42 +851,45 @@ export default function SettingsPage() {
 									</div>
 								))}
 							</div>
-							<div className="p-4 flex flex-wrap gap-2 justify-center border-t border-border/50 bg-muted/10">
+
+							{/* Link buttons */}
+							<div className="flex flex-wrap gap-1 justify-center p-3 border-t border-border bg-muted/20">
 								<Button
 									variant="ghost"
 									size="sm"
-									className="text-[10px] font-bold gap-1.5 h-8 px-3 rounded-md"
+									className="text-xs gap-1.5 h-8 rounded-md font-medium"
 								>
-									<ExternalLink className="h-3.5 w-3.5 text-primary" />
+									<ExternalLink className="h-3.5 w-3.5" />
 									Privacy
 								</Button>
 								<Button
 									variant="ghost"
 									size="sm"
-									className="text-[10px] font-bold gap-1.5 h-8 px-3 rounded-md"
+									className="text-xs gap-1.5 h-8 rounded-md font-medium"
 								>
-									<ExternalLink className="h-3.5 w-3.5 text-primary" />
+									<ExternalLink className="h-3.5 w-3.5" />
 									Terms
 								</Button>
 								<Button
 									variant="ghost"
 									size="sm"
-									className="text-[10px] font-bold gap-1.5 h-8 px-3 rounded-md"
+									className="text-xs gap-1.5 h-8 rounded-md font-medium"
 								>
-									<Shield className="h-3.5 w-3.5 text-primary" />
+									<Shield className="h-3.5 w-3.5" />
 									Licenses
 								</Button>
 							</div>
 						</Card>
 					</section>
-					{/* Danger Zone */}
+
+					{/* ── Danger Zone ── */}
 					<section id="danger-zone">
 						<div className="flex items-center gap-3 mb-4">
-							<div className="p-2 rounded-xl bg-destructive/10 shadow-inner">
-								<AlertTriangle className="h-5 w-5 text-destructive" />
+							<div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-destructive/10">
+								<AlertTriangle className="h-4 w-4 text-destructive" />
 							</div>
 							<div>
-								<h2 className="text-xl font-bold tracking-tight text-foreground">
+								<h2 className="text-sm font-semibold tracking-tight">
 									Danger Zone
 								</h2>
 								<p className="text-xs text-muted-foreground">
@@ -834,14 +897,14 @@ export default function SettingsPage() {
 								</p>
 							</div>
 						</div>
-						<Card className="border-destructive/20 shadow-sm overflow-hidden bg-card/60 backdrop-blur-md">
-							<div className="p-6 space-y-4">
-								<div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+						<Card className="border-destructive/30 shadow-sm">
+							<CardContent className="p-6">
+								<div className="flex items-start justify-between gap-6">
 									<div className="space-y-1">
-										<h3 className="text-sm font-bold text-foreground">
+										<h3 className="text-sm font-semibold">
 											Reset App
 										</h3>
-										<p className="text-xs text-muted-foreground max-w-md">
+										<p className="text-xs text-muted-foreground max-w-sm leading-relaxed">
 											Permanently delete all messages,
 											file transfers, discovered devices,
 											and your device identity. You will
@@ -853,7 +916,7 @@ export default function SettingsPage() {
 											<Button
 												variant="destructive"
 												size="sm"
-												className="h-9 px-4 text-xs font-bold gap-2 shrink-0"
+												className="h-9 px-4 text-xs font-medium gap-2 shrink-0"
 												disabled={isResetting}
 											>
 												{isResetting ? (
@@ -913,11 +976,32 @@ export default function SettingsPage() {
 										</AlertDialogContent>
 									</AlertDialog>
 								</div>
-							</div>
+							</CardContent>
 						</Card>
 					</section>
-					{/* Footer Spacer */}
-					<div className="h-8" />
+
+					{/* Save button */}
+					<div className="flex items-center justify-end gap-3 pt-2 pb-2">
+						{hasUnsavedChanges && (
+							<span className="text-xs text-amber-500 font-medium">
+								Unsaved changes
+							</span>
+						)}
+						<Button
+							onClick={handleSave}
+							disabled={!hasUnsavedChanges || isSaving}
+							className="gap-2 px-4 h-9 text-sm shadow-sm"
+						>
+							{isSaving ? (
+								<RefreshCw className="h-4 w-4 animate-spin" />
+							) : (
+								<Save className="h-4 w-4" />
+							)}
+							{isSaving ? "Saving..." : "Save Changes"}
+						</Button>
+					</div>
+
+					<div className="h-4" />
 				</div>
 			</ScrollArea>
 		</div>

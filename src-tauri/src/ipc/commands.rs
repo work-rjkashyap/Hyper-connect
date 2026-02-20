@@ -6,12 +6,18 @@ use crate::discovery::{Device, MdnsDiscoveryService};
 use crate::identity::{DeviceIdentity, IdentityManager};
 use crate::messaging::{Message, MessageType, MessagingService, Thread};
 use crate::network::{FileTransfer, FileTransferService};
+use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::Emitter;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Manager, State};
+use tokio::sync::Mutex;
 
 /// Newtype wrapper so `u16` can be stored as distinct managed state.
 pub struct TcpPort(pub u16);
+
+/// Managed state that holds the user's chosen download directory.
+/// Defaults to the system Downloads folder when not explicitly set.
+pub struct DownloadDir(pub Mutex<Option<PathBuf>>);
 
 // ============================================================================
 // Connection Health Commands
@@ -281,6 +287,108 @@ pub async fn get_transfers(
 #[tauri::command]
 pub fn get_tcp_port(tcp_port: State<TcpPort>) -> u16 {
     tcp_port.0
+}
+
+// ============================================================================
+// App Reset Commands
+// ============================================================================
+
+// ============================================================================
+// Download Directory Commands
+// ============================================================================
+
+/// Return the current effective download directory.
+///
+/// If the user has set a custom path via `set_download_dir`, that path is
+/// returned.  Otherwise the platform's standard Downloads folder is used.
+#[tauri::command]
+pub async fn get_default_downloads_dir(
+    download_dir: State<'_, DownloadDir>,
+    app_handle: AppHandle,
+) -> Result<String, String> {
+    // Check if user has set a custom dir
+    let guard = download_dir.0.lock().await;
+    if let Some(ref custom) = *guard {
+        return Ok(custom.to_string_lossy().to_string());
+    }
+    drop(guard);
+
+    // Fall back to system Downloads directory
+    if let Some(dirs) = dirs::download_dir() {
+        Ok(dirs.to_string_lossy().to_string())
+    } else {
+        // Last resort: app data dir / downloads
+        let fallback = app_handle
+            .path()
+            .app_data_dir()
+            .map_err(|e| format!("Failed to get app data dir: {}", e))?
+            .join("downloads");
+        let _ = std::fs::create_dir_all(&fallback);
+        Ok(fallback.to_string_lossy().to_string())
+    }
+}
+
+/// Let the user change where received files are saved.
+#[tauri::command]
+pub async fn set_download_dir(
+    download_dir: State<'_, DownloadDir>,
+    path: String,
+) -> Result<(), String> {
+    let p = PathBuf::from(&path);
+    if !p.is_dir() {
+        return Err(format!("Path is not a valid directory: {}", path));
+    }
+    let mut guard = download_dir.0.lock().await;
+    *guard = Some(p);
+    println!("✓ Download directory set to: {}", path);
+    Ok(())
+}
+
+/// Open the containing folder of a file in the system file manager,
+/// or open the folder itself if the path points to a directory.
+#[tauri::command]
+pub async fn open_file_location(path: String) -> Result<(), String> {
+    let p = std::path::Path::new(&path);
+
+    // Determine the folder to reveal
+    let folder = if p.is_dir() {
+        p.to_path_buf()
+    } else if let Some(parent) = p.parent() {
+        parent.to_path_buf()
+    } else {
+        return Err("Cannot determine parent directory".to_string());
+    };
+
+    if !folder.exists() {
+        return Err(format!("Path does not exist: {}", folder.display()));
+    }
+
+    // Platform-specific "reveal in file manager"
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(&folder)
+            .spawn()
+            .map_err(|e| format!("Failed to open Finder: {}", e))?;
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("explorer")
+            .arg(&folder)
+            .spawn()
+            .map_err(|e| format!("Failed to open Explorer: {}", e))?;
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(&folder)
+            .spawn()
+            .map_err(|e| format!("Failed to open file manager: {}", e))?;
+    }
+
+    Ok(())
 }
 
 // ============================================================================

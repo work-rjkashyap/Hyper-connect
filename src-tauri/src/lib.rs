@@ -13,7 +13,7 @@ mod network;
 use crypto::tls::TlsConfig;
 use discovery::MdnsDiscoveryService;
 use identity::IdentityManager;
-use ipc::TcpPort;
+use ipc::{DownloadDir, TcpPort};
 use messaging::MessagingService;
 use network::{FileTransferService, TcpClient, TcpServer};
 use std::sync::Arc;
@@ -24,7 +24,8 @@ use tokio::sync::Mutex;
 pub fn run() {
     let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_store::Builder::new().build());
+        .plugin(tauri_plugin_store::Builder::new().build())
+        .plugin(tauri_plugin_dialog::init());
 
     // Only enable updater on desktop platforms (not on iOS/Android)
     #[cfg(not(any(target_os = "ios", target_os = "android")))]
@@ -135,6 +136,8 @@ pub fn run() {
             app.manage(file_transfer_service);
             // Expose the actual bound TCP port to IPC commands.
             app.manage(TcpPort(tcp_port));
+            // Managed download directory (defaults to system Downloads).
+            app.manage(DownloadDir(tokio::sync::Mutex::new(None)));
 
             // Auto-start mDNS discovery and advertising
             let discovery_clone = Arc::clone(&discovery_service);
@@ -184,6 +187,9 @@ pub fn run() {
             ipc::cancel_transfer,
             ipc::get_transfers,
             ipc::get_tcp_port,
+            ipc::get_default_downloads_dir,
+            ipc::set_download_dir,
+            ipc::open_file_location,
             // App reset commands
             ipc::clear_all_data,
         ])

@@ -3,6 +3,8 @@
 //! High-performance file transfer implementation optimized for LAN speeds.
 //! Uses zero-copy streaming with large chunks (256KB+) and minimal overhead.
 //!
+
+#![allow(dead_code)]
 //! Key optimizations:
 //! - Direct disk-to-socket streaming using tokio::io::copy
 //! - Large chunk sizes (256KB) to minimize protocol overhead

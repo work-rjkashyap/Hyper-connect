@@ -38,6 +38,9 @@ interface AppStore {
 	transfers: FileTransfer[];
 	activeTransfers: Set<string>;
 
+	// Download directory (persisted)
+	downloadDir: string | null;
+
 	// Connection health state (per device)
 	deviceConnectionStatus: Record<string, DeviceConnectionState>;
 	deviceLatencyMs: Record<string, number>;
@@ -65,8 +68,12 @@ interface AppStore {
 	 */
 	chatRequestStatus: Record<string, ChatRequestStatus>;
 
+	// Download directory actions
+	setDownloadDir: (path: string) => void;
+
 	// UI state
 	theme: "light" | "dark";
+	accentColor: string;
 	sidebarOpen: boolean;
 	/** The device ID of the chat currently open on screen (null if no chat is open). */
 	activeChatDeviceId: string | null;
@@ -172,6 +179,7 @@ interface AppStore {
 	// UI Actions
 	toggleTheme: () => void;
 	setTheme: (theme: "light" | "dark") => void;
+	setAccentColor: (color: string) => void;
 	toggleSidebar: () => void;
 	setSidebarOpen: (open: boolean) => void;
 	/** Set the device ID of the currently open chat (null to clear). */
@@ -204,8 +212,11 @@ const initialState = {
 	approvedDevices: [] as string[],
 	declinedDevices: [] as string[],
 	chatRequestStatus: {} as Record<string, ChatRequestStatus>,
+	// Download directory
+	downloadDir: null as string | null,
 	// UI
 	theme: "dark" as const,
+	accentColor: "Violet",
 	sidebarOpen: true,
 	activeChatDeviceId: null,
 	// Notification settings
@@ -264,16 +275,25 @@ export const useAppStore = create<AppStore>()(
 				}),
 
 			removeDevice: (deviceId) =>
-				set((state) => ({
-					devices: state.devices.filter(
-						(d) => d.device_id !== deviceId,
-					),
-					connectedDevices: new Set(
-						[...state.connectedDevices].filter(
-							(id) => id !== deviceId,
+				set((state) => {
+					const hasChat = state.startedChats.includes(deviceId);
+					return {
+						devices: hasChat
+							? state.devices.map((d) =>
+									d.device_id === deviceId
+										? { ...d, last_seen: 0 }
+										: d,
+								)
+							: state.devices.filter(
+									(d) => d.device_id !== deviceId,
+								),
+						connectedDevices: new Set(
+							[...state.connectedDevices].filter(
+								(id) => id !== deviceId,
+							),
 						),
-					),
-				})),
+					};
+				}),
 
 			updateDevice: (device) =>
 				set((state) => ({
@@ -622,12 +642,16 @@ export const useAppStore = create<AppStore>()(
 			// UI Actions
 			// ============================================================================
 
+			setDownloadDir: (path) => set({ downloadDir: path }),
+
 			toggleTheme: () =>
 				set((state) => ({
 					theme: state.theme === "light" ? "dark" : "light",
 				})),
 
 			setTheme: (theme) => set({ theme }),
+
+			setAccentColor: (color) => set({ accentColor: color }),
 
 			toggleSidebar: () =>
 				set((state) => ({
@@ -667,6 +691,7 @@ export const useAppStore = create<AppStore>()(
 				isOnboarded: state.isOnboarded,
 				deviceIdentity: state.deviceIdentity,
 				theme: state.theme,
+				accentColor: state.accentColor,
 				sidebarOpen: state.sidebarOpen,
 				messages: state.messages, // Persist chat history
 				// Privacy layer — persisted so approvals survive app restart
@@ -674,6 +699,8 @@ export const useAppStore = create<AppStore>()(
 				approvedDevices: state.approvedDevices,
 				declinedDevices: state.declinedDevices,
 				chatRequestStatus: state.chatRequestStatus,
+				// Download directory — persisted
+				downloadDir: state.downloadDir,
 				// Notification settings — persisted
 				notificationsEnabled: state.notificationsEnabled,
 				soundEnabled: state.soundEnabled,

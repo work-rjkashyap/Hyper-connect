@@ -1,13 +1,16 @@
 import { useParams } from "react-router-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { open } from "@tauri-apps/plugin-dialog";
 import { useEffect, useCallback, useState, useMemo } from "react";
 import { ChatWindow } from "@/components/chat/ChatWindow";
 import { useAppStore } from "@/store";
-import type { Message, ConnectionStatusEvent } from "@/types";
+import { useFileTransfer } from "@/hooks/use-file-transfer";
+import type { Message, ConnectionStatusEvent, FileTransfer } from "@/types";
 import {
 	getMessageContent,
 	isSystemMessage,
+	isFileMessage,
 	SYS_CHAT_ACCEPTED,
 	SYS_CHAT_DECLINED,
 } from "@/types";
@@ -39,6 +42,7 @@ export default function ChatPage() {
 		devices,
 		messages,
 		localDeviceId,
+		transfers,
 		addMessage,
 		setMessages,
 		markConversationAsRead,
@@ -55,6 +59,15 @@ export default function ChatPage() {
 		setChatRequestStatus,
 		startedChats,
 	} = useAppStore();
+
+	const {
+		createTransfer,
+		startTransfer,
+		acceptTransfer,
+		rejectTransfer,
+		cancelTransfer,
+		pauseTransfer,
+	} = useFileTransfer();
 
 	const [connectionState, setConnectionState] =
 		useState<ConnectionState>("idle");
@@ -77,6 +90,23 @@ export default function ChatPage() {
 		const allMessages = messages[key] || [];
 		return allMessages.filter((m) => !isSystemMessage(m));
 	}, [messages, selectedDevice, localDeviceId]);
+
+	// Build a lookup map of file transfers relevant to this conversation
+	const transferMap = useMemo((): Record<string, FileTransfer> => {
+		if (!selectedDevice || !localDeviceId) return {};
+		const map: Record<string, FileTransfer> = {};
+		for (const t of transfers) {
+			const isOurs =
+				(t.from_device_id === localDeviceId &&
+					t.to_device_id === selectedDevice.device_id) ||
+				(t.from_device_id === selectedDevice.device_id &&
+					t.to_device_id === localDeviceId);
+			if (isOurs) {
+				map[t.id] = t;
+			}
+		}
+		return map;
+	}, [transfers, selectedDevice, localDeviceId]);
 
 	// ── Determine approval state ───────────────────────────────────────────
 	const approvalState: ApprovalState = useMemo(() => {
@@ -371,6 +401,102 @@ export default function ChatPage() {
 		);
 	}, [selectedDevice, declineDevice, sendSystemMessage]);
 
+	// ── Handle file selection and send ───────────────────────────────────
+	const handleFileSelect = useCallback(
+		async (_file?: File) => {
+			if (!selectedDevice || !localDeviceId) return;
+
+			// Use Tauri dialog to pick a file (gives us the native path)
+			const selected = await open({
+				multiple: false,
+				title: "Select a file to share",
+			});
+
+			if (!selected) return; // user cancelled
+
+			const filePath = typeof selected === "string" ? selected : selected;
+			if (!filePath) return;
+
+			const peerAddress =
+				selectedDevice.addresses && selectedDevice.addresses.length > 0
+					? selectedDevice.addresses[0]
+					: null;
+
+			if (!peerAddress) {
+				alert("Device has no available network address.");
+				return;
+			}
+
+			try {
+				// 1. Create the transfer record in the backend
+				const transfer = await createTransfer(
+					selectedDevice.device_id,
+					filePath as string,
+				);
+				if (!transfer) return;
+
+				// 2. Send a chat message of type "File" so it shows in the conversation
+				const fileMsg = await invoke<Message>("send_message", {
+					fromDeviceId: localDeviceId,
+					toDeviceId: selectedDevice.device_id,
+					content: `📎 ${transfer.filename}`,
+					peerAddress,
+					peerPort: selectedDevice.port,
+				});
+
+				const key = getConversationKey(
+					localDeviceId,
+					selectedDevice.device_id,
+				);
+				addMessage(key, fileMsg);
+
+				// 3. Start the actual file transfer
+				await startTransfer(transfer.id, peerAddress);
+			} catch (error) {
+				console.error("Failed to send file:", error);
+				alert(
+					`Failed to send file: ${error instanceof Error ? error.message : String(error)}`,
+				);
+			}
+		},
+		[
+			selectedDevice,
+			localDeviceId,
+			createTransfer,
+			startTransfer,
+			addMessage,
+		],
+	);
+
+	// ── File transfer action handlers ───────────────────────────────────
+	const handleAcceptFile = useCallback(
+		async (transferId: string) => {
+			await acceptTransfer(transferId);
+		},
+		[acceptTransfer],
+	);
+
+	const handleRejectFile = useCallback(
+		async (transferId: string) => {
+			await rejectTransfer(transferId);
+		},
+		[rejectTransfer],
+	);
+
+	const handleCancelFile = useCallback(
+		async (transferId: string) => {
+			await cancelTransfer(transferId);
+		},
+		[cancelTransfer],
+	);
+
+	const handlePauseFile = useCallback(
+		async (transferId: string) => {
+			await pauseTransfer(transferId);
+		},
+		[pauseTransfer],
+	);
+
 	// ── Send a regular message ──────────────────────────────────────────
 	const handleSendMessage = async (text: string) => {
 		if (!selectedDevice || !localDeviceId) {
@@ -461,26 +587,64 @@ export default function ChatPage() {
 			}
 			connectionState={connectionState}
 			latencyMs={latencyMs}
-			messages={currentMessages.map((msg) => ({
-				id: msg.id,
-				content: getMessageContent(msg.message_type),
-				sender: msg.from_device_id === localDeviceId ? "me" : "them",
-				timestamp: new Date(msg.timestamp * 1000).toLocaleTimeString(
-					[],
-					{
+			messages={currentMessages.map((msg) => {
+				const isFile = isFileMessage(msg.message_type);
+				const fileId = isFile
+					? (
+							msg.message_type as {
+								type: "File";
+								file_id: string;
+								filename: string;
+								size: number;
+							}
+						).file_id
+					: undefined;
+				const fileTransfer = fileId ? transferMap[fileId] : undefined;
+
+				// Also try matching by filename in the content for text-based file messages
+				const contentMatchTransfer = !fileTransfer
+					? Object.values(transferMap).find(
+							(t) =>
+								getMessageContent(msg.message_type).includes(
+									t.filename,
+								) && t.from_device_id === msg.from_device_id,
+						)
+					: undefined;
+
+				const matchedTransfer = fileTransfer || contentMatchTransfer;
+				const msgType: "text" | "image" | "file" = matchedTransfer
+					? "file"
+					: "text";
+
+				return {
+					id: msg.id,
+					content: getMessageContent(msg.message_type),
+					sender: (msg.from_device_id === localDeviceId
+						? "me"
+						: "them") as "me" | "them",
+					timestamp: new Date(
+						msg.timestamp * 1000,
+					).toLocaleTimeString([], {
 						hour: "2-digit",
 						minute: "2-digit",
-					},
-				),
-				rawTimestamp: msg.timestamp,
-				status: msg.status as "sent" | "delivered" | "read",
-				type: "text",
-			}))}
+					}),
+					rawTimestamp: msg.timestamp,
+					status: msg.status as "sent" | "delivered" | "read",
+					type: msgType,
+					fileTransfer: matchedTransfer,
+				};
+			})}
 			onSendMessage={handleSendMessage}
+			onFileSelect={handleFileSelect}
 			// Privacy layer props
 			approvalState={approvalState}
 			onAcceptRequest={handleAccept}
 			onDeclineRequest={handleDecline}
+			// File transfer actions
+			onAcceptFile={handleAcceptFile}
+			onRejectFile={handleRejectFile}
+			onCancelFile={handleCancelFile}
+			onPauseFile={handlePauseFile}
 		/>
 	);
 }

@@ -3,6 +3,8 @@
 //! High-level wrapper for encrypted peer-to-peer communication.
 //! Provides a simple API for establishing secure connections and encrypting/decrypting data.
 
+#![allow(dead_code)]
+
 use crate::crypto::{
     decrypt_message, encrypt_message, EncryptedMessagePayload, FileStreamInit, HandshakeManager,
     HelloResponse, HelloSecure, Session, StreamDecryptor, StreamEncryptor, STREAM_BUFFER_SIZE,

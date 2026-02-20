@@ -3,6 +3,8 @@
 //! Manages ephemeral session keys for secure peer-to-peer communication.
 //! Each TCP connection gets a unique session with derived encryption keys.
 
+#![allow(dead_code)]
+
 use aes_gcm::aead::Aead;
 use aes_gcm::{Aes256Gcm, KeyInit, Nonce};
 use ctr::cipher::{KeyIvInit, StreamCipher};
