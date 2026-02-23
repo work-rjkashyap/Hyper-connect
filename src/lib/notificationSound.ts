@@ -1,94 +1,71 @@
 import { useAppStore } from "@/store";
+import newMessageSoundUrl from "@/assets/sound/new-message.mp3";
+import notificationSoundUrl from "@/assets/sound/notification-sound.mp3";
 
 /**
- * Notification sound utility using the Web Audio API.
+ * Notification sound utility.
  *
- * Synthesises a pleasant two-tone chime (no external audio file needed).
- * Respects the `notificationsEnabled` and `soundEnabled` settings from the
- * Zustand store – calling `playNotificationSound()` when either is off is a
- * no-op, so callers don't need to check settings themselves.
+ * Plays one of two MP3 files depending on whether the sender's chat is
+ * currently open on screen:
+ *
+ *   chatIsOpen = true  → new-message.mp3        (subtle in-chat ping)
+ *   chatIsOpen = false → notification-sound.mp3  (background notification)
+ *
+ * Gate rules:
+ *   - In-chat ping   : only requires `soundEnabled`
+ *   - Background tone: requires both `notificationsEnabled` AND `soundEnabled`
+ *
+ * A module-level reference to the currently playing audio is kept so that:
+ *   - A new sound stops any previous one before starting (no overlaps)
+ *   - The reference is cleared when playback ends or is aborted
+ *
+ * @param chatIsOpen  Whether the sender's chat window is currently visible
+ * @param volume      Master volume 0–1 (defaults: 0.4 in-chat, 0.6 background)
  */
 
-let audioCtx: AudioContext | null = null;
+// Module-level ref — tracks the currently playing Audio instance
+let currentAudio: HTMLAudioElement | null = null;
 
-/** Lazily initialise a shared AudioContext (reused across calls). */
-function getAudioContext(): AudioContext {
-	if (!audioCtx || audioCtx.state === "closed") {
-		audioCtx = new AudioContext();
-	}
-	return audioCtx;
-}
-
-/**
- * Play a short two-tone notification chime.
- *
- * The sound is a pair of sine-wave tones (C6 → E6) with a gentle fade-in /
- * fade-out envelope so it feels soft and non-intrusive.
- *
- * @param volume  Master volume 0–1 (default 0.3)
- */
-export function playNotificationSound(volume = 0.3): void {
-	// ── Gate: respect user settings ──────────────────────────────────────
+export function playNotificationSound(
+	chatIsOpen = false,
+	volume?: number,
+): void {
 	const { notificationsEnabled, soundEnabled } = useAppStore.getState();
-	if (!notificationsEnabled || !soundEnabled) return;
+
+	// ── Gate: respect user settings ──────────────────────────────────────
+	// In-chat ping is UX feedback, not a notification — only needs soundEnabled.
+	// Background notification needs both flags.
+	if (!soundEnabled) return;
+	if (!chatIsOpen && !notificationsEnabled) return;
+
+	// ── Default volume differs per context ───────────────────────────────
+	const effectiveVolume = volume ?? (chatIsOpen ? 0.4 : 0.6);
+	const url = chatIsOpen ? newMessageSoundUrl : notificationSoundUrl;
 
 	try {
-		const ctx = getAudioContext();
-
-		// Resume context if it was suspended (browser autoplay policy)
-		if (ctx.state === "suspended") {
-			ctx.resume();
+		// ── Stop any currently playing sound before starting a new one ───
+		if (currentAudio) {
+			currentAudio.pause();
+			currentAudio.currentTime = 0;
+			currentAudio = null;
 		}
 
-		const now = ctx.currentTime;
+		const audio = new Audio(url);
+		audio.volume = effectiveVolume;
+		currentAudio = audio;
 
-		// ── Master gain ──────────────────────────────────────────────────
-		const masterGain = ctx.createGain();
-		masterGain.gain.setValueAtTime(volume, now);
-		masterGain.connect(ctx.destination);
+		// Clear the ref once playback finishes naturally
+		audio.addEventListener("ended", () => {
+			currentAudio = null;
+		});
 
-		// ── Tone 1: C6 (1046.5 Hz) ──────────────────────────────────────
-		playTone(ctx, masterGain, 1046.5, now, 0.12);
-
-		// ── Tone 2: E6 (1318.5 Hz) — starts slightly after ─────────────
-		playTone(ctx, masterGain, 1318.5, now + 0.1, 0.14);
-
-		// Disconnect master gain after the sound is done to free resources
-		setTimeout(() => {
-			masterGain.disconnect();
-		}, 400);
+		audio.play().catch((err) => {
+			// Browser autoplay policy rejection — clear ref and warn
+			currentAudio = null;
+			console.warn("Could not play notification sound:", err);
+		});
 	} catch (err) {
-		// Silently swallow errors (e.g. AudioContext not supported)
+		currentAudio = null;
 		console.warn("Could not play notification sound:", err);
 	}
-}
-
-/**
- * Play a single sine-wave tone with a smooth attack / release envelope.
- */
-function playTone(
-	ctx: AudioContext,
-	destination: AudioNode,
-	frequency: number,
-	startTime: number,
-	duration: number,
-): void {
-	const osc = ctx.createOscillator();
-	osc.type = "sine";
-	osc.frequency.setValueAtTime(frequency, startTime);
-
-	const env = ctx.createGain();
-	// Start silent
-	env.gain.setValueAtTime(0, startTime);
-	// Quick fade-in
-	env.gain.linearRampToValueAtTime(1, startTime + 0.015);
-	// Sustain then fade-out
-	env.gain.setValueAtTime(1, startTime + duration - 0.04);
-	env.gain.linearRampToValueAtTime(0, startTime + duration);
-
-	osc.connect(env);
-	env.connect(destination);
-
-	osc.start(startTime);
-	osc.stop(startTime + duration);
 }

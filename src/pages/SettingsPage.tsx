@@ -56,6 +56,10 @@ export default function SettingsPage() {
 		setSoundEnabled,
 		downloadDir,
 		setDownloadDir,
+		appSettings,
+		updateAppSettings,
+		localDeviceId,
+		deviceIdentity,
 	} = useAppStore();
 	const [localDeviceName, setLocalDeviceName] = useState(
 		deviceName || "My Device",
@@ -69,16 +73,7 @@ export default function SettingsPage() {
 	);
 	const [isLoadingDir, setIsLoadingDir] = useState(false);
 
-	const [settings, setSettings] = useState({
-		autoDiscovery: true,
-		autoUpdate: true,
-		visibleToAll: true,
-		hardwareAcceleration: true,
-		requireApproval: true,
-		blockUnknown: false,
-		port: "5353",
-		cacheSize: "500",
-	});
+	const [settings, setSettings] = [appSettings, (updates: Partial<typeof appSettings>) => updateAppSettings(updates)];
 
 	// Load the effective download directory from the backend on mount
 	useEffect(() => {
@@ -154,7 +149,6 @@ export default function SettingsPage() {
 		setIsClearingCache(true);
 		try {
 			await invoke("clear_all_data");
-			const store = useAppStore.getState();
 			useAppStore.setState({
 				messages: {},
 				threads: [],
@@ -166,7 +160,6 @@ export default function SettingsPage() {
 				deviceConnectionStatus: {},
 				deviceLatencyMs: {},
 			});
-			void store;
 		} catch (err) {
 			console.error("Failed to clear cache:", err);
 		} finally {
@@ -409,12 +402,11 @@ export default function SettingsPage() {
 										</p>
 									</div>
 								</div>
-								<Switch
-									checked={soundEnabled}
-									onCheckedChange={setSoundEnabled}
-									disabled={!notificationsEnabled}
-									className="shrink-0"
-								/>
+							<Switch
+								checked={soundEnabled}
+								onCheckedChange={setSoundEnabled}
+								className="shrink-0"
+							/>
 							</div>
 						</Card>
 					</section>
@@ -816,19 +808,19 @@ export default function SettingsPage() {
 
 							{/* Info rows */}
 							<div className="divide-y divide-border">
-								{[
-									{
-										label: "Platform",
-										value: "macOS 15.2 (Silicon)",
-										icon: Globe,
-									},
-									{
-										label: "Identity",
-										value: "a3b9f2e1-4c5d-4a3b-9f2e-14c5d4a3b9f2",
-										icon: Lock,
-										isMono: true,
-									},
-								].map((item) => (
+							{[
+								{
+									label: "Platform",
+									value: deviceIdentity?.platform || "Unknown",
+									icon: Globe,
+								},
+								{
+									label: "Identity",
+									value: localDeviceId || "—",
+									icon: Lock,
+									isMono: true,
+								},
+							].map((item) => (
 									<div
 										key={item.label}
 										className="flex items-center justify-between px-6 py-3 hover:bg-muted/50 transition-colors"

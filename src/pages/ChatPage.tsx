@@ -6,8 +6,10 @@ import { useEffect, useCallback, useState, useMemo } from "react";
 import { ChatWindow } from "@/components/chat/ChatWindow";
 import { useAppStore } from "@/store";
 import { useFileTransfer } from "@/hooks/use-file-transfer";
+import { toast } from "@/hooks/use-toast";
 import type { Message, ConnectionStatusEvent, FileTransfer } from "@/types";
 import {
+	getConversationKey,
 	getMessageContent,
 	isSystemMessage,
 	isFileMessage,
@@ -74,9 +76,6 @@ export default function ChatPage() {
 	const [latencyMs, setLatencyMs] = useState<number | null>(null);
 
 	const selectedDevice = devices.find((d) => d.device_id === deviceId);
-
-	const getConversationKey = (device1: string, device2: string): string =>
-		[device1, device2].sort().join("_");
 
 	const conversationKey =
 		localDeviceId && selectedDevice
@@ -224,6 +223,7 @@ export default function ChatPage() {
 	// ── Listen for backend connection-status events ─────────────────────
 	useEffect(() => {
 		let unlisten: (() => void) | undefined;
+		let cancelled = false;
 
 		listen<ConnectionStatusEvent>("connection-status", (event) => {
 			if (event.payload.device_id !== selectedDevice?.device_id) return;
@@ -239,10 +239,17 @@ export default function ChatPage() {
 				setConnectionState("unreachable");
 			}
 		}).then((fn) => {
-			unlisten = fn;
+			if (cancelled) {
+				fn();
+			} else {
+				unlisten = fn;
+			}
 		});
 
-		return () => unlisten?.();
+		return () => {
+			cancelled = true;
+			unlisten?.();
+		};
 	}, [selectedDevice?.device_id, setConnectionStatus]);
 
 	// ── Run pre-connect whenever the target device changes ──────────────
@@ -318,10 +325,6 @@ export default function ChatPage() {
 			);
 		}
 	}, [selectedDevice, localDeviceId, markConversationAsRead]);
-
-	useEffect(() => {
-		markAsRead();
-	}, [markAsRead]);
 
 	// ── Auto-mark as read when new messages arrive while chat is open ───
 	const incomingMessageCount =
@@ -414,7 +417,7 @@ export default function ChatPage() {
 
 			if (!selected) return; // user cancelled
 
-			const filePath = typeof selected === "string" ? selected : selected;
+			const filePath = selected;
 			if (!filePath) return;
 
 			const peerAddress =
@@ -423,7 +426,11 @@ export default function ChatPage() {
 					: null;
 
 			if (!peerAddress) {
-				alert("Device has no available network address.");
+				toast({
+					title: "Device unreachable",
+					description: "Device has no available network address.",
+					variant: "destructive",
+				});
 				return;
 			}
 
@@ -454,9 +461,14 @@ export default function ChatPage() {
 				await startTransfer(transfer.id, peerAddress);
 			} catch (error) {
 				console.error("Failed to send file:", error);
-				alert(
-					`Failed to send file: ${error instanceof Error ? error.message : String(error)}`,
-				);
+				toast({
+					title: "Failed to send file",
+					description:
+						error instanceof Error
+							? error.message
+							: String(error),
+					variant: "destructive",
+				});
 			}
 		},
 		[
@@ -510,9 +522,12 @@ export default function ChatPage() {
 				: null;
 
 		if (!peerAddress) {
-			alert(
-				"Device has no available network address. Make sure both devices are on the same network.",
-			);
+			toast({
+				title: "Device unreachable",
+				description:
+					"Device has no available network address. Make sure both devices are on the same network.",
+				variant: "destructive",
+			});
 			return;
 		}
 
@@ -562,9 +577,12 @@ export default function ChatPage() {
 			}
 		} catch (error) {
 			console.error("Failed to send message:", error);
-			alert(
-				`Failed to send message: ${error instanceof Error ? error.message : String(error)}`,
-			);
+			toast({
+				title: "Failed to send message",
+				description:
+					error instanceof Error ? error.message : String(error),
+				variant: "destructive",
+			});
 		}
 	};
 

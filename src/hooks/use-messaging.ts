@@ -260,18 +260,17 @@ export function useMessaging() {
 			// ── Normal message handling ──────────────────────────────────
 			addMessage(conversationKey, msg);
 
-			// Show toast + play sound for received messages (not from local device).
-			// Skip entirely if:
-			//   - notifications are disabled globally
-			//   - the sender's chat is currently open on screen
+			// Play sound and show toast for received messages (not from local device).
+			// - Chat open   → play new-message.mp3 (subtle in-chat ping, no toast)
+			// - Chat closed → play notification-sound.mp3 + show toast
 			const { activeChatDeviceId: activeChatId, notificationsEnabled } =
 				useAppStore.getState();
 
+			const isChatOpen = msg.from_device_id === activeChatId;
+
 			if (
 				msg.from_device_id !== localDeviceId &&
-				!shownToastsRef.current.has(msg.id) &&
-				notificationsEnabled &&
-				msg.from_device_id !== activeChatId
+				!shownToastsRef.current.has(msg.id)
 			) {
 				shownToastsRef.current.add(msg.id);
 
@@ -280,28 +279,34 @@ export function useMessaging() {
 					shownToastsRef.current.delete(msg.id);
 				}, 10000);
 
-				const senderName = getDeviceName(msg.from_device_id);
-				const content = getMessageContent(msg.message_type);
+				if (isChatOpen) {
+					// Chat is open: play subtle in-chat ping (respects soundEnabled internally)
+					playNotificationSound(true);
+				} else if (notificationsEnabled) {
+					// Chat is closed: play notification sound + show toast
+					const senderName = getDeviceName(msg.from_device_id);
+					const content = getMessageContent(msg.message_type);
 
-				// Check if this is a pending request (sender not approved yet)
-				const isApproved = state.approvedDevices.includes(
-					msg.from_device_id,
-				);
+					// Check if this is a pending request (sender not approved yet)
+					const isApproved = state.approvedDevices.includes(
+						msg.from_device_id,
+					);
 
-				// Play notification sound (respects soundEnabled setting internally)
-				playNotificationSound();
+					// Play notification sound (respects soundEnabled setting internally)
+					playNotificationSound(false);
 
-				toast({
-					title: isApproved
-						? senderName
-						: `💬 Chat request from ${senderName}`,
-					description: isApproved
-						? content.length > 100
-							? content.substring(0, 100) + "..."
-							: content
-						: "Tap to view and accept or decline.",
-					duration: 5000,
-				});
+					toast({
+						title: isApproved
+							? senderName
+							: `💬 Chat request from ${senderName}`,
+						description: isApproved
+							? content.length > 100
+								? content.substring(0, 100) + "..."
+								: content
+							: "Tap to view and accept or decline.",
+						duration: 5000,
+					});
+				}
 			}
 		},
 		[localDeviceId, addMessage, addToStartedChats, setChatRequestStatus],
@@ -320,11 +325,12 @@ export function useMessaging() {
 		let unlistenReceived: (() => void) | undefined;
 		let unlistenDelivered: (() => void) | undefined;
 		let unlistenRead: (() => void) | undefined;
+		let cancelled = false;
 
 		const setupListeners = async () => {
 			try {
 				// Listen for sent messages
-				unlistenSent = await listen<Message>(
+				const _unlistenSent = await listen<Message>(
 					"message-sent",
 					(event) => {
 						console.log("📤 Message sent event:", event.payload);
@@ -341,7 +347,7 @@ export function useMessaging() {
 				// The backend now emits a full Message object (with status:"delivered")
 				// from MessagingService.  We also accept the legacy TextMessagePayload
 				// shape (no message_type / status fields) and normalise it.
-				unlistenReceived = await listen<Message | TextMessagePayload>(
+				const _unlistenReceived = await listen<Message | TextMessagePayload>(
 					"message-received",
 					(event) => {
 						console.log(
@@ -391,7 +397,7 @@ export function useMessaging() {
 				);
 
 				// ── Delivery ACK ──────────────────────────────────────────────────
-				unlistenDelivered = await listen<MessageDeliveredEvent>(
+				const _unlistenDelivered = await listen<MessageDeliveredEvent>(
 					"message-delivered",
 					(event) => {
 						const { conversation_key, message_id } = event.payload;
@@ -405,7 +411,7 @@ export function useMessaging() {
 				);
 
 				// ── Read receipt ──────────────────────────────────────────────────
-				unlistenRead = await listen<MessageReadEvent>(
+				const _unlistenRead = await listen<MessageReadEvent>(
 					"message-read",
 					(event) => {
 						const { conversation_key, to_device_id } =
@@ -418,6 +424,21 @@ export function useMessaging() {
 					},
 				);
 
+				// If the component unmounted before we finished setting up,
+				// immediately clean up the listeners we just registered.
+				if (cancelled) {
+					_unlistenSent();
+					_unlistenReceived();
+					_unlistenDelivered();
+					_unlistenRead();
+					return;
+				}
+
+				unlistenSent = _unlistenSent;
+				unlistenReceived = _unlistenReceived;
+				unlistenDelivered = _unlistenDelivered;
+				unlistenRead = _unlistenRead;
+
 				console.log("✅ Messaging listeners setup complete");
 			} catch (error) {
 				console.error("Failed to setup messaging listeners:", error);
@@ -427,6 +448,7 @@ export function useMessaging() {
 		setupListeners();
 
 		return () => {
+			cancelled = true;
 			if (unlistenSent) unlistenSent();
 			if (unlistenReceived) unlistenReceived();
 			if (unlistenDelivered) unlistenDelivered();

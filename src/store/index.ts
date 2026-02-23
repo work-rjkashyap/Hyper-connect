@@ -81,8 +81,20 @@ interface AppStore {
 	// Notification settings (persisted)
 	/** Whether push/toast notifications are enabled globally. */
 	notificationsEnabled: boolean;
-	/** Whether sound feedback is played on incoming messages (requires notificationsEnabled). */
+	/** Whether sound feedback is played on incoming messages. */
 	soundEnabled: boolean;
+
+	// App settings (persisted)
+	appSettings: {
+		autoDiscovery: boolean;
+		autoUpdate: boolean;
+		visibleToAll: boolean;
+		hardwareAcceleration: boolean;
+		requireApproval: boolean;
+		blockUnknown: boolean;
+		port: string;
+		cacheSize: string;
+	};
 
 	// Identity Actions
 	setLocalDeviceId: (id: string) => void;
@@ -189,6 +201,9 @@ interface AppStore {
 	setNotificationsEnabled: (enabled: boolean) => void;
 	setSoundEnabled: (enabled: boolean) => void;
 
+	// App Settings Actions
+	updateAppSettings: (updates: Partial<AppStore["appSettings"]>) => void;
+
 	// Utility Actions
 	reset: () => void;
 }
@@ -222,6 +237,17 @@ const initialState = {
 	// Notification settings
 	notificationsEnabled: true,
 	soundEnabled: true,
+	// App settings
+	appSettings: {
+		autoDiscovery: true,
+		autoUpdate: true,
+		visibleToAll: true,
+		hardwareAcceleration: true,
+		requireApproval: true,
+		blockUnknown: false,
+		port: "5353",
+		cacheSize: "500",
+	},
 };
 
 export const useAppStore = create<AppStore>()(
@@ -498,14 +524,18 @@ export const useAppStore = create<AppStore>()(
 					transfers: [...state.transfers, transfer],
 				})),
 
-			updateTransfer: (transferId, updates) =>
-				set((state) => ({
-					transfers: state.transfers.map((t) =>
-						t.id === transferId
-							? { ...t, ...updates, updated_at: Date.now() }
-							: t,
-					),
-				})),
+	updateTransfer: (transferId, updates) =>
+			set((state) => ({
+				transfers: state.transfers.map((t) =>
+					t.id === transferId
+						? {
+								...t,
+								...updates,
+								updated_at: Math.floor(Date.now() / 1000),
+							}
+						: t,
+				),
+			})),
 
 			removeTransfer: (transferId) =>
 				set((state) => ({
@@ -667,14 +697,15 @@ export const useAppStore = create<AppStore>()(
 			// Notification Settings Actions
 			// ============================================================================
 
-			setNotificationsEnabled: (enabled) =>
-				set((state) => ({
-					notificationsEnabled: enabled,
-					// Disable sound when notifications are turned off
-					soundEnabled: enabled ? state.soundEnabled : false,
-				})),
+		setNotificationsEnabled: (enabled) =>
+			set({ notificationsEnabled: enabled }),
 
 			setSoundEnabled: (enabled) => set({ soundEnabled: enabled }),
+
+		updateAppSettings: (updates) =>
+			set((state) => ({
+				appSettings: { ...state.appSettings, ...updates },
+			})),
 
 			// ============================================================================
 			// Utility Actions
@@ -704,6 +735,8 @@ export const useAppStore = create<AppStore>()(
 				// Notification settings — persisted
 				notificationsEnabled: state.notificationsEnabled,
 				soundEnabled: state.soundEnabled,
+				// App settings — persisted
+				appSettings: state.appSettings,
 			}),
 		},
 	),

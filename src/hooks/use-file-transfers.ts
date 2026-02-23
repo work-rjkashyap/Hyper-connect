@@ -29,7 +29,7 @@ interface FileAcceptedEvent {
  * longer registers its own event listeners to avoid duplicate handling.
  */
 export function useFileTransfers() {
-	const { addTransfer, updateTransfer, devices } = useAppStore();
+	const { addTransfer, updateTransfer } = useAppStore();
 
 	useEffect(() => {
 		let unlistenRequest: (() => void) | undefined;
@@ -49,10 +49,11 @@ export function useFileTransfers() {
 					"file-request-received",
 					(event) => {
 						console.log("📥 File request received:", event.payload);
-						const transfer = event.payload;
-						addTransfer(transfer);
+					const transfer = event.payload;
+					addTransfer(transfer);
 
-						const sender = devices.find(
+					const devices = useAppStore.getState().devices;
+					const sender = devices.find(
 							(d) => d.device_id === transfer.from_device_id,
 						);
 						const senderName =
@@ -202,5 +203,5 @@ export function useFileTransfers() {
 			unlistenRejected?.();
 			console.log("🧹 Global file transfer listeners cleaned up");
 		};
-	}, [addTransfer, updateTransfer, devices]);
+	}, [addTransfer, updateTransfer]);
 }

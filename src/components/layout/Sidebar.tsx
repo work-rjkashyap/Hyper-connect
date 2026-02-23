@@ -26,7 +26,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useAppStore } from "@/store";
 import { cn } from "@/lib/utils";
-import { isSystemMessage } from "@/types";
+import { isSystemMessage, getConversationKey } from "@/types";
 
 interface SidebarProps {
 	className?: string;
@@ -52,6 +52,7 @@ export default function Sidebar({ className, onClose }: SidebarProps) {
 	// Keep badge in sync when the backend emits a conversation-read event
 	useEffect(() => {
 		let unlisten: (() => void) | undefined;
+		let cancelled = false;
 
 		listen<{ conversation_key: string; reader_device_id: string }>(
 			"conversation-read",
@@ -60,17 +61,18 @@ export default function Sidebar({ className, onClose }: SidebarProps) {
 				markConversationAsRead(conversation_key, reader_device_id);
 			},
 		).then((fn) => {
-			unlisten = fn;
+			if (cancelled) {
+				fn();
+			} else {
+				unlisten = fn;
+			}
 		});
 
-		return () => unlisten?.();
+		return () => {
+			cancelled = true;
+			unlisten?.();
+		};
 	}, [markConversationAsRead]);
-
-	// Helper to get conversation key
-	const getConversationKey = (device1: string, device2: string): string => {
-		const participants = [device1, device2].sort();
-		return participants.join("_");
-	};
 
 	// Helper to format timestamp (timestamp is Unix seconds from Rust backend)
 	const formatTimestamp = (timestamp: number) => {

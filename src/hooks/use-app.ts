@@ -36,11 +36,12 @@ export function useApp() {
     let unlistenConnected: (() => void) | undefined;
     let unlistenDisconnected: (() => void) | undefined;
     let unlistenSecurityError: (() => void) | undefined;
+    let cancelled = false;
 
     const setupGlobalListeners = async () => {
       try {
         // Listen for device connection events
-        unlistenConnected = await listen<DeviceConnectedEvent>(
+        const _unlistenConnected = await listen<DeviceConnectedEvent>(
           "device-connected",
           (event) => {
             console.log("🔌 Device connected:", event.payload);
@@ -55,7 +56,7 @@ export function useApp() {
         );
 
         // Listen for device disconnection events
-        unlistenDisconnected = await listen<DeviceDisconnectedEvent>(
+        const _unlistenDisconnected = await listen<DeviceDisconnectedEvent>(
           "device-disconnected",
           (event) => {
             console.log("🔌 Device disconnected:", event.payload);
@@ -70,7 +71,7 @@ export function useApp() {
         );
 
         // Listen for security errors
-        unlistenSecurityError = await listen<SecurityErrorEvent>(
+        const _unlistenSecurityError = await listen<SecurityErrorEvent>(
           "security-error",
           (event) => {
             console.error("🔒 Security error:", event.payload);
@@ -84,6 +85,18 @@ export function useApp() {
           },
         );
 
+        // If the component unmounted before setup completed, clean up immediately.
+        if (cancelled) {
+          _unlistenConnected();
+          _unlistenDisconnected();
+          _unlistenSecurityError();
+          return;
+        }
+
+        unlistenConnected = _unlistenConnected;
+        unlistenDisconnected = _unlistenDisconnected;
+        unlistenSecurityError = _unlistenSecurityError;
+
         console.log("✅ Global listeners setup complete");
       } catch (error) {
         console.error("Failed to setup global listeners:", error);
@@ -93,6 +106,7 @@ export function useApp() {
     setupGlobalListeners();
 
     return () => {
+      cancelled = true;
       if (unlistenConnected) unlistenConnected();
       if (unlistenDisconnected) unlistenDisconnected();
       if (unlistenSecurityError) unlistenSecurityError();
