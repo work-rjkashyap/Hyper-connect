@@ -325,6 +325,8 @@ export function useMessaging() {
 		let unlistenReceived: (() => void) | undefined;
 		let unlistenDelivered: (() => void) | undefined;
 		let unlistenRead: (() => void) | undefined;
+		let unlistenQueued: (() => void) | undefined;
+		let unlistenFlushed: (() => void) | undefined;
 		let cancelled = false;
 
 		const setupListeners = async () => {
@@ -347,54 +349,49 @@ export function useMessaging() {
 				// The backend now emits a full Message object (with status:"delivered")
 				// from MessagingService.  We also accept the legacy TextMessagePayload
 				// shape (no message_type / status fields) and normalise it.
-				const _unlistenReceived = await listen<Message | TextMessagePayload>(
-					"message-received",
-					(event) => {
-						console.log(
-							"📥 Message received event:",
-							event.payload,
-						);
-						const raw = event.payload as unknown as Record<
-							string,
-							unknown
-						>;
+				const _unlistenReceived = await listen<
+					Message | TextMessagePayload
+				>("message-received", (event) => {
+					console.log("📥 Message received event:", event.payload);
+					const raw = event.payload as unknown as Record<
+						string,
+						unknown
+					>;
 
-						// Normalise: if the payload has a top-level `content` string it is
-						// a TextMessagePayload (legacy / plaintext path); otherwise it is a
-						// full Message (encrypted path via MessagingService).
-						let msg: Message;
-						if (typeof raw.content === "string") {
-							// Legacy TextMessagePayload shape
-							const payload =
-								raw as unknown as TextMessagePayload;
+					// Normalise: if the payload has a top-level `content` string it is
+					// a TextMessagePayload (legacy / plaintext path); otherwise it is a
+					// full Message (encrypted path via MessagingService).
+					let msg: Message;
+					if (typeof raw.content === "string") {
+						// Legacy TextMessagePayload shape
+						const payload = raw as unknown as TextMessagePayload;
+						msg = {
+							id: payload.id,
+							from_device_id: payload.from_device_id,
+							to_device_id: payload.to_device_id,
+							message_type: {
+								type: "Text",
+								content: payload.content,
+							},
+							timestamp: payload.timestamp,
+							thread_id: payload.thread_id,
+							status: "delivered" as MessageStatus,
+						};
+					} else {
+						// Full Message shape from MessagingService
+						msg = raw as unknown as Message;
+						// Guarantee status is set
+						if (!msg.status) {
 							msg = {
-								id: payload.id,
-								from_device_id: payload.from_device_id,
-								to_device_id: payload.to_device_id,
-								message_type: {
-									type: "Text",
-									content: payload.content,
-								},
-								timestamp: payload.timestamp,
-								thread_id: payload.thread_id,
+								...msg,
 								status: "delivered" as MessageStatus,
 							};
-						} else {
-							// Full Message shape from MessagingService
-							msg = raw as unknown as Message;
-							// Guarantee status is set
-							if (!msg.status) {
-								msg = {
-									...msg,
-									status: "delivered" as MessageStatus,
-								};
-							}
 						}
+					}
 
-						// Route through the privacy-aware handler
-						handleIncomingMessage(msg);
-					},
-				);
+					// Route through the privacy-aware handler
+					handleIncomingMessage(msg);
+				});
 
 				// ── Delivery ACK ──────────────────────────────────────────────────
 				const _unlistenDelivered = await listen<MessageDeliveredEvent>(
@@ -424,6 +421,43 @@ export function useMessaging() {
 					},
 				);
 
+				// ── Message queued (offline) ─────────────────────────────────────
+				const _unlistenQueued = await listen<Message>(
+					"message-queued",
+					(event) => {
+						console.log(
+							"⏳ Message queued (peer offline):",
+							event.payload.id,
+						);
+						const msg = event.payload;
+						const conversationKey = getConversationKey(
+							msg.from_device_id,
+							msg.to_device_id,
+						);
+						// Update existing message status to queued (it was already
+						// added optimistically with "sent" status by ChatPage)
+						updateMessageStatus(conversationKey, msg.id, "queued");
+					},
+				);
+
+				// ── Queue flushed (message retried successfully) ─────────────────
+				const _unlistenFlushed = await listen<Message>(
+					"message-queue-flushed",
+					(event) => {
+						console.log(
+							"📬 Queued message flushed:",
+							event.payload.id,
+						);
+						const msg = event.payload;
+						const conversationKey = getConversationKey(
+							msg.from_device_id,
+							msg.to_device_id,
+						);
+						// Flip status from queued → sent
+						updateMessageStatus(conversationKey, msg.id, "sent");
+					},
+				);
+
 				// If the component unmounted before we finished setting up,
 				// immediately clean up the listeners we just registered.
 				if (cancelled) {
@@ -431,6 +465,8 @@ export function useMessaging() {
 					_unlistenReceived();
 					_unlistenDelivered();
 					_unlistenRead();
+					_unlistenQueued();
+					_unlistenFlushed();
 					return;
 				}
 
@@ -438,6 +474,8 @@ export function useMessaging() {
 				unlistenReceived = _unlistenReceived;
 				unlistenDelivered = _unlistenDelivered;
 				unlistenRead = _unlistenRead;
+				unlistenQueued = _unlistenQueued;
+				unlistenFlushed = _unlistenFlushed;
 
 				console.log("✅ Messaging listeners setup complete");
 			} catch (error) {
@@ -453,6 +491,8 @@ export function useMessaging() {
 			if (unlistenReceived) unlistenReceived();
 			if (unlistenDelivered) unlistenDelivered();
 			if (unlistenRead) unlistenRead();
+			if (unlistenQueued) unlistenQueued();
+			if (unlistenFlushed) unlistenFlushed();
 			// Clear toast tracking on cleanup
 			shownToastsRef.current.clear();
 			console.log("🧹 Messaging listeners cleaned up");

@@ -4,7 +4,6 @@
 //! - X25519 (ECDH) for key exchange
 //! - HKDF for key derivation
 //! - AES-256-GCM for message encryption (authenticated)
-//! - AES-256-CTR for file stream encryption (high performance)
 //!
 //! ## Security Properties
 //!
@@ -13,13 +12,6 @@
 //! - **Key Separation**: Different keys for messages and files
 //! - **No Key Persistence**: All keys destroyed on disconnect
 //! - **Secure RNG**: Uses OS cryptographic random number generator
-//!
-//! ## Performance
-//!
-//! - Stream-based file encryption (no buffering entire files)
-//! - Large buffer support (256KB+)
-//! - Zero-copy operations where possible
-//! - Minimal overhead (<10% throughput loss)
 //!
 //! ## Usage
 //!
@@ -46,26 +38,17 @@
 //!
 //! // Decrypt message
 //! let plaintext = message_crypto::decrypt_message(&session, &encrypted)?;
-//!
-//! // Stream encrypt file
-//! let (mut encryptor, iv) = stream_crypto::StreamEncryptor::new(&session, 256 * 1024);
-//! encryptor.encrypt_stream(&mut file_reader, &mut network_writer).await?;
 //! ```
 
 pub mod handshake;
 pub mod message_crypto;
 pub mod session;
-pub mod stream_crypto;
 pub mod tls;
 
 // Re-export commonly used types
 pub use handshake::{HandshakeManager, HelloResponse, HelloSecure};
 pub use message_crypto::{decrypt_message, encrypt_message, EncryptedMessagePayload};
 pub use session::Session;
-pub use stream_crypto::{FileStreamInit, StreamDecryptor, StreamEncryptor};
-
-/// Recommended buffer size for file streaming (256KB)
-pub const STREAM_BUFFER_SIZE: usize = 256 * 1024;
 
 #[cfg(test)]
 mod integration_tests {
@@ -73,7 +56,6 @@ mod integration_tests {
 
     #[tokio::test]
     async fn test_full_encryption_workflow() {
-        // Simulate full handshake and encryption workflow
         let alice_manager = HandshakeManager::new();
         let bob_manager = HandshakeManager::new();
 
@@ -91,32 +73,11 @@ mod integration_tests {
             .finalize_handshake("alice", &hello.public_key, &hello.handshake_id)
             .unwrap();
 
-        // Message encryption
+        // Message encryption roundtrip
         let message = "Hello from Alice!";
         let encrypted = encrypt_message(&alice_session, message).unwrap();
         let decrypted = decrypt_message(&bob_session, &encrypted).unwrap();
         assert_eq!(message, decrypted);
-
-        // Stream encryption
-        use std::io::Cursor;
-        let data = b"File content goes here...";
-        let mut reader = Cursor::new(data.to_vec());
-        let mut encrypted_data = Vec::new();
-
-        let (mut encryptor, iv) = StreamEncryptor::new(&alice_session, 1024);
-        encryptor
-            .encrypt_stream(&mut reader, &mut encrypted_data)
-            .await
-            .unwrap();
-
-        let mut encrypted_reader = Cursor::new(encrypted_data);
-        let mut decrypted_data = Vec::new();
-        let mut decryptor = StreamDecryptor::new(&bob_session, &iv, 1024);
-        decryptor
-            .decrypt_stream(&mut encrypted_reader, &mut decrypted_data)
-            .await
-            .unwrap();
-
-        assert_eq!(data.as_slice(), decrypted_data.as_slice());
     }
 }
+

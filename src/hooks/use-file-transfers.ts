@@ -8,6 +8,7 @@ import type {
 	TransferFailedEvent,
 	FileCancelledEvent,
 	FileRejectedEvent,
+	TransferResumedEvent,
 } from "@/types";
 import { TransferStatus } from "@/types";
 import { toast } from "@/hooks/use-toast";
@@ -39,6 +40,7 @@ export function useFileTransfers() {
 		let unlistenFailed: (() => void) | undefined;
 		let unlistenCancelled: (() => void) | undefined;
 		let unlistenRejected: (() => void) | undefined;
+		let unlistenResumed: (() => void) | undefined;
 
 		const setup = async () => {
 			try {
@@ -49,11 +51,11 @@ export function useFileTransfers() {
 					"file-request-received",
 					(event) => {
 						console.log("📥 File request received:", event.payload);
-					const transfer = event.payload;
-					addTransfer(transfer);
+						const transfer = event.payload;
+						addTransfer(transfer);
 
-					const devices = useAppStore.getState().devices;
-					const sender = devices.find(
+						const devices = useAppStore.getState().devices;
+						const sender = devices.find(
 							(d) => d.device_id === transfer.from_device_id,
 						);
 						const senderName =
@@ -182,6 +184,26 @@ export function useFileTransfers() {
 					},
 				);
 
+				// ── Transfer resumed ──────────────────────────────────────
+				unlistenResumed = await listen<TransferResumedEvent>(
+					"transfer-resumed",
+					(event) => {
+						console.log("↻ Transfer resumed:", event.payload);
+						const { transfer_id, resume_offset } = event.payload;
+
+						updateTransfer(transfer_id, {
+							status: TransferStatus.InProgress,
+							transferred: resume_offset,
+						});
+
+						toast({
+							title: "Transfer Resumed",
+							description:
+								"File transfer resumed from where it left off",
+						});
+					},
+				);
+
 				console.log("✅ Global file transfer listeners setup complete");
 			} catch (error) {
 				console.error(
@@ -201,6 +223,7 @@ export function useFileTransfers() {
 			unlistenFailed?.();
 			unlistenCancelled?.();
 			unlistenRejected?.();
+			unlistenResumed?.();
 			console.log("🧹 Global file transfer listeners cleaned up");
 		};
 	}, [addTransfer, updateTransfer]);

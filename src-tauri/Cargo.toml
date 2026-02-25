@@ -51,6 +51,7 @@ rustls = { version = "0.23", default-features = false, features = ["ring", "logg
 rustls-pemfile = "2"
 rcgen = "0.13"
 dirs = "5"
+sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio-rustls"] }
 
 [target.'cfg(not(any(target_os = "ios", target_os = "android")))'.dependencies]
 tauri-plugin-updater = "2"

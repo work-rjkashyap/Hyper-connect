@@ -6,6 +6,7 @@
 #![allow(dead_code)]
 
 use crate::identity::DeviceIdentity;
+use crate::messaging::GroupService;
 use mdns_sd::{ServiceDaemon, ServiceEvent, ServiceInfo};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -14,7 +15,7 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,
 };
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::RwLock;
 
 /// mDNS service type for Hyper Connect
@@ -322,7 +323,39 @@ impl MdnsDiscoveryService {
         if let Some(id) = id {
             devices.write().await.remove(&id);
             println!("✓ Peer left: {} ({})", fullname, id);
-            let _ = app_handle.emit("device-removed", id);
+            let _ = app_handle.emit("device-removed", &id);
+
+            // Trigger group host election if the departing device was a host.
+            // We need the local device ID from the discovery service managed state.
+            if let Some(group_service) = app_handle.try_state::<GroupService>() {
+                if let Some(discovery) = app_handle.try_state::<Arc<MdnsDiscoveryService>>() {
+                    let local_device_id = discovery.local_device_id().to_string();
+                    let offline_id = id.clone();
+                    let gs = group_service.inner().clone();
+                    let ah = app_handle.clone();
+                    tokio::spawn(async move {
+                        // Check every group the local device is in
+                        if let Ok(groups) = gs.get_groups(&local_device_id).await {
+                            for group in groups {
+                                if let Err(e) = gs
+                                    .check_and_elect_host(
+                                        &group.id,
+                                        &offline_id,
+                                        &local_device_id,
+                                        &ah,
+                                    )
+                                    .await
+                                {
+                                    eprintln!(
+                                        "⚠️  Host election for group {} failed: {}",
+                                        group.id, e
+                                    );
+                                }
+                            }
+                        }
+                    });
+                }
+            }
         } else {
             // The service might have been removed before it was fully resolved
             // (e.g. the peer quit very quickly).  This is not an error.

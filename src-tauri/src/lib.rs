@@ -4,6 +4,7 @@
 //! Implements optimized TCP networking, mDNS discovery, and zero-copy file streaming.
 
 mod crypto;
+mod db;
 mod discovery;
 mod identity;
 mod ipc;
@@ -14,7 +15,7 @@ use crypto::tls::TlsConfig;
 use discovery::MdnsDiscoveryService;
 use identity::IdentityManager;
 use ipc::{DownloadDir, TcpPort};
-use messaging::MessagingService;
+use messaging::{GroupService, MessagingService};
 use network::{FileTransferService, TcpClient, TcpServer};
 use std::sync::Arc;
 use tauri::Manager;
@@ -46,7 +47,14 @@ pub fn run() {
             // Get app version
             let app_version = app.package_info().version.to_string();
 
-            // Initialize identity manager
+            // ── SQLite database ───────────────────────────────────────────────
+            // Block on async DB init inside the sync setup closure.
+            let db_pool = Arc::new(
+                tauri::async_runtime::block_on(db::init_db(&app_data_dir))
+                    .expect("Failed to initialise SQLite database"),
+            );
+
+            // ── Identity ──────────────────────────────────────────────────────
             let identity_manager = IdentityManager::new(app_data_dir.clone(), app_version.clone())
                 .expect("Failed to create identity manager");
 
@@ -56,38 +64,37 @@ pub fn run() {
                 identity_manager.device_id()
             );
 
-            // Clone identity data before wrapping manager in Mutex
             let identity = identity_manager.identity().clone();
 
-            // Initialize discovery service (wrapped in Arc for sharing)
+            // ── Discovery ─────────────────────────────────────────────────────
             let discovery_service = Arc::new(
                 MdnsDiscoveryService::new(identity.clone())
                     .expect("Failed to create discovery service"),
             );
 
-            // Get TCP port - use 8081 for iOS, 8080 for other platforms
+            // ── TCP port ──────────────────────────────────────────────────────
             let tcp_port: u16 = std::env::var("TAURI_TCP_PORT")
                 .ok()
                 .and_then(|p| p.parse().ok())
                 .unwrap_or_else(|| {
                     #[cfg(target_os = "ios")]
                     {
-                        8081 // iOS uses port 8081 to avoid conflicts
+                        8081
                     }
                     #[cfg(not(target_os = "ios"))]
                     {
-                        8080 // Desktop/other platforms use port 8080
+                        8080
                     }
                 });
 
             println!("✓ TCP port: {}", tcp_port);
 
-            // Initialize TLS configuration (generates or loads self-signed certificate)
+            // ── TLS ───────────────────────────────────────────────────────────
             let tls_config =
                 TlsConfig::new(&app_data_dir).expect("Failed to initialize TLS configuration");
             println!("✓ TLS configuration initialized");
 
-            // Initialize TCP client with TLS and encryption support
+            // ── TCP client ────────────────────────────────────────────────────
             let tcp_client = Arc::new(TcpClient::new(
                 identity.device_id.clone(),
                 identity.display_name.clone(),
@@ -96,17 +103,21 @@ pub fn run() {
                 tls_config.connector,
             ));
 
-            // Initialize messaging service
-            let mut messaging_service = MessagingService::new();
+            // ── Services ──────────────────────────────────────────────────────
+            let mut messaging_service = MessagingService::new(Arc::clone(&db_pool));
             messaging_service.set_tcp_client(Arc::clone(&tcp_client));
             messaging_service.set_tcp_port(tcp_port);
 
-            // Initialize file transfer service
-            let mut file_transfer_service = FileTransferService::new(app_data_dir);
+            let mut file_transfer_service =
+                FileTransferService::new(app_data_dir.clone(), Arc::clone(&db_pool));
             file_transfer_service.set_tcp_client(Arc::clone(&tcp_client));
             file_transfer_service.set_tcp_port(tcp_port);
 
-            // Initialize TCP server with TLS and encryption support
+            let mut group_service = GroupService::new(Arc::clone(&db_pool));
+            group_service.set_tcp_client(Arc::clone(&tcp_client));
+            group_service.set_tcp_port(tcp_port);
+
+            // ── TCP server ────────────────────────────────────────────────────
             let tcp_server = TcpServer::new(
                 Arc::new(Mutex::new(file_transfer_service.clone())),
                 identity.device_id.clone(),
@@ -116,7 +127,6 @@ pub fn run() {
                 tls_config.acceptor,
             );
 
-            // Start TCP server
             let app_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 if let Err(e) = tcp_server.start(tcp_port, app_handle).await {
@@ -126,31 +136,33 @@ pub fn run() {
                 }
             });
 
-            // Wrap identity manager in std::sync::Mutex to allow mutable access from commands
+            // Load persisted transfers into the in-memory cache
+            let fts_clone = file_transfer_service.clone();
+            tauri::async_runtime::spawn(async move {
+                fts_clone.load_from_db().await;
+            });
+
+            // ── App state ─────────────────────────────────────────────────────
             let identity_manager = std::sync::Mutex::new(identity_manager);
 
-            // Store services in app state
             app.manage(identity_manager);
             app.manage(Arc::clone(&discovery_service));
             app.manage(messaging_service);
             app.manage(file_transfer_service);
-            // Expose the actual bound TCP port to IPC commands.
+            app.manage(group_service);
             app.manage(TcpPort(tcp_port));
-            // Managed download directory (defaults to system Downloads).
             app.manage(DownloadDir(tokio::sync::Mutex::new(None)));
 
-            // Auto-start mDNS discovery and advertising
+            // ── Auto-start mDNS ───────────────────────────────────────────────
             let discovery_clone = Arc::clone(&discovery_service);
             let app_handle_clone = app.handle().clone();
             tauri::async_runtime::spawn(async move {
-                // Start discovery
                 if let Err(e) = discovery_clone.start_discovery(app_handle_clone.clone()) {
                     eprintln!("Failed to start discovery: {}", e);
                 } else {
                     println!("✓ mDNS discovery started");
                 }
 
-                // Start advertising
                 if let Err(e) = discovery_clone.start_advertising(tcp_port) {
                     eprintln!("Failed to start advertising: {}", e);
                 } else {
@@ -178,6 +190,9 @@ pub fn run() {
             ipc::mark_thread_as_read,
             ipc::mark_conversation_as_read,
             ipc::ping_device,
+            // Offline message queue commands
+            ipc::flush_message_queue,
+            ipc::get_queued_count,
             // File transfer commands
             ipc::create_transfer,
             ipc::start_transfer,
@@ -186,12 +201,28 @@ pub fn run() {
             ipc::pause_transfer,
             ipc::cancel_transfer,
             ipc::get_transfers,
+            ipc::resume_transfer,
+            ipc::get_resumable_transfers,
             ipc::get_tcp_port,
             ipc::get_default_downloads_dir,
             ipc::set_download_dir,
             ipc::open_file_location,
             // App reset commands
             ipc::clear_all_data,
+            // Group chat commands
+            ipc::create_group,
+            ipc::add_group_member,
+            ipc::remove_group_member,
+            ipc::leave_group,
+            ipc::disband_group,
+            ipc::send_group_message,
+            ipc::get_groups,
+            ipc::get_group_messages,
+            ipc::get_group_members,
+            ipc::rename_group,
+            ipc::clear_group_history,
+            ipc::get_group_info,
+            ipc::get_group_summaries,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

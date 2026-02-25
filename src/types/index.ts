@@ -7,11 +7,12 @@
 /**
  * Mirrors the Rust `MessageStatus` enum (serialised lowercase).
  *
+ * - `queued`    – message is waiting to be sent (peer was offline).
  * - `sent`      – message was transmitted by the sender to the network.
  * - `delivered` – message was received and stored on the recipient device.
  * - `read`      – the recipient opened the conversation and saw the message.
  */
-export type MessageStatus = "sent" | "delivered" | "read";
+export type MessageStatus = "queued" | "sent" | "delivered" | "read";
 
 // ============================================================================
 // Identity Types
@@ -66,6 +67,80 @@ export interface Thread {
 	participants: string[];
 	last_message_timestamp: number;
 	unread_count: number;
+}
+
+// ============================================================================
+// Group Chat Types
+// ============================================================================
+
+export type GroupRole = "host" | "member";
+
+export interface GroupChat {
+	id: string;
+	name: string;
+	creator_device_id: string;
+	host_device_id: string;
+	created_at: number;
+	updated_at: number;
+}
+
+export interface GroupMember {
+	group_id: string;
+	device_id: string;
+	role: GroupRole;
+	joined_at: number;
+}
+
+export interface GroupMessage {
+	id: string;
+	group_id: string;
+	from_device_id: string;
+	msg_type: string;
+	content: string;
+	reply_to: string | null;
+	timestamp: number;
+}
+
+export interface GroupSummary {
+	group: GroupChat;
+	members: GroupMember[];
+	last_message: GroupMessage | null;
+	unread_count: number;
+}
+
+export interface GroupMemberInfo {
+	device_id: string;
+	role: GroupRole;
+}
+
+export type GroupControlAction =
+	| "create"
+	| "member_added"
+	| "member_removed"
+	| "host_changed"
+	| "disband";
+
+export interface GroupControlPayload {
+	type: string;
+	action: GroupControlAction;
+	group_id: string;
+	group_name: string;
+	from_device_id: string;
+	target_device_id: string | null;
+	host_device_id: string;
+	members: GroupMemberInfo[];
+	timestamp: number;
+}
+
+export interface GroupMessagePayload {
+	type: string;
+	id: string;
+	group_id: string;
+	from_device_id: string;
+	msg_content_type: string;
+	content: string;
+	reply_to: string | null;
+	timestamp: number;
 }
 
 // ============================================================================
@@ -170,9 +245,21 @@ export interface FileRejectedEvent {
 	transfer_id: string;
 }
 
+export interface TransferResumedEvent {
+	transfer_id: string;
+	resume_offset: number;
+}
+
 export interface SecurityErrorEvent {
 	device_id: string;
 	error: string;
+}
+
+/** Result of a flush_message_queue IPC call. */
+export interface FlushResult {
+	device_id: string;
+	flushed: number;
+	remaining: number;
 }
 
 export interface ConnectionStatusEvent {
@@ -206,6 +293,33 @@ export interface MessageReadEvent {
 	from_device_id: string;
 	/** The device whose outgoing messages are now marked read */
 	to_device_id: string;
+}
+
+// ============================================================================
+// Group Chat Event Types
+// ============================================================================
+
+export interface GroupCreatedEvent {
+	group: GroupChat;
+}
+
+export interface GroupMemberAddedEvent {
+	group_id: string;
+	device_id: string;
+}
+
+export interface GroupMemberRemovedEvent {
+	group_id: string;
+	device_id: string;
+}
+
+export interface GroupHostChangedEvent {
+	group_id: string;
+	host_device_id: string;
+}
+
+export interface GroupDisbandedEvent {
+	group_id: string;
 }
 
 // ============================================================================
@@ -294,6 +408,19 @@ export function getConversationKey(
 	deviceId2: string,
 ): string {
 	return [deviceId1, deviceId2].sort().join("_");
+}
+
+// Helper to get group display name with member count
+export function getGroupDisplayName(
+	group: GroupChat,
+	memberCount: number,
+): string {
+	return `${group.name} (${memberCount})`;
+}
+
+// Helper to check if a device is the host of a group
+export function isGroupHost(group: GroupChat, deviceId: string): boolean {
+	return group.host_device_id === deviceId;
 }
 
 // ============================================================================

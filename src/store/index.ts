@@ -8,6 +8,9 @@ import type {
 	DeviceIdentity,
 	MessageStatus,
 	ConnectionStatusEvent,
+	GroupChat,
+	GroupMessage,
+	GroupMember,
 } from "@/types";
 
 export type DeviceConnectionState =
@@ -37,6 +40,12 @@ interface AppStore {
 	// File transfer state
 	transfers: FileTransfer[];
 	activeTransfers: Set<string>;
+
+	// Group chat state
+	groups: GroupChat[];
+	groupMessages: Record<string, GroupMessage[]>; // Keyed by group_id
+	groupMembers: Record<string, GroupMember[]>; // Keyed by group_id
+	activeGroupId: string | null;
 
 	// Download directory (persisted)
 	downloadDir: string | null;
@@ -151,6 +160,18 @@ interface AppStore {
 	setTransfers: (transfers: FileTransfer[]) => void;
 	getTransferById: (transferId: string) => FileTransfer | undefined;
 
+	// Group Chat Actions
+	addGroup: (group: GroupChat) => void;
+	updateGroup: (group: GroupChat) => void;
+	removeGroup: (groupId: string) => void;
+	setGroups: (groups: GroupChat[]) => void;
+	addGroupMessage: (groupId: string, message: GroupMessage) => void;
+	setGroupMessages: (groupId: string, messages: GroupMessage[]) => void;
+	setGroupMembers: (groupId: string, members: GroupMember[]) => void;
+	updateGroupHost: (groupId: string, hostDeviceId: string) => void;
+	setActiveGroupId: (groupId: string | null) => void;
+	clearGroupMessages: (groupId: string) => void;
+
 	// Connection Health Actions
 	setConnectionStatus: (event: ConnectionStatusEvent) => void;
 	setDeviceConnecting: (deviceId: string) => void;
@@ -220,6 +241,10 @@ const initialState = {
 	activeThread: null,
 	transfers: [],
 	activeTransfers: new Set<string>(),
+	groups: [] as GroupChat[],
+	groupMessages: {} as Record<string, GroupMessage[]>,
+	groupMembers: {} as Record<string, GroupMember[]>,
+	activeGroupId: null as string | null,
 	deviceConnectionStatus: {},
 	deviceLatencyMs: {},
 	// Privacy layer
@@ -524,18 +549,18 @@ export const useAppStore = create<AppStore>()(
 					transfers: [...state.transfers, transfer],
 				})),
 
-	updateTransfer: (transferId, updates) =>
-			set((state) => ({
-				transfers: state.transfers.map((t) =>
-					t.id === transferId
-						? {
-								...t,
-								...updates,
-								updated_at: Math.floor(Date.now() / 1000),
-							}
-						: t,
-				),
-			})),
+			updateTransfer: (transferId, updates) =>
+				set((state) => ({
+					transfers: state.transfers.map((t) =>
+						t.id === transferId
+							? {
+									...t,
+									...updates,
+									updated_at: Math.floor(Date.now() / 1000),
+								}
+							: t,
+					),
+				})),
 
 			removeTransfer: (transferId) =>
 				set((state) => ({
@@ -549,6 +574,115 @@ export const useAppStore = create<AppStore>()(
 			getTransferById: (transferId) => {
 				return get().transfers.find((t) => t.id === transferId);
 			},
+
+			// ============================================================================
+			// Group Chat Actions
+			// ============================================================================
+
+			addGroup: (group) =>
+				set((state) => ({
+					groups: [
+						...state.groups.filter((g) => g.id !== group.id),
+						group,
+					].sort((a, b) => b.updated_at - a.updated_at),
+				})),
+
+			updateGroup: (group) =>
+				set((state) => ({
+					groups: state.groups
+						.map((g) => (g.id === group.id ? group : g))
+						.sort((a, b) => b.updated_at - a.updated_at),
+				})),
+
+			removeGroup: (groupId) =>
+				set((state) => {
+					const { [groupId]: _msgs, ...restMessages } =
+						state.groupMessages;
+					const { [groupId]: _members, ...restMembers } =
+						state.groupMembers;
+					return {
+						groups: state.groups.filter((g) => g.id !== groupId),
+						groupMessages: restMessages,
+						groupMembers: restMembers,
+						activeGroupId:
+							state.activeGroupId === groupId
+								? null
+								: state.activeGroupId,
+					};
+				}),
+
+			setGroups: (groups) =>
+				set({
+					groups: [...groups].sort(
+						(a, b) => b.updated_at - a.updated_at,
+					),
+				}),
+
+			addGroupMessage: (groupId, message) =>
+				set((state) => {
+					const existing = state.groupMessages[groupId] || [];
+					if (existing.some((m) => m.id === message.id)) {
+						return state;
+					}
+					return {
+						groupMessages: {
+							...state.groupMessages,
+							[groupId]: [...existing, message],
+						},
+						groups: state.groups
+							.map((g) =>
+								g.id === groupId
+									? { ...g, updated_at: message.timestamp }
+									: g,
+							)
+							.sort((a, b) => b.updated_at - a.updated_at),
+					};
+				}),
+
+			setGroupMessages: (groupId, messages) =>
+				set((state) => ({
+					groupMessages: {
+						...state.groupMessages,
+						[groupId]: messages,
+					},
+				})),
+
+			setGroupMembers: (groupId, members) =>
+				set((state) => ({
+					groupMembers: {
+						...state.groupMembers,
+						[groupId]: members,
+					},
+				})),
+
+			updateGroupHost: (groupId, hostDeviceId) =>
+				set((state) => ({
+					groups: state.groups.map((g) =>
+						g.id === groupId
+							? { ...g, host_device_id: hostDeviceId }
+							: g,
+					),
+					groupMembers: {
+						...state.groupMembers,
+						[groupId]: (state.groupMembers[groupId] || []).map(
+							(m) => ({
+								...m,
+								role:
+									m.device_id === hostDeviceId
+										? ("host" as const)
+										: ("member" as const),
+							}),
+						),
+					},
+				})),
+
+			setActiveGroupId: (groupId) => set({ activeGroupId: groupId }),
+
+			clearGroupMessages: (groupId) =>
+				set((state) => {
+					const { [groupId]: _, ...rest } = state.groupMessages;
+					return { groupMessages: rest };
+				}),
 
 			// ============================================================================
 			// Connection Health Actions
@@ -697,15 +831,15 @@ export const useAppStore = create<AppStore>()(
 			// Notification Settings Actions
 			// ============================================================================
 
-		setNotificationsEnabled: (enabled) =>
-			set({ notificationsEnabled: enabled }),
+			setNotificationsEnabled: (enabled) =>
+				set({ notificationsEnabled: enabled }),
 
 			setSoundEnabled: (enabled) => set({ soundEnabled: enabled }),
 
-		updateAppSettings: (updates) =>
-			set((state) => ({
-				appSettings: { ...state.appSettings, ...updates },
-			})),
+			updateAppSettings: (updates) =>
+				set((state) => ({
+					appSettings: { ...state.appSettings, ...updates },
+				})),
 
 			// ============================================================================
 			// Utility Actions

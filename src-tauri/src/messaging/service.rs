@@ -1,18 +1,19 @@
 //! Messaging Service
 //!
 //! Handles text message sending, receiving, and storage.
+//! All message history is persisted to SQLite via the `db` module so that
+//! conversation history survives application restarts.
 
 #![allow(dead_code)]
 
+use crate::db::{self, DbPool};
 use crate::network::{
     serialize_json, Frame, MessageAckPayload, MessageType as FrameType, TcpClient,
     TextMessagePayload,
 };
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
-use tokio::sync::RwLock;
 use uuid::Uuid;
 
 /// Delivery status of a message – mirrors the frontend `MessageStatus` type.
@@ -20,6 +21,9 @@ use uuid::Uuid;
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum MessageStatus {
+    /// Message is waiting to be sent — the peer was offline when the user
+    /// hit "send".  Will be retried automatically when the peer reappears.
+    Queued,
     /// Message was queued / transmitted to the network by the sender.
     Sent,
     /// Message was received and stored on the recipient device.
@@ -44,7 +48,7 @@ pub struct Message {
     pub message_type: MessageType,
     pub timestamp: i64,
     pub thread_id: Option<String>,
-    /// Delivery / read status – replaces the old `read: bool` field.
+    /// Delivery / read status
     pub status: MessageStatus,
 }
 
@@ -57,17 +61,16 @@ pub struct Thread {
 }
 
 pub struct MessagingService {
-    messages: Arc<RwLock<HashMap<String, Vec<Message>>>>,
-    threads: Arc<RwLock<HashMap<String, Thread>>>,
+    /// SQLite connection pool — all messages and threads are persisted here.
+    db: Arc<DbPool>,
     tcp_client: Option<Arc<TcpClient>>,
     tcp_port: u16,
 }
 
 impl MessagingService {
-    pub fn new() -> Self {
+    pub fn new(db: Arc<DbPool>) -> Self {
         Self {
-            messages: Arc::new(RwLock::new(HashMap::new())),
-            threads: Arc::new(RwLock::new(HashMap::new())),
+            db,
             tcp_client: None,
             tcp_port: 8080,
         }
@@ -85,13 +88,6 @@ impl MessagingService {
     // Port helper
     // -------------------------------------------------------------------------
 
-    /// Resolve the TCP port to use when connecting to a peer.
-    ///
-    /// `peer_port` should come from the mDNS-discovered `device.port`.  When
-    /// it is `None` we fall back to the local `tcp_port`; this works correctly
-    /// when both endpoints are on the same platform (e.g. both desktop, both
-    /// port 8080) but will fail if one side uses a different default (e.g.
-    /// iOS uses 8081).  Always pass `peer_port` when it is available.
     fn resolve_peer_port(&self, peer_port: Option<u16>) -> u16 {
         peer_port.unwrap_or(self.tcp_port)
     }
@@ -100,15 +96,6 @@ impl MessagingService {
     // Connection management
     // -------------------------------------------------------------------------
 
-    /// Proactively verify or establish the TCP connection to a peer device so
-    /// that the first real message can be sent without any handshake delay.
-    ///
-    /// `peer_port` should be the port advertised by the peer via mDNS
-    /// (`device.port`).  Pass `None` to fall back to the local `tcp_port`
-    /// (works when both devices share the same platform default).
-    ///
-    /// Returns `Ok(latency_ms)` when the connection is confirmed alive,
-    /// `Err` if the device is unreachable.
     pub async fn ensure_connected(
         &self,
         device_id: &str,
@@ -154,10 +141,6 @@ impl MessagingService {
     // Sending
     // -------------------------------------------------------------------------
 
-    /// Send a text message to a peer device.
-    ///
-    /// `peer_port` is the TCP port the peer is listening on (from mDNS
-    /// `device.port`).  Pass `None` to fall back to the local `tcp_port`.
     pub async fn send_message(
         &self,
         from_device_id: String,
@@ -174,37 +157,30 @@ impl MessagingService {
             message_type: message_type.clone(),
             timestamp: chrono::Utc::now().timestamp(),
             thread_id: None,
-            // Our own outbound message starts as "sent" (not yet confirmed by peer).
             status: MessageStatus::Sent,
         };
 
-        // Store locally.
         let conversation_key = Self::get_conversation_key(&from_device_id, &to_device_id);
+
+        // Persist to SQLite
+        if let Err(e) = db::messages::insert_message(&self.db, &message, &conversation_key).await {
+            eprintln!("⚠️  DB insert_message failed: {}", e);
+        }
+        if let Err(e) = db::messages::upsert_thread(
+            &self.db,
+            &conversation_key,
+            &from_device_id,
+            &to_device_id,
+            message.timestamp,
+        )
+        .await
         {
-            let mut messages = self.messages.write().await;
-            messages
-                .entry(conversation_key.clone())
-                .or_insert_with(Vec::new)
-                .push(message.clone());
+            eprintln!("⚠️  DB upsert_thread failed: {}", e);
         }
 
-        // Update / create thread entry.
-        {
-            let mut threads = self.threads.write().await;
-            threads
-                .entry(conversation_key)
-                .and_modify(|t| t.last_message_timestamp = message.timestamp)
-                .or_insert_with(|| Thread {
-                    id: Uuid::new_v4().to_string(),
-                    participants: vec![from_device_id.clone(), to_device_id.clone()],
-                    last_message_timestamp: message.timestamp,
-                    unread_count: 0,
-                });
-        }
-
-        // Transmit over the network.
+        // Transmit over the network — on failure, queue for later retry
         if let Some(client) = &self.tcp_client {
-            let content = match &message_type {
+            let content_str = match &message_type {
                 MessageType::Text { content } => content.clone(),
                 MessageType::Emoji { emoji } => emoji.clone(),
                 MessageType::Reply { content, .. } => content.clone(),
@@ -215,19 +191,48 @@ impl MessagingService {
                 id: message.id.clone(),
                 from_device_id: from_device_id.clone(),
                 to_device_id: to_device_id.clone(),
-                content,
+                content: content_str,
                 timestamp: message.timestamp,
                 thread_id: None,
             };
 
             let port = self.resolve_peer_port(peer_port);
             let payload_bytes = serialize_json(&payload)?;
-            client
+
+            match client
                 .send_text_message(&to_device_id, &peer_address, port, payload_bytes)
-                .await?;
+                .await
+            {
+                Ok(()) => {
+                    // Sent successfully
+                    let _ = app_handle.emit("message-sent", &message);
+                }
+                Err(e) => {
+                    // Network send failed — queue for retry instead of erroring
+                    println!(
+                        "⏳ Queuing message {} for {} (send failed: {})",
+                        message.id, to_device_id, e
+                    );
+                    let mut queued_message = message.clone();
+                    queued_message.status = MessageStatus::Queued;
+
+                    // Update the DB row to queued status
+                    if let Err(db_err) = db::messages::update_message_status(
+                        &self.db,
+                        &queued_message.id,
+                        &MessageStatus::Queued,
+                    )
+                    .await
+                    {
+                        eprintln!("⚠️  DB update to queued failed: {}", db_err);
+                    }
+
+                    let _ = app_handle.emit("message-queued", &queued_message);
+                    return Ok(queued_message);
+                }
+            }
         }
 
-        let _ = app_handle.emit("message-sent", &message);
         Ok(message)
     }
 
@@ -235,11 +240,6 @@ impl MessagingService {
     // Receiving
     // -------------------------------------------------------------------------
 
-    /// Full receive path: store the message and emit `message-received` to the
-    /// frontend with the complete `Message` payload (including `status`).
-    ///
-    /// Used when the IPC layer explicitly routes a received frame through the
-    /// service.
     pub async fn receive_message(
         &self,
         payload: TextMessagePayload,
@@ -248,39 +248,20 @@ impl MessagingService {
         let message = Self::build_received_message(payload);
         let conversation_key =
             Self::get_conversation_key(&message.from_device_id, &message.to_device_id);
-        self.persist_message(&message, &conversation_key).await;
+        self.persist_message(&message, &conversation_key, true).await;
         let _ = app_handle.emit("message-received", &message);
         Ok(())
     }
 
-    /// Store an incoming `TextMessagePayload` **without** emitting any events.
-    ///
-    /// Called by the TCP server the moment a text-message frame is decoded so
-    /// that `get_messages` returns complete history for both sides of a
-    /// conversation (the server still emits the Tauri event separately so the
-    /// frontend's real-time listener is notified).
-    ///
-    /// De-duplicates by message ID to guard against retry scenarios.
     pub async fn store_received_message(&self, payload: &TextMessagePayload) {
         let message = Self::build_received_message(payload.clone());
         let conversation_key =
             Self::get_conversation_key(&message.from_device_id, &message.to_device_id);
-
-        let already_stored = {
-            let msgs = self.messages.read().await;
-            msgs.get(&conversation_key)
-                .map(|v| v.iter().any(|m| m.id == message.id))
-                .unwrap_or(false)
-        };
-
-        if !already_stored {
-            self.persist_message(&message, &conversation_key).await;
-        }
+        self.persist_message(&message, &conversation_key, true).await;
     }
 
     // ── Private helpers ──────────────────────────────────────────────────────
 
-    /// Convert a raw network payload into a `Message` with status `Delivered`.
     fn build_received_message(payload: TextMessagePayload) -> Message {
         Message {
             id: payload.id,
@@ -295,33 +276,33 @@ impl MessagingService {
         }
     }
 
-    /// Write a message to the in-memory store and update the thread metadata.
-    async fn persist_message(&self, message: &Message, conversation_key: &str) {
-        {
-            let mut messages = self.messages.write().await;
-            messages
-                .entry(conversation_key.to_string())
-                .or_insert_with(Vec::new)
-                .push(message.clone());
+    /// Write a message to SQLite and update thread metadata.
+    ///
+    /// `increment_unread` should be `true` for incoming messages and `false`
+    /// for our own outgoing messages.
+    async fn persist_message(&self, message: &Message, conversation_key: &str, increment_unread: bool) {
+        if let Err(e) = db::messages::insert_message(&self.db, message, conversation_key).await {
+            eprintln!("⚠️  DB insert_message failed: {}", e);
         }
 
+        if let Err(e) = db::messages::upsert_thread(
+            &self.db,
+            conversation_key,
+            &message.from_device_id,
+            &message.to_device_id,
+            message.timestamp,
+        )
+        .await
         {
-            let mut threads = self.threads.write().await;
-            threads
-                .entry(conversation_key.to_string())
-                .and_modify(|t| {
-                    t.last_message_timestamp = message.timestamp;
-                    t.unread_count += 1;
-                })
-                .or_insert_with(|| Thread {
-                    id: Uuid::new_v4().to_string(),
-                    participants: vec![
-                        message.from_device_id.clone(),
-                        message.to_device_id.clone(),
-                    ],
-                    last_message_timestamp: message.timestamp,
-                    unread_count: 1,
-                });
+            eprintln!("⚠️  DB upsert_thread failed: {}", e);
+        }
+
+        if increment_unread {
+            if let Err(e) =
+                db::messages::increment_thread_unread(&self.db, conversation_key).await
+            {
+                eprintln!("⚠️  DB increment_thread_unread failed: {}", e);
+            }
         }
     }
 
@@ -331,65 +312,51 @@ impl MessagingService {
 
     pub async fn get_messages(&self, device1: &str, device2: &str) -> Vec<Message> {
         let key = Self::get_conversation_key(device1, device2);
-        let messages = self.messages.read().await;
-        messages.get(&key).cloned().unwrap_or_default()
+        match db::messages::get_messages(&self.db, &key).await {
+            Ok(msgs) => msgs,
+            Err(e) => {
+                eprintln!("⚠️  DB get_messages failed: {}", e);
+                vec![]
+            }
+        }
     }
 
     pub async fn get_threads(&self) -> Vec<Thread> {
-        let threads = self.threads.read().await;
-        let mut list: Vec<Thread> = threads.values().cloned().collect();
-        list.sort_by(|a, b| b.last_message_timestamp.cmp(&a.last_message_timestamp));
-        list
+        match db::messages::get_threads(&self.db).await {
+            Ok(threads) => threads,
+            Err(e) => {
+                eprintln!("⚠️  DB get_threads failed: {}", e);
+                vec![]
+            }
+        }
     }
 
     // -------------------------------------------------------------------------
     // Mark as read / delivered
     // -------------------------------------------------------------------------
 
-    /// Mark a single message as `Read`.
     pub async fn mark_as_read(
         &self,
         message_id: &str,
-        conversation_key: &str,
+        _conversation_key: &str,
     ) -> Result<(), String> {
-        let mut messages = self.messages.write().await;
-        if let Some(conversation) = messages.get_mut(conversation_key) {
-            if let Some(msg) = conversation.iter_mut().find(|m| m.id == message_id) {
-                msg.status = MessageStatus::Read;
-                return Ok(());
-            }
-        }
-        Err("Message not found".to_string())
+        db::messages::update_message_status(&self.db, message_id, &MessageStatus::Read)
+            .await
+            .map_err(|e| format!("DB mark_as_read failed: {}", e))
     }
 
-    /// Mark **all** messages in a conversation that were sent by a peer (not by
-    /// `reader_device_id`) as `Read`.  Called when the local user opens a chat
-    /// window – clears the unread badge.
     pub async fn mark_conversation_as_read(
         &self,
         conversation_key: &str,
         reader_device_id: &str,
     ) -> Result<u32, String> {
-        let mut marked = 0u32;
+        let marked =
+            db::messages::mark_conversation_messages_read(&self.db, conversation_key, reader_device_id)
+                .await
+                .map_err(|e| format!("DB mark_conversation_as_read failed: {}", e))?;
 
-        {
-            let mut messages = self.messages.write().await;
-            if let Some(conversation) = messages.get_mut(conversation_key) {
-                for msg in conversation.iter_mut() {
-                    if msg.from_device_id != reader_device_id && msg.status != MessageStatus::Read {
-                        msg.status = MessageStatus::Read;
-                        marked += 1;
-                    }
-                }
-            }
-        }
-
-        // Reset thread unread counter.
-        {
-            let mut threads = self.threads.write().await;
-            if let Some(thread) = threads.get_mut(conversation_key) {
-                thread.unread_count = 0;
-            }
+        if let Err(e) = db::messages::reset_thread_unread(&self.db, conversation_key).await {
+            eprintln!("⚠️  DB reset_thread_unread failed: {}", e);
         }
 
         Ok(marked)
@@ -399,56 +366,37 @@ impl MessagingService {
     // Delivery ACK / Read receipt helpers
     // -------------------------------------------------------------------------
 
-    /// Update the status of a single message (e.g. Sent → Delivered → Read).
     pub async fn update_message_status(
         &self,
-        conversation_key: &str,
+        _conversation_key: &str,
         message_id: &str,
         new_status: MessageStatus,
     ) -> Result<(), String> {
-        let mut messages = self.messages.write().await;
-        if let Some(conversation) = messages.get_mut(conversation_key) {
-            if let Some(msg) = conversation.iter_mut().find(|m| m.id == message_id) {
-                msg.status = new_status;
-                return Ok(());
-            }
-        }
-        Err(format!(
-            "Message {} not found in {}",
-            message_id, conversation_key
-        ))
+        db::messages::update_message_status(&self.db, message_id, &new_status)
+            .await
+            .map_err(|e| format!("DB update_message_status failed: {}", e))
     }
 
-    /// Mark all messages in a conversation that were **sent by `sender_device_id`** as `Read`.
-    ///
-    /// Called on the sender's side when it receives a read-receipt from the
-    /// recipient, so that the sender's own outgoing bubbles show blue ticks.
     pub async fn mark_outgoing_as_read(&self, conversation_key: &str, sender_device_id: &str) {
-        let mut messages = self.messages.write().await;
-        if let Some(conversation) = messages.get_mut(conversation_key) {
-            for msg in conversation.iter_mut() {
-                if msg.from_device_id == sender_device_id && msg.status != MessageStatus::Read {
-                    msg.status = MessageStatus::Read;
-                }
-            }
+        if let Err(e) =
+            db::messages::mark_outgoing_as_read(&self.db, conversation_key, sender_device_id).await
+        {
+            eprintln!("⚠️  DB mark_outgoing_as_read failed: {}", e);
         }
     }
 
-    /// Send a delivery acknowledgement to the original message sender.
-    ///
-    /// Called by the TCP server the moment it stores a received text message.
     pub async fn send_delivery_ack(
         &self,
         message_id: &str,
         conversation_key: &str,
-        from_device_id: &str, // us – the recipient who is sending this ACK
-        to_device_id: &str,   // them – the original sender
+        from_device_id: &str,
+        to_device_id: &str,
         peer_address: &str,
         peer_port: u16,
     ) -> Result<(), String> {
         let client = match self.tcp_client.as_ref() {
             Some(c) => c,
-            None => return Ok(()), // no client yet – skip silently
+            None => return Ok(()),
         };
 
         let ack = MessageAckPayload {
@@ -463,7 +411,6 @@ impl MessagingService {
             serialize_json(&ack).map_err(|e| format!("Failed to serialize ACK: {}", e))?;
         let frame = Frame::new(FrameType::MessageDelivered, payload);
 
-        // Best-effort – don't fail the whole receive path if the ACK can't be delivered
         if let Err(e) = client
             .send_frame(to_device_id, peer_address, peer_port, frame)
             .await
@@ -473,14 +420,11 @@ impl MessagingService {
         Ok(())
     }
 
-    /// Send a read receipt to the original message sender.
-    ///
-    /// Called by the IPC layer when the local user opens a conversation.
     pub async fn send_read_receipt(
         &self,
         conversation_key: &str,
-        from_device_id: &str, // us – the reader
-        to_device_id: &str,   // them – the original sender
+        from_device_id: &str,
+        to_device_id: &str,
         peer_address: &str,
         peer_port: u16,
     ) -> Result<(), String> {
@@ -492,7 +436,7 @@ impl MessagingService {
         let ack = MessageAckPayload {
             msg_type: "MESSAGE_READ".to_string(),
             conversation_key: conversation_key.to_string(),
-            message_id: None, // conversation-level receipt – no specific message ID
+            message_id: None,
             from_device_id: from_device_id.to_string(),
             to_device_id: to_device_id.to_string(),
         };
@@ -510,25 +454,20 @@ impl MessagingService {
         Ok(())
     }
 
-    /// Reset a thread's unread counter (legacy helper, kept for compatibility).
-    pub async fn mark_thread_as_read(&self, thread_id: &str) -> Result<(), String> {
-        let mut threads = self.threads.write().await;
-        if let Some(thread) = threads.get_mut(thread_id) {
-            thread.unread_count = 0;
-            Ok(())
-        } else {
-            Err("Thread not found".to_string())
-        }
+    /// Reset a thread's unread counter.
+    /// `thread_id` here is treated as a `conversation_key` (historical naming).
+    pub async fn mark_thread_as_read(&self, conversation_key: &str) -> Result<(), String> {
+        db::messages::reset_thread_unread(&self.db, conversation_key)
+            .await
+            .map_err(|e| format!("DB mark_thread_as_read failed: {}", e))
     }
 
-    /// Clear all in-memory messages, threads, and close TCP connections.
-    ///
-    /// Called by the `clear_all_data` IPC command when the user resets the app.
+    /// Clear all messages and threads from SQLite and close TCP connections.
     pub async fn clear_all(&self) {
-        self.messages.write().await.clear();
-        self.threads.write().await.clear();
+        if let Err(e) = db::messages::clear_messages(&self.db).await {
+            eprintln!("⚠️  DB clear_messages failed: {}", e);
+        }
 
-        // Also close all pooled TCP connections so stale sessions aren't reused.
         if let Some(ref client) = self.tcp_client {
             client.close_all().await;
         }
@@ -537,10 +476,141 @@ impl MessagingService {
     }
 
     // -------------------------------------------------------------------------
+    // Offline Queue & Retry
+    // -------------------------------------------------------------------------
+
+    /// Flush all queued messages destined for `peer_device_id`.
+    ///
+    /// Looks up the peer address from the provided list of discovered devices
+    /// and retransmits each queued message over TCP.  On success the message
+    /// status is flipped to `Sent`; on failure it stays `Queued` for the next
+    /// retry opportunity.
+    ///
+    /// Returns the number of messages successfully flushed.
+    pub async fn flush_queue_for_device(
+        &self,
+        peer_device_id: &str,
+        peer_address: &str,
+        peer_port: u16,
+        app_handle: AppHandle,
+    ) -> u32 {
+        let queued = match db::messages::get_queued_messages_for_device(&self.db, peer_device_id)
+            .await
+        {
+            Ok(msgs) => msgs,
+            Err(e) => {
+                eprintln!("⚠️  Failed to load queued messages: {}", e);
+                return 0;
+            }
+        };
+
+        if queued.is_empty() {
+            return 0;
+        }
+
+        println!(
+            "🔄 Flushing {} queued message(s) for {}",
+            queued.len(),
+            peer_device_id
+        );
+
+        let client = match self.tcp_client.as_ref() {
+            Some(c) => c,
+            None => return 0,
+        };
+
+        let mut flushed: u32 = 0;
+
+        for msg in &queued {
+            let content_str = match &msg.message_type {
+                MessageType::Text { content } => content.clone(),
+                MessageType::Emoji { emoji } => emoji.clone(),
+                MessageType::Reply { content, .. } => content.clone(),
+            };
+
+            let payload = TextMessagePayload {
+                msg_type: "TEXT_MESSAGE".to_string(),
+                id: msg.id.clone(),
+                from_device_id: msg.from_device_id.clone(),
+                to_device_id: msg.to_device_id.clone(),
+                content: content_str,
+                timestamp: msg.timestamp,
+                thread_id: msg.thread_id.clone(),
+            };
+
+            let payload_bytes = match serialize_json(&payload) {
+                Ok(b) => b,
+                Err(e) => {
+                    eprintln!("⚠️  Failed to serialize queued message: {}", e);
+                    continue;
+                }
+            };
+
+            match client
+                .send_text_message(peer_device_id, peer_address, peer_port, payload_bytes)
+                .await
+            {
+                Ok(()) => {
+                    // Update status to Sent
+                    if let Err(e) = db::messages::update_message_status(
+                        &self.db,
+                        &msg.id,
+                        &MessageStatus::Sent,
+                    )
+                    .await
+                    {
+                        eprintln!("⚠️  DB update queued→sent failed: {}", e);
+                    }
+
+                    let mut sent_msg = msg.clone();
+                    sent_msg.status = MessageStatus::Sent;
+                    let _ = app_handle.emit("message-queue-flushed", &sent_msg);
+
+                    flushed += 1;
+                }
+                Err(e) => {
+                    // Still can't reach peer — leave as queued
+                    eprintln!(
+                        "⚠️  Retry failed for message {} to {}: {}",
+                        msg.id, peer_device_id, e
+                    );
+                    // Stop trying more messages to this device this round
+                    break;
+                }
+            }
+        }
+
+        if flushed > 0 {
+            println!(
+                "✓ Flushed {}/{} queued messages for {}",
+                flushed,
+                queued.len(),
+                peer_device_id
+            );
+        }
+
+        flushed
+    }
+
+    /// Return the count of queued (unsent) messages for a specific peer.
+    pub async fn queued_count_for_device(&self, peer_device_id: &str) -> u32 {
+        db::messages::get_queued_count_for_device(&self.db, peer_device_id)
+            .await
+            .unwrap_or(0)
+    }
+
+    /// Return the total count of all queued messages across all peers.
+    pub async fn total_queued_count(&self) -> u32 {
+        db::messages::get_total_queued_count(&self.db)
+            .await
+            .unwrap_or(0)
+    }
+
+    // -------------------------------------------------------------------------
     // Internals
     // -------------------------------------------------------------------------
 
-    fn get_conversation_key(device1: &str, device2: &str) -> String {
+    pub fn get_conversation_key(device1: &str, device2: &str) -> String {
         let mut participants = vec![device1, device2];
         participants.sort();
         participants.join("_")
@@ -550,8 +620,7 @@ impl MessagingService {
 impl Clone for MessagingService {
     fn clone(&self) -> Self {
         Self {
-            messages: Arc::clone(&self.messages),
-            threads: Arc::clone(&self.threads),
+            db: Arc::clone(&self.db),
             tcp_client: self.tcp_client.clone(),
             tcp_port: self.tcp_port,
         }

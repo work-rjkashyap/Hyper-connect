@@ -1,7 +1,8 @@
 import { useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "@/store";
-import type { FileTransfer, TransferStatus } from "@/types";
+import type { FileTransfer } from "@/types";
+import { TransferStatus } from "@/types";
 import { toast } from "@/hooks/use-toast";
 
 /**
@@ -201,6 +202,51 @@ export function useFileTransfer() {
 		[updateTransfer],
 	);
 
+	// Resume a paused or failed transfer
+	const resumeTransfer = useCallback(
+		async (transferId: string, peerAddress: string) => {
+			try {
+				await invoke("resume_transfer", {
+					transferId,
+					peerAddress,
+				});
+
+				console.log(`↻ Transfer resumed: ${transferId}`);
+
+				updateTransfer(transferId, {
+					status: TransferStatus.AwaitingAcceptance,
+				});
+
+				toast({
+					title: "Resuming transfer",
+					description: "Reconnecting to peer to resume file transfer",
+				});
+			} catch (error) {
+				console.error("Failed to resume transfer:", error);
+				toast({
+					title: "Failed to resume transfer",
+					description: String(error),
+					variant: "destructive",
+				});
+			}
+		},
+		[updateTransfer],
+	);
+
+	// Load transfers that can be resumed (paused/failed with partial data)
+	const loadResumableTransfers = useCallback(async () => {
+		try {
+			const transfers = await invoke<FileTransfer[]>(
+				"get_resumable_transfers",
+			);
+			console.log(`↻ Found ${transfers.length} resumable transfer(s)`);
+			return transfers;
+		} catch (error) {
+			console.error("Failed to load resumable transfers:", error);
+			return [];
+		}
+	}, []);
+
 	return {
 		createTransfer,
 		startTransfer,
@@ -208,6 +254,8 @@ export function useFileTransfer() {
 		rejectTransfer,
 		pauseTransfer,
 		cancelTransfer,
+		resumeTransfer,
+		loadResumableTransfers,
 		loadTransfers,
 	};
 }

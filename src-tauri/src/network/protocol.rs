@@ -17,9 +17,6 @@ use serde::{Deserialize, Serialize};
 use std::io::{self, Read, Write};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-/// Protocol version for compatibility checking
-pub const PROTOCOL_VERSION: u8 = 2;
-
 /// Maximum payload size (100MB) - prevents memory exhaustion attacks
 const MAX_PAYLOAD_SIZE: u32 = 100 * 1024 * 1024;
 
@@ -243,17 +240,6 @@ impl Frame {
 // Protocol Message Payloads (JSON-serialized except FileData)
 // ============================================================================
 
-/// Hello handshake message sent on connection establishment
-#[deprecated(note = "Use HelloSecure from the crypto module instead. Plaintext Hello is no longer accepted.")]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HelloPayload {
-    pub protocol_version: u8,
-    pub device_id: String,
-    pub display_name: String,
-    pub platform: String,
-    pub app_version: String,
-}
-
 /// Text message between devices
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TextMessagePayload {
@@ -282,6 +268,9 @@ pub struct FileRequestPayload {
     pub from_device_id: String,
     pub to_device_id: String,
     pub checksum: String, // SHA-256 hash
+    /// Byte offset to resume from (0 = fresh transfer, >0 = resume).
+    #[serde(default)]
+    pub resume_offset: u64,
 }
 
 fn default_file_request_type() -> String {
@@ -433,14 +422,6 @@ pub struct FileRejectPayload {
 
 fn default_file_reject_type() -> String {
     "FILE_REJECT".to_string()
-}
-
-/// Heartbeat message
-#[deprecated(note = "Heartbeat keepalives within encrypted sessions use inline handling. This payload struct is unused.")]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HeartbeatPayload {
-    pub device_id: String,
-    pub timestamp: i64,
 }
 
 /// Error message

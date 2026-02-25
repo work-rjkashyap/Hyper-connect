@@ -11,6 +11,8 @@ import Plus from "lucide-react/dist/esm/icons/plus";
 import UserCheck from "lucide-react/dist/esm/icons/user-check";
 import UserX from "lucide-react/dist/esm/icons/user-x";
 import ShieldAlert from "lucide-react/dist/esm/icons/shield-alert";
+import UsersIcon from "lucide-react/dist/esm/icons/users";
+import Crown from "lucide-react/dist/esm/icons/crown";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -27,6 +29,8 @@ import {
 import { useAppStore } from "@/store";
 import { cn } from "@/lib/utils";
 import { isSystemMessage, getConversationKey } from "@/types";
+
+import CreateGroupDialog from "@/components/group/CreateGroupDialog";
 
 interface SidebarProps {
 	className?: string;
@@ -47,6 +51,9 @@ export default function Sidebar({ className, onClose }: SidebarProps) {
 		startedChats,
 		approvedDevices,
 		declinedDevices,
+		groups,
+		groupMessages,
+		groupMembers,
 	} = useAppStore();
 
 	// Keep badge in sync when the backend emits a conversation-read event
@@ -113,6 +120,56 @@ export default function Sidebar({ className, onClose }: SidebarProps) {
 	const selectedChatId = location.pathname.startsWith("/chat/")
 		? location.pathname.split("/chat/")[1]
 		: null;
+
+	const selectedGroupId = location.pathname.startsWith("/group/")
+		? location.pathname.split("/group/")[1]
+		: null;
+
+	// ── Group chat items for sidebar ─────────────────────────────────────
+	const groupItems = React.useMemo(() => {
+		return groups
+			.filter((g) => {
+				if (!search) return true;
+				return g.name.toLowerCase().includes(search.toLowerCase());
+			})
+			.map((group) => {
+				const msgs = groupMessages[group.id] || [];
+				const lastMsg = msgs.length > 0 ? msgs[msgs.length - 1] : null;
+				const members = groupMembers[group.id] || [];
+
+				let lastMessageContent = "";
+				if (lastMsg) {
+					const senderDevice = devices.find(
+						(d) => d.device_id === lastMsg.from_device_id,
+					);
+					const senderName =
+						lastMsg.from_device_id === localDeviceId
+							? "You"
+							: senderDevice?.display_name ||
+								lastMsg.from_device_id.slice(0, 8);
+					lastMessageContent = `${senderName}: ${lastMsg.content}`;
+					if (lastMessageContent.length > 50) {
+						lastMessageContent =
+							lastMessageContent.substring(0, 50) + "…";
+					}
+				}
+
+				return {
+					id: group.id,
+					name: group.name,
+					memberCount: members.length,
+					lastMessage: lastMessageContent || "No messages yet",
+					timestamp: lastMsg
+						? formatTimestamp(lastMsg.timestamp)
+						: formatTimestamp(group.created_at),
+					sortTimestamp: lastMsg
+						? lastMsg.timestamp
+						: group.created_at,
+					isHost: group.host_device_id === localDeviceId,
+				};
+			})
+			.sort((a, b) => b.sortTimestamp - a.sortTimestamp);
+	}, [groups, groupMessages, groupMembers, devices, localDeviceId, search]);
 
 	const chats = React.useMemo(() => {
 		return devices
@@ -313,7 +370,90 @@ export default function Sidebar({ className, onClose }: SidebarProps) {
 			{/* Chat List */}
 			<ScrollArea className="flex-1">
 				<div className="flex flex-col gap-0.5 sm:gap-1 px-1 sm:px-2 pb-2">
-					{filteredChats.length === 0 ? (
+					{/* ── Group Chats ──────────────────────────────────────────── */}
+					{groupItems.length > 0 && (
+						<>
+							<div className="flex items-center justify-between px-2 sm:px-3 pt-2 pb-1">
+								<div className="flex items-center gap-2">
+									<UsersIcon className="h-3.5 w-3.5 text-primary" />
+									<span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+										Groups
+									</span>
+									<Badge
+										variant="secondary"
+										className="h-4 min-w-4 rounded-full px-1 text-[9px]"
+									>
+										{groupItems.length}
+									</Badge>
+								</div>
+								<CreateGroupDialog
+									trigger={
+										<Button
+											variant="ghost"
+											size="sm"
+											className="h-6 w-6 p-0"
+										>
+											<Plus className="h-3.5 w-3.5 text-muted-foreground" />
+										</Button>
+									}
+								/>
+							</div>
+							{groupItems.map((item, index) => (
+								<button
+									key={item.id}
+									onClick={() => {
+										navigate(`/group/${item.id}`);
+										onClose?.();
+									}}
+									className={cn(
+										"flex items-center gap-2 sm:gap-3 px-2 sm:px-3 py-2 sm:py-2.5 rounded-lg sm:rounded-xl text-left w-full transition-all duration-200",
+										selectedGroupId === item.id
+											? "bg-accent text-accent-foreground shadow-sm"
+											: "hover:bg-accent/50",
+									)}
+									style={{
+										animationDelay: `${index * 30}ms`,
+										animationFillMode: "both",
+									}}
+								>
+									{/* Group icon */}
+									<div className="relative shrink-0">
+										<div className="flex items-center justify-center h-9 w-9 sm:h-10 sm:w-10 rounded-full bg-primary/10">
+											<UsersIcon className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
+										</div>
+									</div>
+
+									{/* Group info */}
+									<div className="flex-1 min-w-0">
+										<div className="flex items-center justify-between gap-1">
+											<span className="text-xs sm:text-sm font-semibold truncate flex items-center gap-1">
+												{item.name}
+												{item.isHost && (
+													<Crown className="h-3 w-3 text-yellow-500 shrink-0" />
+												)}
+											</span>
+											<span className="text-[10px] sm:text-[11px] text-muted-foreground whitespace-nowrap shrink-0">
+												{item.timestamp}
+											</span>
+										</div>
+										<div className="flex items-center justify-between gap-1 mt-0.5">
+											<span className="text-[11px] sm:text-xs text-muted-foreground truncate">
+												{item.lastMessage}
+											</span>
+											<span className="text-[10px] text-muted-foreground/60 shrink-0">
+												{item.memberCount} members
+											</span>
+										</div>
+									</div>
+								</button>
+							))}
+							{filteredChats.length > 0 && (
+								<div className="mx-3 my-1.5 border-t border-border/40" />
+							)}
+						</>
+					)}
+
+					{filteredChats.length === 0 && groupItems.length === 0 ? (
 						<div className="flex flex-col items-center justify-center p-6 text-center text-muted-foreground">
 							<p className="text-xs sm:text-sm">No chats yet</p>
 							<p className="text-[11px] sm:text-xs mt-1">

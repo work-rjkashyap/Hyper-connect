@@ -4,9 +4,13 @@
 
 use crate::discovery::{Device, MdnsDiscoveryService};
 use crate::identity::{DeviceIdentity, IdentityManager};
-use crate::messaging::{Message, MessageType, MessagingService, Thread};
+use crate::messaging::{
+    GroupChat, GroupControlAction, GroupMember, GroupMemberInfo, GroupMessage, GroupRole,
+    GroupService, GroupSummary, Message, MessageType, MessagingService, Thread,
+};
 use crate::network::protocol::{serialize_json, FileAckPayload, FileRejectPayload};
 use crate::network::{FileTransfer, FileTransferService};
+use serde::Serialize;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::Emitter;
@@ -218,6 +222,67 @@ pub async fn mark_conversation_as_read(
 }
 
 // ============================================================================
+// Offline Message Queue Commands
+// ============================================================================
+
+/// Result of a queue flush operation.
+#[derive(Debug, Clone, Serialize)]
+pub struct FlushResult {
+    pub device_id: String,
+    pub flushed: u32,
+    pub remaining: u32,
+}
+
+/// Flush all queued (unsent) messages for a peer device that just came online.
+///
+/// The frontend should call this whenever a `device-discovered` event fires so
+/// that messages queued while the peer was offline are delivered automatically.
+#[tauri::command]
+pub async fn flush_message_queue(
+    messaging: State<'_, MessagingService>,
+    discovery: State<'_, Arc<MdnsDiscoveryService>>,
+    device_id: String,
+    app_handle: AppHandle,
+) -> Result<FlushResult, String> {
+    // Look up the device's current address from mDNS discovery
+    let devices = discovery.get_devices().await;
+    let peer = devices
+        .iter()
+        .find(|d| d.id == device_id)
+        .ok_or_else(|| format!("Device {} not found in discovery", device_id))?;
+
+    let peer_address = peer
+        .addresses
+        .first()
+        .ok_or_else(|| format!("Device {} has no network address", device_id))?;
+
+    let flushed = messaging
+        .flush_queue_for_device(&device_id, peer_address, peer.port, app_handle)
+        .await;
+
+    let remaining = messaging.queued_count_for_device(&device_id).await;
+
+    Ok(FlushResult {
+        device_id,
+        flushed,
+        remaining,
+    })
+}
+
+/// Return the number of queued (unsent) messages for a specific peer, or the
+/// total across all peers when `device_id` is `None`.
+#[tauri::command]
+pub async fn get_queued_count(
+    messaging: State<'_, MessagingService>,
+    device_id: Option<String>,
+) -> Result<u32, String> {
+    match device_id {
+        Some(id) => Ok(messaging.queued_count_for_device(&id).await),
+        None => Ok(messaging.total_queued_count().await),
+    }
+}
+
+// ============================================================================
 // File Transfer Commands
 // ============================================================================
 
@@ -363,6 +428,25 @@ pub async fn get_transfers(
 }
 
 #[tauri::command]
+pub async fn resume_transfer(
+    file_transfer: State<'_, FileTransferService>,
+    transfer_id: String,
+    peer_address: String,
+    app_handle: AppHandle,
+) -> Result<(), String> {
+    file_transfer
+        .resume_transfer(&transfer_id, Some(peer_address), app_handle)
+        .await
+}
+
+#[tauri::command]
+pub async fn get_resumable_transfers(
+    file_transfer: State<'_, FileTransferService>,
+) -> Result<Vec<FileTransfer>, String> {
+    Ok(file_transfer.get_resumable_transfers().await)
+}
+
+#[tauri::command]
 pub fn get_tcp_port(tcp_port: State<TcpPort>) -> u16 {
     tcp_port.0
 }
@@ -483,9 +567,252 @@ pub async fn open_file_location(path: String) -> Result<(), String> {
 pub async fn clear_all_data(
     messaging: State<'_, MessagingService>,
     file_transfer: State<'_, FileTransferService>,
+    group_service: State<'_, GroupService>,
 ) -> Result<(), String> {
     messaging.clear_all().await;
     file_transfer.clear_all().await;
+    group_service.clear_all().await?;
     println!("✓ All application data cleared via IPC");
     Ok(())
+}
+
+// ============================================================================
+// Group Chat Commands
+// ============================================================================
+
+/// Create a new group chat.  The local device becomes the host.
+///
+/// `member_device_ids` should include ALL members (the local device will be
+/// added automatically if not present).
+#[tauri::command]
+pub async fn create_group(
+    group_service: State<'_, GroupService>,
+    name: String,
+    local_device_id: String,
+    member_device_ids: Vec<String>,
+    app_handle: AppHandle,
+) -> Result<GroupChat, String> {
+    group_service
+        .create_group(name, local_device_id, member_device_ids, app_handle)
+        .await
+}
+
+/// Add a member to an existing group.  Only the host can do this.
+#[tauri::command]
+pub async fn add_group_member(
+    group_service: State<'_, GroupService>,
+    group_id: String,
+    new_device_id: String,
+    local_device_id: String,
+    app_handle: AppHandle,
+) -> Result<(), String> {
+    group_service
+        .add_member(&group_id, &new_device_id, &local_device_id, &app_handle)
+        .await
+}
+
+/// Remove a member from a group.  Only the host can do this.
+#[tauri::command]
+pub async fn remove_group_member(
+    group_service: State<'_, GroupService>,
+    group_id: String,
+    target_device_id: String,
+    local_device_id: String,
+    app_handle: AppHandle,
+) -> Result<(), String> {
+    group_service
+        .remove_member(&group_id, &target_device_id, &local_device_id, &app_handle)
+        .await
+}
+
+/// Leave a group.  If the leaving member is the host, a new host is elected.
+#[tauri::command]
+pub async fn leave_group(
+    group_service: State<'_, GroupService>,
+    group_id: String,
+    local_device_id: String,
+    app_handle: AppHandle,
+) -> Result<(), String> {
+    group_service
+        .leave_group(&group_id, &local_device_id, &app_handle)
+        .await
+}
+
+/// Disband (delete) a group.  Only the host or creator can do this.
+#[tauri::command]
+pub async fn disband_group(
+    group_service: State<'_, GroupService>,
+    group_id: String,
+    local_device_id: String,
+    app_handle: AppHandle,
+) -> Result<(), String> {
+    group_service
+        .disband_group(&group_id, &local_device_id, &app_handle)
+        .await
+}
+
+/// Send a text message to a group.
+///
+/// If the sender is the host, the message is fanned out directly.
+/// Otherwise it is forwarded to the host, which fans it out.
+#[tauri::command]
+pub async fn send_group_message(
+    group_service: State<'_, GroupService>,
+    group_id: String,
+    local_device_id: String,
+    content: String,
+    msg_content_type: Option<String>,
+    reply_to: Option<String>,
+    app_handle: AppHandle,
+) -> Result<GroupMessage, String> {
+    group_service
+        .send_group_message(
+            &group_id,
+            &local_device_id,
+            content,
+            msg_content_type.unwrap_or_else(|| "text".to_string()),
+            reply_to,
+            app_handle,
+        )
+        .await
+}
+
+/// Return all groups the local device belongs to.
+#[tauri::command]
+pub async fn get_groups(
+    group_service: State<'_, GroupService>,
+    local_device_id: String,
+) -> Result<Vec<GroupChat>, String> {
+    group_service.get_groups(&local_device_id).await
+}
+
+/// Return all messages for a group, ordered oldest-first.
+#[tauri::command]
+pub async fn get_group_messages(
+    group_service: State<'_, GroupService>,
+    group_id: String,
+) -> Result<Vec<GroupMessage>, String> {
+    group_service.get_group_messages(&group_id).await
+}
+
+/// Return all members of a group.
+#[tauri::command]
+pub async fn get_group_members(
+    group_service: State<'_, GroupService>,
+    group_id: String,
+) -> Result<Vec<GroupMember>, String> {
+    group_service.get_group_members(&group_id).await
+}
+
+/// Rename a group.  Only the host can do this.
+#[tauri::command]
+pub async fn rename_group(
+    group_service: State<'_, GroupService>,
+    group_id: String,
+    new_name: String,
+    local_device_id: String,
+    app_handle: AppHandle,
+) -> Result<(), String> {
+    group_service
+        .rename_group(&group_id, new_name, &local_device_id, &app_handle)
+        .await
+}
+
+/// Clear all messages in a group.  Only the host can do this.
+#[tauri::command]
+pub async fn clear_group_history(
+    group_service: State<'_, GroupService>,
+    group_id: String,
+    local_device_id: String,
+) -> Result<(), String> {
+    group_service
+        .clear_group_history(&group_id, &local_device_id)
+        .await
+}
+
+/// Detailed group info including member roles and available actions.
+///
+/// Returns the group metadata, a list of members annotated with their
+/// [`GroupRole`], and the set of [`GroupControlAction`]s the caller can
+/// perform (based on whether they are the host).
+#[derive(Debug, Clone, Serialize)]
+pub struct GroupInfo {
+    pub group: GroupChat,
+    pub members: Vec<GroupMemberInfo>,
+    pub my_role: GroupRole,
+    pub available_actions: Vec<String>,
+}
+
+/// Map a [`GroupControlAction`] to the string label shown in the UI.
+fn action_label(action: &GroupControlAction) -> &'static str {
+    match action {
+        GroupControlAction::Create => "create",
+        GroupControlAction::MemberAdded => "add_member",
+        GroupControlAction::MemberRemoved => "remove_member",
+        GroupControlAction::HostChanged => "change_host",
+        GroupControlAction::Disband => "disband",
+    }
+}
+
+/// Get detailed info about a group, including member roles and the set of
+/// actions the requesting device is allowed to perform.
+#[tauri::command]
+pub async fn get_group_info(
+    group_service: State<'_, GroupService>,
+    group_id: String,
+    local_device_id: String,
+) -> Result<GroupInfo, String> {
+    let group = group_service
+        .get_group(&group_id)
+        .await?
+        .ok_or_else(|| format!("Group {} not found", group_id))?;
+
+    let members = group_service.get_group_members(&group_id).await?;
+
+    // Build GroupMemberInfo list with roles
+    let member_infos: Vec<GroupMemberInfo> = members
+        .iter()
+        .map(|m| GroupMemberInfo {
+            device_id: m.device_id.clone(),
+            role: m.role.clone(),
+        })
+        .collect();
+
+    // Determine the caller's role
+    let my_role = members
+        .iter()
+        .find(|m| m.device_id == local_device_id)
+        .map(|m| m.role.clone())
+        .unwrap_or(GroupRole::Member);
+
+    // Compute available actions based on role
+    let mut available_actions = Vec::new();
+    match my_role {
+        GroupRole::Host => {
+            available_actions.push(action_label(&GroupControlAction::MemberAdded).to_string());
+            available_actions.push(action_label(&GroupControlAction::MemberRemoved).to_string());
+            available_actions.push(action_label(&GroupControlAction::HostChanged).to_string());
+            available_actions.push(action_label(&GroupControlAction::Disband).to_string());
+        }
+        GroupRole::Member => {
+            // Regular members can only leave (which is MemberRemoved on self)
+            available_actions.push("leave".to_string());
+        }
+    }
+
+    Ok(GroupInfo {
+        group,
+        members: member_infos,
+        my_role,
+        available_actions,
+    })
+}
+
+/// Return group summaries (group + members + last message) for sidebar display.
+#[tauri::command]
+pub async fn get_group_summaries(
+    group_service: State<'_, GroupService>,
+    local_device_id: String,
+) -> Result<Vec<GroupSummary>, String> {
+    group_service.get_group_summaries(&local_device_id).await
 }

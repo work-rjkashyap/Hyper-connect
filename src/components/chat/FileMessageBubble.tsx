@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import Clock from "lucide-react/dist/esm/icons/clock";
 import FileIcon from "lucide-react/dist/esm/icons/file";
 import Download from "lucide-react/dist/esm/icons/download";
 import Upload from "lucide-react/dist/esm/icons/upload";
@@ -27,8 +28,16 @@ import type { FileTransfer } from "@/types";
 function MessageStatusIcon({
 	status,
 }: {
-	status: "sent" | "delivered" | "read";
+	status: "queued" | "sent" | "delivered" | "read";
 }) {
+	if (status === "queued") {
+		return (
+			<Clock
+				className="h-3 w-3 shrink-0 opacity-60"
+				aria-label="Queued — will send when device is online"
+			/>
+		);
+	}
 	if (status === "read") {
 		return (
 			<CheckCheck
@@ -95,7 +104,7 @@ export interface FileMessageBubbleProps {
 	/** Display timestamp string (e.g. "2:34 PM") */
 	timestamp: string;
 	/** Message delivery status. */
-	messageStatus?: "sent" | "delivered" | "read";
+	messageStatus?: "queued" | "sent" | "delivered" | "read";
 	/** Recipient display name (shown for "them" avatar). */
 	recipientName?: string;
 	/** Recipient avatar URL. */

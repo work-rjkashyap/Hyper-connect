@@ -3,9 +3,9 @@
 //! High-performance TCP server with mandatory encryption.
 //! All connections must use the secure handshake (HelloSecure).
 
-use crate::crypto::{decrypt_message, Session, StreamDecryptor, STREAM_BUFFER_SIZE};
+use crate::crypto::{decrypt_message, Session};
 use crate::discovery::MdnsDiscoveryService;
-use crate::messaging::{MessageStatus, MessagingService};
+use crate::messaging::{GroupControlPayload, GroupMessagePayload, GroupService, MessageStatus, MessagingService};
 use crate::network::file_transfer::FileTransferService;
 use crate::network::protocol::{
     deserialize_json, FileAckPayload, FileCancelPayload, FileCompletePayload,
@@ -331,17 +331,6 @@ impl TcpServer {
                     )
                     .await?;
                 }
-                MessageType::FileStreamInit => {
-                    // Handle encrypted file stream
-                    Self::handle_encrypted_file_stream(
-                        &mut reader,
-                        &session,
-                        &frame,
-                        &file_transfer_service,
-                        &app_handle,
-                    )
-                    .await?;
-                }
                 MessageType::Heartbeat => {
                     // Heartbeat is allowed unencrypted (legacy keepalive)
                     println!("💓 Heartbeat from {}", peer_device_id);
@@ -380,11 +369,74 @@ impl TcpServer {
                 MessageType::FileRequest => {
                     let req: FileRequestPayload = deserialize_json(&frame.payload)
                         .map_err(|e| format!("Invalid FILE_REQUEST frame: {}", e))?;
-                    println!("📎 File request from {}", req.from_device_id);
+                    let is_resume = req.resume_offset > 0;
+                    let transfer_id = req.transfer_id.clone();
+                    let sender_device_id = req.from_device_id.clone();
+
+                    if is_resume {
+                        println!(
+                            "↻ Resume request frame from {} for transfer {} at offset {}",
+                            sender_device_id, transfer_id, req.resume_offset
+                        );
+                    } else {
+                        println!("📎 File request from {}", sender_device_id);
+                    }
+
                     let service = file_transfer_service.lock().await;
                     service
                         .receive_file_request(req, app_handle.clone())
                         .await?;
+
+                    // For resume requests, auto-send FILE_ACK back so the
+                    // sender's perform_transfer polling loop sees InProgress.
+                    if is_resume {
+                        let confirmed_offset = {
+                            let transfers = service.transfers.lock().await;
+                            transfers
+                                .get(&transfer_id)
+                                .map(|t| t.transferred)
+                                .unwrap_or(0)
+                        };
+
+                        if let Some(tcp_client) = service.tcp_client_ref() {
+                            let tcp_port = app_handle
+                                .try_state::<crate::ipc::TcpPort>()
+                                .map(|p| p.0)
+                                .unwrap_or(8080);
+
+                            if let Some(discovery) =
+                                app_handle.try_state::<Arc<MdnsDiscoveryService>>()
+                            {
+                                let devices = discovery.get_devices().await;
+                                if let Some(sender) =
+                                    devices.iter().find(|d| d.id == sender_device_id)
+                                {
+                                    if let Some(addr) = sender.addresses.first() {
+                                        let ack = FileAckPayload {
+                                            transfer_id: transfer_id.clone(),
+                                            offset: confirmed_offset,
+                                        };
+                                        if let Ok(payload) =
+                                            crate::network::protocol::serialize_json(&ack)
+                                        {
+                                            let _ = tcp_client
+                                                .send_file_ack(
+                                                    &sender_device_id,
+                                                    addr,
+                                                    tcp_port,
+                                                    payload,
+                                                )
+                                                .await;
+                                            println!(
+                                                "✓ Auto-sent FILE_ACK for resume {} (offset {})",
+                                                transfer_id, confirmed_offset
+                                            );
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
                 MessageType::FileData => {
                     let service = file_transfer_service.lock().await;
@@ -546,12 +598,76 @@ impl TcpServer {
             Some("FILE_REQUEST") => {
                 let req: FileRequestPayload = serde_json::from_str(&plaintext_json)
                     .map_err(|e| format!("Invalid FILE_REQUEST: {}", e))?;
-                println!("📎 Decrypted file request from {}", req.from_device_id);
-                // Create backend transfer record so accept/reject IPC works
+                let is_resume = req.resume_offset > 0;
+                let transfer_id = req.transfer_id.clone();
+                let sender_device_id = req.from_device_id.clone();
+
+                if is_resume {
+                    println!(
+                        "↻ Decrypted resume request from {} for transfer {} at offset {}",
+                        sender_device_id, transfer_id, req.resume_offset
+                    );
+                } else {
+                    println!("📎 Decrypted file request from {}", sender_device_id);
+                }
+
+                // Create backend transfer record (or auto-accept resume)
                 let service = file_transfer_service.lock().await;
                 service
                     .receive_file_request(req, app_handle.clone())
                     .await?;
+
+                // For resume requests, auto-send FILE_ACK back to the sender
+                // so the sender's perform_transfer polling loop sees InProgress.
+                if is_resume {
+                    let confirmed_offset = {
+                        let transfers = service.transfers.lock().await;
+                        transfers
+                            .get(&transfer_id)
+                            .map(|t| t.transferred)
+                            .unwrap_or(0)
+                    };
+
+                    if let Some(tcp_client) = service.tcp_client_ref() {
+                        let tcp_port = app_handle
+                            .try_state::<crate::ipc::TcpPort>()
+                            .map(|p| p.0)
+                            .unwrap_or(8080);
+
+                        // Look up sender address via mDNS discovery
+                        if let Some(discovery) =
+                            app_handle.try_state::<Arc<MdnsDiscoveryService>>()
+                        {
+                            let devices = discovery.get_devices().await;
+                            if let Some(sender) =
+                                devices.iter().find(|d| d.id == sender_device_id)
+                            {
+                                if let Some(addr) = sender.addresses.first() {
+                                    let ack = FileAckPayload {
+                                        transfer_id: transfer_id.clone(),
+                                        offset: confirmed_offset,
+                                    };
+                                    if let Ok(payload) =
+                                        crate::network::protocol::serialize_json(&ack)
+                                    {
+                                        let _ = tcp_client
+                                            .send_file_ack(
+                                                &sender_device_id,
+                                                addr,
+                                                tcp_port,
+                                                payload,
+                                            )
+                                            .await;
+                                        println!(
+                                            "✓ Auto-sent FILE_ACK for resume {} (offset {})",
+                                            transfer_id, confirmed_offset
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
             Some("FILE_ACK") => {
                 let ack: FileAckPayload = serde_json::from_str(&plaintext_json)
@@ -614,87 +730,58 @@ impl TcpServer {
                     serde_json::json!({ "transfer_id": reject.transfer_id }),
                 );
             }
+
+            // ── Group Chat ────────────────────────────────────────────────
+            Some("GROUP_MESSAGE") => {
+                let payload: GroupMessagePayload = serde_json::from_str(&plaintext_json)
+                    .map_err(|e| format!("Invalid GROUP_MESSAGE: {}", e))?;
+                println!(
+                    "👥 Group message from {} in group {}",
+                    payload.from_device_id, payload.group_id
+                );
+
+                if let Some(group_service) = app_handle.try_state::<GroupService>() {
+                    // Determine local device ID from discovery service
+                    let local_device_id = if let Some(discovery) =
+                        app_handle.try_state::<Arc<MdnsDiscoveryService>>()
+                    {
+                        discovery.local_device_id().to_string()
+                    } else {
+                        String::new()
+                    };
+
+                    group_service
+                        .handle_incoming_group_message(&payload, &local_device_id, app_handle)
+                        .await?;
+                }
+            }
+            Some("GROUP_CONTROL") => {
+                let payload: GroupControlPayload = serde_json::from_str(&plaintext_json)
+                    .map_err(|e| format!("Invalid GROUP_CONTROL: {}", e))?;
+                println!(
+                    "👥 Group control {:?} from {} for group {}",
+                    payload.action, payload.from_device_id, payload.group_id
+                );
+
+                if let Some(group_service) = app_handle.try_state::<GroupService>() {
+                    let local_device_id = if let Some(discovery) =
+                        app_handle.try_state::<Arc<MdnsDiscoveryService>>()
+                    {
+                        discovery.local_device_id().to_string()
+                    } else {
+                        String::new()
+                    };
+
+                    group_service
+                        .handle_incoming_group_control(&payload, &local_device_id, app_handle)
+                        .await?;
+                }
+            }
+
             _ => {
                 return Err("Unknown message type in encrypted message".to_string());
             }
         }
-
-        Ok(())
-    }
-
-    /// Handle encrypted file stream
-    async fn handle_encrypted_file_stream(
-        reader: &mut BufReader<TlsStream<TcpStream>>,
-        session: &Session,
-        init_frame: &Frame,
-        file_transfer_service: &Arc<Mutex<FileTransferService>>,
-        app_handle: &AppHandle,
-    ) -> Result<(), String> {
-        use crate::crypto::FileStreamInit;
-
-        // Deserialize FILE_STREAM_INIT
-        let init: FileStreamInit = serde_json::from_slice(&init_frame.payload)
-            .map_err(|e| format!("Invalid FILE_STREAM_INIT: {}", e))?;
-
-        println!(
-            "🔒 Receiving encrypted file stream: {} ({} bytes)",
-            init.transfer_id, init.file_size
-        );
-
-        // Create decryptor with IV from init message
-        let mut decryptor = StreamDecryptor::new(session, &init.iv, STREAM_BUFFER_SIZE);
-
-        // Get output path from file transfer service
-        let output_path = {
-            let _service = file_transfer_service.lock().await;
-            // TODO: Get actual output path from transfer metadata
-            format!("/tmp/{}", init.transfer_id)
-        };
-
-        // Open output file
-        let mut file = tokio::fs::File::create(&output_path)
-            .await
-            .map_err(|e| format!("Failed to create output file: {}", e))?;
-
-        let mut total_received = 0u64;
-
-        // Receive and decrypt file chunks
-        while total_received < init.file_size {
-            let frame = Frame::decode_async(reader)
-                .await
-                .map_err(|e| format!("Failed to read file chunk: {}", e))?;
-
-            if frame.message_type != MessageType::FileData {
-                return Err(format!("Expected FILE_DATA, got {:?}", frame.message_type));
-            }
-
-            // Decrypt chunk using the stream decryptor
-            // The decryptor decrypts in-place by applying the cipher
-            let mut chunk = frame.payload.clone();
-            decryptor.cipher.apply(&mut chunk);
-
-            // Write plaintext to file
-            file.write_all(&chunk)
-                .await
-                .map_err(|e| format!("Failed to write to file: {}", e))?;
-
-            total_received += chunk.len() as u64;
-
-            // Emit progress event
-            let _ = app_handle.emit(
-                "transfer-progress",
-                serde_json::json!({
-                    "transfer_id": init.transfer_id,
-                    "transferred": total_received,
-                    "total": init.file_size,
-                }),
-            );
-        }
-
-        println!(
-            "✅ Encrypted file received and decrypted: {} bytes",
-            total_received
-        );
 
         Ok(())
     }
