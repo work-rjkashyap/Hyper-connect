@@ -40,9 +40,74 @@ import {
 	AlertTriangle,
 	FolderOpen,
 	Download,
+	GitBranch,
+	Sparkles,
+	KeyRound,
+	Zap,
+	Loader2,
+	Eye,
+	EyeOff,
 } from "lucide-react";
+import { useMeshRouting } from "@/hooks/use-mesh-routing";
+import { useAi } from "@/hooks/use-ai";
+import type { AiModel } from "@/types";
 
 export default function SettingsPage() {
+	const {
+		isEnabled: meshEnabled,
+		setEnabled: setMeshEnabled,
+		relayedDestinations,
+		relayCount,
+	} = useMeshRouting();
+
+	// AI
+	const {
+		status: aiStatus,
+		isReady: isAiReady,
+		setApiKey: setAiApiKey,
+		clearApiKey: clearAiApiKey,
+		setModel: setAiModel,
+	} = useAi();
+
+	const [aiKeyInput, setAiKeyInput] = useState("");
+	const [isSavingAiKey, setIsSavingAiKey] = useState(false);
+	const [showAiKey, setShowAiKey] = useState(false);
+
+	const handleSaveAiKey = async () => {
+		if (!aiKeyInput.trim()) return;
+		setIsSavingAiKey(true);
+		try {
+			await setAiApiKey(aiKeyInput.trim());
+			setAiKeyInput("");
+			setShowAiKey(false);
+		} finally {
+			setIsSavingAiKey(false);
+		}
+	};
+
+	const handleRemoveAiKey = async () => {
+		await clearAiApiKey();
+		setAiKeyInput("");
+	};
+
+	const aiModels: { id: AiModel; label: string; desc: string }[] = [
+		{
+			id: "gemini-2.5-flash",
+			label: "Gemini 2.5 Flash",
+			desc: "Fast & efficient",
+		},
+		{
+			id: "gemini-2.0-flash",
+			label: "Gemini 2.0 Flash",
+			desc: "Stable & reliable",
+		},
+		{
+			id: "gemini-2.5-pro",
+			label: "Gemini 2.5 Pro",
+			desc: "Most capable",
+		},
+	];
+
 	const {
 		deviceName,
 		theme,
@@ -73,7 +138,10 @@ export default function SettingsPage() {
 	);
 	const [isLoadingDir, setIsLoadingDir] = useState(false);
 
-	const [settings, setSettings] = [appSettings, (updates: Partial<typeof appSettings>) => updateAppSettings(updates)];
+	const [settings, setSettings] = [
+		appSettings,
+		(updates: Partial<typeof appSettings>) => updateAppSettings(updates),
+	];
 
 	// Load the effective download directory from the backend on mount
 	useEffect(() => {
@@ -402,11 +470,11 @@ export default function SettingsPage() {
 										</p>
 									</div>
 								</div>
-							<Switch
-								checked={soundEnabled}
-								onCheckedChange={setSoundEnabled}
-								className="shrink-0"
-							/>
+								<Switch
+									checked={soundEnabled}
+									onCheckedChange={setSoundEnabled}
+									className="shrink-0"
+								/>
 							</div>
 						</Card>
 					</section>
@@ -486,6 +554,252 @@ export default function SettingsPage() {
 										if you experience network conflicts.
 									</p>
 								</div>
+								{/* Mesh routing toggle */}
+								<div className="space-y-3 p-4 rounded-lg bg-muted/50 border border-border">
+									<div className="flex items-center justify-between">
+										<div className="space-y-0.5">
+											<Label className="text-sm font-medium flex items-center gap-1.5">
+												<GitBranch className="h-3.5 w-3.5 text-violet-500" />
+												Mesh Routing
+											</Label>
+											<p className="text-xs text-muted-foreground">
+												Relay messages through
+												intermediate devices on the
+												network (multi-hop)
+											</p>
+										</div>
+										<Switch
+											checked={meshEnabled}
+											onCheckedChange={(val) =>
+												setMeshEnabled(val)
+											}
+											className="shrink-0"
+										/>
+									</div>
+									{meshEnabled && (
+										<div className="flex items-center gap-3 text-xs text-muted-foreground">
+											{relayedDestinations > 0 && (
+												<span className="flex items-center gap-1">
+													<GitBranch className="h-3 w-3 text-violet-500" />
+													{relayedDestinations} mesh
+													route
+													{relayedDestinations !== 1
+														? "s"
+														: ""}
+												</span>
+											)}
+											{relayCount > 0 && (
+												<span>
+													{relayCount} message
+													{relayCount !== 1
+														? "s"
+														: ""}{" "}
+													relayed
+												</span>
+											)}
+											{relayedDestinations === 0 &&
+												relayCount === 0 && (
+													<span>
+														Listening for topology
+														announcements…
+													</span>
+												)}
+										</div>
+									)}
+									<p className="text-xs text-muted-foreground flex items-start gap-1.5">
+										<Info className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+										When enabled, this device can forward
+										messages between peers that cannot
+										directly reach each other.
+									</p>
+								</div>
+							</CardContent>
+						</Card>
+					</section>
+
+					{/* ── AI Assistant ── */}
+					<section id="ai">
+						<div className="flex items-center gap-3 mb-4">
+							<div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-violet-500/10">
+								<Sparkles className="h-4 w-4 text-violet-600 dark:text-violet-400" />
+							</div>
+							<div>
+								<h2 className="text-sm font-semibold tracking-tight">
+									AI Assistant
+								</h2>
+								<p className="text-xs text-muted-foreground">
+									Powered by Google Gemini
+								</p>
+							</div>
+						</div>
+						<Card className="shadow-sm overflow-hidden">
+							<CardContent className="p-4 space-y-4">
+								{/* Status */}
+								<div className="flex items-center justify-between">
+									<div className="flex items-center gap-2">
+										<span className="text-sm font-medium">
+											Status
+										</span>
+										{isAiReady ? (
+											<Badge className="bg-emerald-500 hover:bg-emerald-600 text-[10px] uppercase font-semibold tracking-wide px-1.5">
+												Active
+											</Badge>
+										) : (
+											<Badge
+												variant="secondary"
+												className="text-[10px] uppercase font-semibold tracking-wide px-1.5"
+											>
+												Not Configured
+											</Badge>
+										)}
+									</div>
+									{aiStatus && isAiReady && (
+										<div className="flex items-center gap-3 text-xs text-muted-foreground">
+											<span className="flex items-center gap-1">
+												<Zap className="h-3 w-3" />
+												{aiStatus.total_tokens_used.toLocaleString()}{" "}
+												tokens
+											</span>
+											<span>
+												{aiStatus.request_count} request
+												{aiStatus.request_count !== 1
+													? "s"
+													: ""}
+											</span>
+										</div>
+									)}
+								</div>
+
+								{/* API Key */}
+								<div className="space-y-2 p-4 rounded-lg bg-muted/50 border border-border">
+									<Label className="text-sm font-medium flex items-center gap-1.5">
+										<KeyRound className="h-3.5 w-3.5 text-violet-500" />
+										Gemini API Key
+									</Label>
+									{isAiReady ? (
+										<div className="flex items-center gap-2">
+											<div className="flex-1 px-3 py-2 text-sm rounded-md bg-background border border-border text-muted-foreground font-mono">
+												••••••••••••••••
+											</div>
+											<Button
+												variant="outline"
+												size="sm"
+												className="text-destructive hover:text-destructive h-9"
+												onClick={handleRemoveAiKey}
+											>
+												<Trash2 className="h-3.5 w-3.5 mr-1" />
+												Remove
+											</Button>
+										</div>
+									) : (
+										<div className="flex items-center gap-2">
+											<div className="relative flex-1">
+												<Input
+													type={
+														showAiKey
+															? "text"
+															: "password"
+													}
+													placeholder="Enter your Gemini API key..."
+													value={aiKeyInput}
+													onChange={(e) =>
+														setAiKeyInput(
+															e.target.value,
+														)
+													}
+													onKeyDown={(e) => {
+														if (e.key === "Enter")
+															handleSaveAiKey();
+													}}
+													className="pr-9 text-sm"
+												/>
+												<button
+													type="button"
+													onClick={() =>
+														setShowAiKey(!showAiKey)
+													}
+													className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+												>
+													{showAiKey ? (
+														<EyeOff className="h-4 w-4" />
+													) : (
+														<Eye className="h-4 w-4" />
+													)}
+												</button>
+											</div>
+											<Button
+												size="sm"
+												className="h-9"
+												disabled={
+													!aiKeyInput.trim() ||
+													isSavingAiKey
+												}
+												onClick={handleSaveAiKey}
+											>
+												{isSavingAiKey ? (
+													<Loader2 className="h-3.5 w-3.5 animate-spin" />
+												) : (
+													<Save className="h-3.5 w-3.5" />
+												)}
+											</Button>
+										</div>
+									)}
+									<p className="text-xs text-muted-foreground flex items-start gap-1.5">
+										<Info className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+										Get your key from{" "}
+										<span className="text-primary/80 font-medium">
+											aistudio.google.com
+										</span>
+										. Stored on-device only, never shared.
+									</p>
+								</div>
+
+								{/* Model Selection */}
+								{isAiReady && (
+									<div className="space-y-2 p-4 rounded-lg bg-muted/50 border border-border">
+										<Label className="text-sm font-medium flex items-center gap-1.5">
+											<Sparkles className="h-3.5 w-3.5 text-violet-500" />
+											Model
+										</Label>
+										<div className="grid grid-cols-3 gap-2">
+											{aiModels.map((m) => (
+												<button
+													key={m.id}
+													onClick={() =>
+														setAiModel(m.id)
+													}
+													className={cn(
+														"p-2.5 rounded-lg border text-left transition-all",
+														aiStatus?.model === m.id
+															? "border-primary bg-primary/5 ring-1 ring-primary/20"
+															: "border-border/50 hover:border-border hover:bg-accent/30",
+													)}
+												>
+													<p className="text-xs font-medium">
+														{m.label}
+													</p>
+													<p className="text-[10px] text-muted-foreground mt-0.5">
+														{m.desc}
+													</p>
+													{aiStatus?.model ===
+														m.id && (
+														<Check className="h-3 w-3 text-primary mt-1" />
+													)}
+												</button>
+											))}
+										</div>
+									</div>
+								)}
+
+								{/* Last Error */}
+								{aiStatus?.last_error && (
+									<div className="flex items-start gap-2 p-3 rounded-lg bg-destructive/10 text-destructive text-xs">
+										<AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+										<span className="line-clamp-2">
+											{aiStatus.last_error}
+										</span>
+									</div>
+								)}
 							</CardContent>
 						</Card>
 					</section>
@@ -808,19 +1122,21 @@ export default function SettingsPage() {
 
 							{/* Info rows */}
 							<div className="divide-y divide-border">
-							{[
-								{
-									label: "Platform",
-									value: deviceIdentity?.platform || "Unknown",
-									icon: Globe,
-								},
-								{
-									label: "Identity",
-									value: localDeviceId || "—",
-									icon: Lock,
-									isMono: true,
-								},
-							].map((item) => (
+								{[
+									{
+										label: "Platform",
+										value:
+											deviceIdentity?.platform ||
+											"Unknown",
+										icon: Globe,
+									},
+									{
+										label: "Identity",
+										value: localDeviceId || "—",
+										icon: Lock,
+										isMono: true,
+									},
+								].map((item) => (
 									<div
 										key={item.label}
 										className="flex items-center justify-between px-6 py-3 hover:bg-muted/50 transition-colors"

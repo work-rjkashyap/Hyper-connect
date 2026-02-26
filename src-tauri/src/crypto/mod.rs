@@ -44,11 +44,15 @@ pub mod handshake;
 pub mod message_crypto;
 pub mod session;
 pub mod tls;
+pub mod verification;
+pub mod verification_service;
 
 // Re-export commonly used types
 pub use handshake::{HandshakeManager, HelloResponse, HelloSecure};
 pub use message_crypto::{decrypt_message, encrypt_message, EncryptedMessagePayload};
 pub use session::Session;
+
+pub use verification_service::VerificationService;
 
 #[cfg(test)]
 mod integration_tests {
@@ -80,4 +84,3 @@ mod integration_tests {
         assert_eq!(message, decrypted);
     }
 }
-

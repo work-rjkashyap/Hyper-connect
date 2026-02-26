@@ -1,4 +1,4 @@
-import { useRef, useEffect } from "react";
+import { useRef, useEffect, useState, useCallback } from "react";
 import MoreVertical from "lucide-react/dist/esm/icons/more-vertical";
 import Phone from "lucide-react/dist/esm/icons/phone";
 import Video from "lucide-react/dist/esm/icons/video";
@@ -14,6 +14,10 @@ import Clock from "lucide-react/dist/esm/icons/clock";
 import UserCheck from "lucide-react/dist/esm/icons/user-check";
 import UserX from "lucide-react/dist/esm/icons/user-x";
 import Lock from "lucide-react/dist/esm/icons/lock";
+import Sparkles from "lucide-react/dist/esm/icons/sparkles";
+import FileText from "lucide-react/dist/esm/icons/file-text";
+import BarChart3 from "lucide-react/dist/esm/icons/bar-chart-3";
+import X from "lucide-react/dist/esm/icons/x";
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -72,6 +76,27 @@ interface ChatWindowProps {
 	onRejectFile?: (transferId: string) => void;
 	onCancelFile?: (transferId: string) => void;
 	onPauseFile?: (transferId: string) => void;
+	// Secure handshake / SAS verification props
+	isVerified?: boolean;
+	onVerify?: () => void;
+	// Screen share
+	onScreenShare?: () => void;
+	// AI features
+	smartReplies?: string[];
+	isLoadingSmartReplies?: boolean;
+	onRequestSmartReplies?: () => void;
+	onSummarize?: () => void;
+	onAnalyze?: () => void;
+	isAiReady?: boolean;
+	summaryText?: string | null;
+	isLoadingSummary?: boolean;
+	analysisData?: {
+		tone: string;
+		topics: string[];
+		activity: string;
+		insights: string[];
+	} | null;
+	isLoadingAnalysis?: boolean;
 }
 
 // ── Connection badge ──────────────────────────────────────────────────────────
@@ -264,8 +289,50 @@ export function ChatWindow({
 	onRejectFile,
 	onCancelFile,
 	onPauseFile,
+	isVerified = false,
+	onVerify,
+	onScreenShare,
+	// AI features
+	smartReplies = [],
+	isLoadingSmartReplies = false,
+	onRequestSmartReplies,
+	onSummarize,
+	onAnalyze,
+	isAiReady = false,
+	summaryText = null,
+	isLoadingSummary = false,
+	analysisData = null,
+	isLoadingAnalysis = false,
 }: ChatWindowProps) {
 	const scrollRef = useRef<HTMLDivElement>(null);
+	const [showSmartReplies, setShowSmartReplies] = useState(false);
+	const [showSummary, setShowSummary] = useState(false);
+	const [showAnalysis, setShowAnalysis] = useState(false);
+
+	// When smart replies arrive, show the bar
+	useEffect(() => {
+		if (smartReplies.length > 0) {
+			setShowSmartReplies(true);
+		}
+	}, [smartReplies]);
+
+	// Show summary when it arrives
+	useEffect(() => {
+		if (summaryText) setShowSummary(true);
+	}, [summaryText]);
+
+	// Show analysis when it arrives
+	useEffect(() => {
+		if (analysisData) setShowAnalysis(true);
+	}, [analysisData]);
+
+	const handleSmartReplyClick = useCallback(
+		(reply: string) => {
+			onSendMessage(reply);
+			setShowSmartReplies(false);
+		},
+		[onSendMessage],
+	);
 
 	const isOffline = recipientStatus === "offline";
 
@@ -354,6 +421,29 @@ export function ChatWindow({
 								state={connectionState}
 								latencyMs={latencyMs}
 							/>
+
+							{/* SAS Verification badge */}
+							{connectionState === "connected" && (
+								<>
+									<span className="text-muted-foreground/40 text-xs select-none">
+										·
+									</span>
+									{isVerified ? (
+										<span className="flex items-center gap-1 text-[10px] text-emerald-500 font-medium select-none">
+											<Lock className="h-3 w-3" />
+											Verified
+										</span>
+									) : (
+										<button
+											onClick={onVerify}
+											className="flex items-center gap-1 text-[10px] text-amber-500 font-medium select-none hover:text-amber-400 transition-colors"
+										>
+											<ShieldAlert className="h-3 w-3" />
+											Unverified
+										</button>
+									)}
+								</>
+							)}
 						</div>
 					</div>
 				</div>
@@ -364,6 +454,8 @@ export function ChatWindow({
 						variant="ghost"
 						size="sm"
 						className="h-8 w-8 sm:h-9 sm:w-9 text-muted-foreground hover:text-foreground"
+						onClick={onScreenShare}
+						title="Screen Share"
 					>
 						<Video className="h-4 w-4 sm:h-5 sm:w-5" />
 					</Button>
@@ -396,6 +488,51 @@ export function ChatWindow({
 								<Info className="mr-2 h-4 w-4" />
 								<span>View Info</span>
 							</DropdownMenuItem>
+							{isAiReady && onRequestSmartReplies && (
+								<DropdownMenuItem
+									onClick={() => {
+										onRequestSmartReplies();
+										setShowSmartReplies(true);
+									}}
+								>
+									<Sparkles className="mr-2 h-4 w-4" />
+									<span>Smart Replies</span>
+								</DropdownMenuItem>
+							)}
+							{isAiReady && onSummarize && (
+								<DropdownMenuItem
+									onClick={() => {
+										onSummarize();
+									}}
+								>
+									<FileText className="mr-2 h-4 w-4" />
+									<span>Summarize Chat</span>
+								</DropdownMenuItem>
+							)}
+							{isAiReady && onAnalyze && (
+								<DropdownMenuItem
+									onClick={() => {
+										onAnalyze();
+									}}
+								>
+									<BarChart3 className="mr-2 h-4 w-4" />
+									<span>Analyze Chat</span>
+								</DropdownMenuItem>
+							)}
+							{onVerify && !isVerified && (
+								<DropdownMenuItem onClick={onVerify}>
+									<ShieldAlert className="mr-2 h-4 w-4" />
+									<span>Verify Connection</span>
+								</DropdownMenuItem>
+							)}
+							{isVerified && (
+								<DropdownMenuItem disabled>
+									<ShieldCheck className="mr-2 h-4 w-4 text-emerald-500" />
+									<span className="text-emerald-500">
+										Verified
+									</span>
+								</DropdownMenuItem>
+							)}
 							<DropdownMenuItem className="text-destructive focus:text-destructive">
 								Block Contact
 							</DropdownMenuItem>
@@ -502,6 +639,145 @@ export function ChatWindow({
 					</div>
 				)}
 			</ScrollArea>
+
+			{/* ── AI Summary overlay ────────────────────────────────────── */}
+			{showSummary && (summaryText || isLoadingSummary) && (
+				<div className="mx-3 mb-2 p-3 rounded-xl border border-primary/20 bg-primary/5 animate-in fade-in slide-in-from-bottom-2 duration-200">
+					<div className="flex items-center justify-between mb-2">
+						<div className="flex items-center gap-1.5">
+							<FileText className="h-3.5 w-3.5 text-primary" />
+							<span className="text-xs font-semibold text-primary">
+								Summary
+							</span>
+						</div>
+						<button
+							onClick={() => setShowSummary(false)}
+							className="text-muted-foreground hover:text-foreground"
+						>
+							<X className="h-3.5 w-3.5" />
+						</button>
+					</div>
+					{isLoadingSummary ? (
+						<div className="flex items-center gap-2 text-xs text-muted-foreground">
+							<Loader2 className="h-3 w-3 animate-spin" />
+							Summarizing conversation...
+						</div>
+					) : (
+						<p className="text-xs text-foreground/90 whitespace-pre-wrap leading-relaxed">
+							{summaryText}
+						</p>
+					)}
+				</div>
+			)}
+
+			{/* ── AI Analysis overlay ───────────────────────────────────── */}
+			{showAnalysis && (analysisData || isLoadingAnalysis) && (
+				<div className="mx-3 mb-2 p-3 rounded-xl border border-primary/20 bg-primary/5 animate-in fade-in slide-in-from-bottom-2 duration-200">
+					<div className="flex items-center justify-between mb-2">
+						<div className="flex items-center gap-1.5">
+							<BarChart3 className="h-3.5 w-3.5 text-primary" />
+							<span className="text-xs font-semibold text-primary">
+								Analysis
+							</span>
+						</div>
+						<button
+							onClick={() => setShowAnalysis(false)}
+							className="text-muted-foreground hover:text-foreground"
+						>
+							<X className="h-3.5 w-3.5" />
+						</button>
+					</div>
+					{isLoadingAnalysis ? (
+						<div className="flex items-center gap-2 text-xs text-muted-foreground">
+							<Loader2 className="h-3 w-3 animate-spin" />
+							Analyzing conversation...
+						</div>
+					) : analysisData ? (
+						<div className="space-y-2">
+							<div className="flex gap-4 text-xs">
+								<div>
+									<span className="text-muted-foreground">
+										Tone:
+									</span>{" "}
+									<span className="font-medium capitalize">
+										{analysisData.tone}
+									</span>
+								</div>
+								<div>
+									<span className="text-muted-foreground">
+										Activity:
+									</span>{" "}
+									<span className="font-medium">
+										{analysisData.activity}
+									</span>
+								</div>
+							</div>
+							{analysisData.topics.length > 0 && (
+								<div className="flex flex-wrap gap-1">
+									{analysisData.topics.map((t, i) => (
+										<span
+											key={i}
+											className="px-1.5 py-0.5 text-[10px] rounded-full bg-primary/10 text-primary font-medium"
+										>
+											{t}
+										</span>
+									))}
+								</div>
+							)}
+							{analysisData.insights.length > 0 && (
+								<ul className="space-y-0.5">
+									{analysisData.insights.map((ins, i) => (
+										<li
+											key={i}
+											className="text-[11px] text-foreground/80 flex items-start gap-1"
+										>
+											<span className="text-primary">
+												•
+											</span>
+											{ins}
+										</li>
+									))}
+								</ul>
+							)}
+						</div>
+					) : null}
+				</div>
+			)}
+
+			{/* ── AI Smart Reply suggestions ────────────────────────────── */}
+			{showSmartReplies &&
+				showChatInput &&
+				(smartReplies.length > 0 || isLoadingSmartReplies) && (
+					<div className="flex items-center gap-2 px-3 py-2 border-t border-border/50 overflow-x-auto scrollbar-none">
+						<Sparkles className="h-3.5 w-3.5 text-primary shrink-0" />
+						{isLoadingSmartReplies ? (
+							<div className="flex items-center gap-2 text-xs text-muted-foreground">
+								<Loader2 className="h-3 w-3 animate-spin" />
+								Generating replies...
+							</div>
+						) : (
+							<>
+								{smartReplies.map((reply, i) => (
+									<button
+										key={i}
+										onClick={() =>
+											handleSmartReplyClick(reply)
+										}
+										className="shrink-0 px-3 py-1.5 text-xs rounded-full border border-primary/20 bg-primary/5 hover:bg-primary/10 text-foreground transition-colors whitespace-nowrap"
+									>
+										{reply}
+									</button>
+								))}
+								<button
+									onClick={() => setShowSmartReplies(false)}
+									className="shrink-0 p-1 text-muted-foreground hover:text-foreground"
+								>
+									<X className="h-3 w-3" />
+								</button>
+							</>
+						)}
+					</div>
+				)}
 
 			{/* ── Offline notice ─────────────────────────────────────────── */}
 			{showChatInput && isOffline && (

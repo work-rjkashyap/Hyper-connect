@@ -90,6 +90,18 @@ pub enum MessageType {
 
     /// Read receipt – recipient confirms they have opened and read the message(s)
     MessageRead = 0x17,
+
+    // ============================================================================
+    // SAS Verification (0x18-0x19)
+    // ============================================================================
+    /// SAS verification confirmed — the local user verified the code matches
+    SasConfirm = 0x18,
+
+    /// SAS verification rejected — the local user says the codes don't match
+    SasReject = 0x19,
+
+    /// SAS verification request — asks the peer to start the verification flow
+    SasVerifyRequest = 0x1A,
 }
 
 impl MessageType {
@@ -119,6 +131,10 @@ impl MessageType {
             0x15 => Some(MessageType::Pong),
             0x16 => Some(MessageType::MessageDelivered),
             0x17 => Some(MessageType::MessageRead),
+            // SAS verification types
+            0x18 => Some(MessageType::SasConfirm),
+            0x19 => Some(MessageType::SasReject),
+            0x1A => Some(MessageType::SasVerifyRequest),
             _ => None,
         }
     }
@@ -271,6 +287,19 @@ pub struct FileRequestPayload {
     /// Byte offset to resume from (0 = fresh transfer, >0 = resume).
     #[serde(default)]
     pub resume_offset: u64,
+    /// Compression algorithm used for this transfer (e.g. "zstd", or empty/None for no compression).
+    /// The sender advertises this; the receiver must support it or the transfer falls back to uncompressed.
+    #[serde(default)]
+    pub compression: Option<String>,
+    /// Number of parallel TCP streams the sender intends to use for this transfer.
+    /// 1 = single-stream (default/legacy), >1 = parallel chunked transfer.
+    /// The receiver should expect data chunks arriving out-of-order from multiple connections.
+    #[serde(default = "default_parallel_streams")]
+    pub parallel_streams: u8,
+}
+
+fn default_parallel_streams() -> u8 {
+    1
 }
 
 fn default_file_request_type() -> String {
@@ -284,13 +313,18 @@ pub struct FileDataHeader {
     pub transfer_id_len: u8, // Length of transfer_id string
     pub transfer_id: String, // Transfer ID
     pub offset: u64,         // Byte offset in file
-    pub chunk_size: u32,     // Size of following data chunk
+    pub chunk_size: u32,     // Size of following data chunk (uncompressed)
+    /// Size of the compressed payload that follows the header.
+    /// When 0, the data is uncompressed and `chunk_size` bytes follow.
+    /// When >0, `compressed_size` bytes of zstd-compressed data follow,
+    /// which decompress to `chunk_size` bytes.
+    pub compressed_size: u32,
 }
 
 impl FileDataHeader {
     /// Encode header to bytes
     pub fn encode(&self) -> Vec<u8> {
-        let mut buffer = Vec::with_capacity(1 + self.transfer_id.len() + 8 + 4);
+        let mut buffer = Vec::with_capacity(1 + self.transfer_id.len() + 8 + 4 + 4);
 
         // Transfer ID length (1 byte)
         buffer.push(self.transfer_id_len);
@@ -301,8 +335,11 @@ impl FileDataHeader {
         // Offset (8 bytes)
         buffer.extend_from_slice(&self.offset.to_be_bytes());
 
-        // Chunk size (4 bytes)
+        // Chunk size (4 bytes) — uncompressed size
         buffer.extend_from_slice(&self.chunk_size.to_be_bytes());
+
+        // Compressed size (4 bytes) — 0 means uncompressed
+        buffer.extend_from_slice(&self.compressed_size.to_be_bytes());
 
         buffer
     }
@@ -366,12 +403,27 @@ impl FileDataHeader {
         ]);
         offset += 4;
 
+        // Read compressed_size (4 bytes) — optional for backward compat
+        let compressed_size = if offset + 4 <= data.len() {
+            let cs = u32::from_be_bytes([
+                data[offset],
+                data[offset + 1],
+                data[offset + 2],
+                data[offset + 3],
+            ]);
+            offset += 4;
+            cs
+        } else {
+            0 // No compression field present (legacy sender)
+        };
+
         Ok((
             Self {
                 transfer_id_len,
                 transfer_id,
                 offset: file_offset,
                 chunk_size,
+                compressed_size,
             },
             offset,
         ))
@@ -476,6 +528,43 @@ pub struct PongPayload {
 }
 
 // ============================================================================
+// SAS Verification Payloads
+// ============================================================================
+
+/// Sent when the local user confirms that the SAS verification code matches
+/// what the peer is displaying. The peer should transition the verification
+/// state accordingly.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SasConfirmPayload {
+    /// Device ID of the user who confirmed
+    pub device_id: String,
+    /// The verification code the user saw (formatted as "XXX-XXX")
+    pub verification_code: String,
+}
+
+/// Sent when the local user rejects the SAS verification code (it does not
+/// match what the peer is showing). Both sides should tear down the session
+/// or at least mark it as unverified.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SasRejectPayload {
+    /// Device ID of the user who rejected
+    pub device_id: String,
+    /// Optional reason for rejection
+    pub reason: Option<String>,
+}
+
+/// Sent to request the peer to start the SAS verification flow.
+/// On receipt, the peer derives the verification code from the existing
+/// ECDH session's shared secret and presents it to the user.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SasVerifyRequestPayload {
+    /// Device ID of the user who initiated verification
+    pub device_id: String,
+    /// Display name of the initiator (for the peer's UI)
+    pub display_name: String,
+}
+
+// ============================================================================
 // Helper Functions
 // ============================================================================
 
@@ -514,6 +603,7 @@ mod tests {
             transfer_id: "550e8400-e29b-41d4-a716-446655440000".to_string(),
             offset: 1024,
             chunk_size: 262144,
+            compressed_size: 0,
         };
 
         let encoded = header.encode();
@@ -522,6 +612,26 @@ mod tests {
         assert_eq!(decoded.transfer_id, header.transfer_id);
         assert_eq!(decoded.offset, header.offset);
         assert_eq!(decoded.chunk_size, header.chunk_size);
+        assert_eq!(decoded.compressed_size, 0);
+    }
+
+    #[test]
+    fn test_file_data_header_compressed() {
+        let header = FileDataHeader {
+            transfer_id_len: 36,
+            transfer_id: "550e8400-e29b-41d4-a716-446655440000".to_string(),
+            offset: 2048,
+            chunk_size: 262144,
+            compressed_size: 131072,
+        };
+
+        let encoded = header.encode();
+        let (decoded, _) = FileDataHeader::decode(&encoded).unwrap();
+
+        assert_eq!(decoded.transfer_id, header.transfer_id);
+        assert_eq!(decoded.offset, header.offset);
+        assert_eq!(decoded.chunk_size, header.chunk_size);
+        assert_eq!(decoded.compressed_size, 131072);
     }
 
     #[test]

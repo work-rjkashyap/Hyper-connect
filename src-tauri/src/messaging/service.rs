@@ -76,6 +76,11 @@ impl MessagingService {
         }
     }
 
+    /// Expose the database pool for cross-cutting queries (e.g. full-text search).
+    pub fn db_pool(&self) -> &DbPool {
+        &self.db
+    }
+
     pub fn set_tcp_client(&mut self, client: Arc<TcpClient>) {
         self.tcp_client = Some(client);
     }

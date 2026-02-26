@@ -11,6 +11,8 @@ import type {
 	GroupChat,
 	GroupMessage,
 	GroupMember,
+	VerificationState,
+	VerificationStatus,
 } from "@/types";
 
 export type DeviceConnectionState =
@@ -46,6 +48,14 @@ interface AppStore {
 	groupMessages: Record<string, GroupMessage[]>; // Keyed by group_id
 	groupMembers: Record<string, GroupMember[]>; // Keyed by group_id
 	activeGroupId: string | null;
+
+	// Secure Handshake / SAS Verification state
+	/** Per-device verification state. Key = device ID. */
+	verificationStatuses: Record<string, VerificationStatus>;
+	/** Set of device IDs that have been successfully SAS-verified. Persisted. */
+	verifiedDevices: string[];
+	/** The device ID currently showing the verification dialog (null if none). */
+	activeVerificationDeviceId: string | null;
 
 	// Download directory (persisted)
 	downloadDir: string | null;
@@ -177,6 +187,37 @@ interface AppStore {
 	setDeviceConnecting: (deviceId: string) => void;
 
 	// ============================================================================
+	// Secure Handshake / SAS Verification Actions
+	// ============================================================================
+
+	/** Set the verification status for a specific peer device. */
+	setVerificationStatus: (
+		deviceId: string,
+		status: VerificationStatus,
+	) => void;
+
+	/** Mark a device as SAS-verified (adds to verifiedDevices set). */
+	markDeviceVerified: (deviceId: string) => void;
+
+	/** Remove a device from the verified set (revoke trust). */
+	revokeDeviceVerification: (deviceId: string) => void;
+
+	/** Set the device ID currently showing the verification dialog. */
+	setActiveVerificationDeviceId: (deviceId: string | null) => void;
+
+	/** Update just the verification state for a device (convenience). */
+	updateVerificationState: (
+		deviceId: string,
+		state: VerificationState,
+	) => void;
+
+	/** Clear all verification state (for app reset). */
+	clearVerificationState: () => void;
+
+	/** Check whether a device has been SAS-verified. */
+	isDeviceVerified: (deviceId: string) => boolean;
+
+	// ============================================================================
 	// Privacy Layer Actions
 	// ============================================================================
 
@@ -247,6 +288,10 @@ const initialState = {
 	activeGroupId: null as string | null,
 	deviceConnectionStatus: {},
 	deviceLatencyMs: {},
+	// Secure handshake / SAS verification
+	verificationStatuses: {} as Record<string, VerificationStatus>,
+	verifiedDevices: [] as string[],
+	activeVerificationDeviceId: null as string | null,
 	// Privacy layer
 	startedChats: [] as string[],
 	approvedDevices: [] as string[],
@@ -842,6 +887,65 @@ export const useAppStore = create<AppStore>()(
 				})),
 
 			// ============================================================================
+			// Secure Handshake / SAS Verification Actions
+			// ============================================================================
+
+			setVerificationStatus: (deviceId, status) =>
+				set((state) => ({
+					verificationStatuses: {
+						...state.verificationStatuses,
+						[deviceId]: status,
+					},
+				})),
+
+			markDeviceVerified: (deviceId) =>
+				set((state) => ({
+					verifiedDevices: state.verifiedDevices.includes(deviceId)
+						? state.verifiedDevices
+						: [...state.verifiedDevices, deviceId],
+				})),
+
+			revokeDeviceVerification: (deviceId) =>
+				set((state) => ({
+					verifiedDevices: state.verifiedDevices.filter(
+						(id) => id !== deviceId,
+					),
+					verificationStatuses: (() => {
+						const next = { ...state.verificationStatuses };
+						delete next[deviceId];
+						return next;
+					})(),
+				})),
+
+			setActiveVerificationDeviceId: (deviceId) =>
+				set({ activeVerificationDeviceId: deviceId }),
+
+			updateVerificationState: (deviceId, verificationState) =>
+				set((state) => {
+					const existing = state.verificationStatuses[deviceId];
+					if (!existing) return state;
+					return {
+						verificationStatuses: {
+							...state.verificationStatuses,
+							[deviceId]: {
+								...existing,
+								state: verificationState,
+							},
+						},
+					};
+				}),
+
+			clearVerificationState: () =>
+				set({
+					verificationStatuses: {},
+					verifiedDevices: [],
+					activeVerificationDeviceId: null,
+				}),
+
+			isDeviceVerified: (deviceId) =>
+				get().verifiedDevices.includes(deviceId),
+
+			// ============================================================================
 			// Utility Actions
 			// ============================================================================
 
@@ -864,6 +968,8 @@ export const useAppStore = create<AppStore>()(
 				approvedDevices: state.approvedDevices,
 				declinedDevices: state.declinedDevices,
 				chatRequestStatus: state.chatRequestStatus,
+				// Verified devices — persisted so trust survives restart
+				verifiedDevices: state.verifiedDevices,
 				// Download directory — persisted
 				downloadDir: state.downloadDir,
 				// Notification settings — persisted

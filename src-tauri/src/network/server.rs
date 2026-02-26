@@ -3,15 +3,22 @@
 //! High-performance TCP server with mandatory encryption.
 //! All connections must use the secure handshake (HelloSecure).
 
-use crate::crypto::{decrypt_message, Session};
+use crate::crypto::{decrypt_message, Session, VerificationService};
 use crate::discovery::MdnsDiscoveryService;
+use crate::mesh::types::{MeshRelayPayload, MeshTopologyAnnouncement};
+use crate::mesh::MeshRouter;
 use crate::messaging::{GroupControlPayload, GroupMessagePayload, GroupService, MessageStatus, MessagingService};
 use crate::network::file_transfer::FileTransferService;
 use crate::network::protocol::{
     deserialize_json, FileAckPayload, FileCancelPayload, FileCompletePayload,
     FileRejectPayload, FileRequestPayload, Frame, MessageAckPayload, MessageType,
-    PingPayload, PongPayload, TextMessagePayload,
+    PingPayload, PongPayload, SasConfirmPayload, SasRejectPayload,
+    SasVerifyRequestPayload, TextMessagePayload,
 };
+use crate::screen_share::types::{
+    ScreenShareAnswerPayload, ScreenShareOfferPayload, ScreenShareStopPayload,
+};
+use crate::screen_share::ScreenShareService;
 use crate::network::secure_channel::SecureChannelManager;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -507,6 +514,117 @@ impl TcpServer {
                     );
                 }
 
+                // ── SAS Verification frames ─────────────────────────────────
+                MessageType::SasVerifyRequest => {
+                    let req: SasVerifyRequestPayload = deserialize_json(&frame.payload)
+                        .map_err(|e| format!("Invalid SAS_VERIFY_REQUEST frame: {}", e))?;
+                    println!(
+                        "🔑 SAS verify request from {} ({})",
+                        req.device_id, req.display_name
+                    );
+
+                    // Derive the SAS code from the existing session's shared secret.
+                    if let Some(verification_service) =
+                        app_handle.try_state::<VerificationService>()
+                    {
+                        let shared_secret = *session.shared_secret();
+                        match verification_service.handle_incoming_request(
+                            &req.device_id,
+                            &req.display_name,
+                            &shared_secret,
+                        ) {
+                            Ok(pv) => {
+                                // Emit event so the frontend shows the verification dialog.
+                                let _ = app_handle.emit(
+                                    "verification-code-ready",
+                                    serde_json::json!({
+                                        "device_id": req.device_id,
+                                        "display_name": req.display_name,
+                                        "verification_code": pv.code.formatted(),
+                                        "initiated_by_us": false,
+                                    }),
+                                );
+                            }
+                            Err(e) => {
+                                eprintln!(
+                                    "⚠️ Failed to handle SAS verify request from {}: {}",
+                                    req.device_id, e
+                                );
+                            }
+                        }
+                    }
+                }
+                MessageType::SasConfirm => {
+                    let confirm: SasConfirmPayload = deserialize_json(&frame.payload)
+                        .map_err(|e| format!("Invalid SAS_CONFIRM frame: {}", e))?;
+                    println!(
+                        "✓ SAS confirm from {} (code: {})",
+                        confirm.device_id, confirm.verification_code
+                    );
+
+                    if let Some(verification_service) =
+                        app_handle.try_state::<VerificationService>()
+                    {
+                        match verification_service.remote_confirm(&confirm.device_id) {
+                            Ok(state) => {
+                                if state.is_verified() {
+                                    // Both sides confirmed — emit verified event.
+                                    let code = verification_service
+                                        .get_verification_code(&confirm.device_id)
+                                        .unwrap_or_default();
+                                    let _ = app_handle.emit(
+                                        "handshake-verified",
+                                        serde_json::json!({
+                                            "device_id": confirm.device_id,
+                                            "display_name": "",
+                                            "verification_code": code,
+                                        }),
+                                    );
+                                } else {
+                                    // Remote confirmed first, waiting for local.
+                                    let _ = app_handle.emit(
+                                        "verification-remote-confirmed",
+                                        serde_json::json!({
+                                            "device_id": confirm.device_id,
+                                        }),
+                                    );
+                                }
+                            }
+                            Err(e) => {
+                                eprintln!(
+                                    "⚠️ Failed to process SAS confirm from {}: {}",
+                                    confirm.device_id, e
+                                );
+                            }
+                        }
+                    }
+                }
+                MessageType::SasReject => {
+                    let reject: SasRejectPayload = deserialize_json(&frame.payload)
+                        .map_err(|e| format!("Invalid SAS_REJECT frame: {}", e))?;
+                    println!(
+                        "❌ SAS reject from {} (reason: {:?})",
+                        reject.device_id, reject.reason
+                    );
+
+                    if let Some(verification_service) =
+                        app_handle.try_state::<VerificationService>()
+                    {
+                        let _ = verification_service
+                            .remote_reject(&reject.device_id, reject.reason.clone());
+
+                        let _ = app_handle.emit(
+                            "handshake-rejected",
+                            serde_json::json!({
+                                "device_id": reject.device_id,
+                                "display_name": "",
+                                "rejected_by": "remote",
+                                "reason": reject.reason,
+                            }),
+                        );
+                    }
+                }
+
                 _ => {
                     eprintln!(
                         "⚠️ Unexpected message type in encrypted session: {:?}",
@@ -774,6 +892,130 @@ impl TcpServer {
 
                     group_service
                         .handle_incoming_group_control(&payload, &local_device_id, app_handle)
+                        .await?;
+                }
+            }
+
+            // ── Mesh Routing ─────────────────────────────────────────────
+            Some("MESH_TOPOLOGY") => {
+                let announcement: MeshTopologyAnnouncement =
+                    serde_json::from_str(&plaintext_json)
+                        .map_err(|e| format!("Invalid MESH_TOPOLOGY: {}", e))?;
+                println!(
+                    "🕸️  Topology announcement from {} ({} neighbors)",
+                    announcement.from_device_id,
+                    announcement.neighbors.len()
+                );
+
+                if let Some(mesh_router) = app_handle.try_state::<MeshRouter>() {
+                    mesh_router
+                        .handle_topology_announcement(announcement, app_handle)
+                        .await;
+                }
+            }
+            Some("MESH_RELAY") => {
+                let relay: MeshRelayPayload = serde_json::from_str(&plaintext_json)
+                    .map_err(|e| format!("Invalid MESH_RELAY: {}", e))?;
+                println!(
+                    "🕸️  Relay message: {} → {} (ttl={}, hops={})",
+                    relay.origin_device_id,
+                    relay.final_destination_id,
+                    relay.ttl,
+                    relay.hops.len()
+                );
+
+                if let Some(mesh_router) = app_handle.try_state::<MeshRouter>() {
+                    match mesh_router.handle_relay(relay, app_handle).await {
+                        Ok(Some(inner_payload)) => {
+                            // The message was destined for us — re-process the inner payload
+                            // as if it were a regular encrypted message.
+                            let inner_value: serde_json::Value =
+                                serde_json::from_str(&inner_payload).map_err(|e| {
+                                    format!("Invalid inner payload in relay: {}", e)
+                                })?;
+
+                            // Recursively handle the inner message by matching its type.
+                            // We re-dispatch by calling handle_encrypted_message with a
+                            // synthetic frame. For simplicity, we just re-parse the inner
+                            // message type and handle TEXT_MESSAGE inline.
+                            match inner_value.get("type").and_then(|v| v.as_str()) {
+                                Some("TEXT_MESSAGE") => {
+                                    let msg: TextMessagePayload =
+                                        serde_json::from_str(&inner_payload).map_err(|e| {
+                                            format!("Invalid relayed TEXT_MESSAGE: {}", e)
+                                        })?;
+                                    println!(
+                                        "💬 Relayed text message from {} delivered",
+                                        msg.from_device_id
+                                    );
+
+                                    if let Some(messaging) =
+                                        app_handle.try_state::<MessagingService>()
+                                    {
+                                        let _: () =
+                                            messaging.store_received_message(&msg).await;
+                                    }
+
+                                    let _ = app_handle.emit("message-received", &msg);
+                                }
+                                _ => {
+                                    println!(
+                                        "⚠️  Unhandled inner message type in relay: {:?}",
+                                        inner_value.get("type")
+                                    );
+                                }
+                            }
+                        }
+                        Ok(None) => {
+                            // Message was forwarded or dropped — nothing more to do
+                        }
+                        Err(e) => {
+                            eprintln!("⚠️  Mesh relay handling error: {}", e);
+                        }
+                    }
+                }
+            }
+
+            // ── Screen Share Signaling ────────────────────────────────────
+            Some("SCREEN_SHARE_OFFER") => {
+                let offer: ScreenShareOfferPayload = serde_json::from_str(&plaintext_json)
+                    .map_err(|e| format!("Invalid SCREEN_SHARE_OFFER: {}", e))?;
+                println!(
+                    "📺 Screen share offer from {} (session: {})",
+                    offer.from_device_id, offer.session_id
+                );
+
+                if let Some(screen_share) = app_handle.try_state::<ScreenShareService>() {
+                    screen_share
+                        .handle_offer(offer, app_handle.clone())
+                        .await?;
+                }
+            }
+            Some("SCREEN_SHARE_ANSWER") => {
+                let answer: ScreenShareAnswerPayload = serde_json::from_str(&plaintext_json)
+                    .map_err(|e| format!("Invalid SCREEN_SHARE_ANSWER: {}", e))?;
+                println!(
+                    "📺 Screen share answer from {} (session: {}, accepted: {})",
+                    answer.from_device_id, answer.session_id, answer.accepted
+                );
+
+                if let Some(screen_share) = app_handle.try_state::<ScreenShareService>() {
+                    screen_share
+                        .handle_answer(answer, app_handle.clone())
+                        .await?;
+                }
+            }
+            Some("SCREEN_SHARE_STOP") => {
+                let stop: ScreenShareStopPayload = serde_json::from_str(&plaintext_json)
+                    .map_err(|e| format!("Invalid SCREEN_SHARE_STOP: {}", e))?;
+                println!(
+                    "📺 Screen share stop from {} (session: {})",
+                    stop.from_device_id, stop.session_id
+                );
+
+                if let Some(screen_share) = app_handle.try_state::<ScreenShareService>() {
+                    screen_share
+                        .handle_stop(stop, app_handle.clone())
                         .await?;
                 }
             }

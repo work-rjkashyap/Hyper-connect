@@ -44,8 +44,9 @@ pub async fn insert_transfer(pool: &DbPool, transfer: &FileTransfer) -> Result<(
         "INSERT OR IGNORE INTO file_transfers
              (id, filename, file_path, size, transferred, status,
               from_device_id, to_device_id, checksum, speed_bps,
-              eta_seconds, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+              eta_seconds, created_at, updated_at,
+              compression, compression_ratio, parallel_streams)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(&transfer.id)
     .bind(&transfer.filename)
@@ -60,6 +61,9 @@ pub async fn insert_transfer(pool: &DbPool, transfer: &FileTransfer) -> Result<(
     .bind(transfer.eta_seconds.map(|e| e as i64))
     .bind(transfer.created_at)
     .bind(transfer.updated_at)
+    .bind(&transfer.compression)
+    .bind(transfer.compression_ratio)
+    .bind(transfer.parallel_streams as i64)
     .execute(pool)
     .await?;
     Ok(())
@@ -133,7 +137,8 @@ pub async fn get_transfers(pool: &DbPool) -> Result<Vec<FileTransfer>> {
     let rows = sqlx::query(
         "SELECT id, filename, file_path, size, transferred, status,
                 from_device_id, to_device_id, checksum, speed_bps,
-                eta_seconds, created_at, updated_at
+                eta_seconds, created_at, updated_at,
+                compression, compression_ratio, parallel_streams
          FROM   file_transfers
          ORDER  BY created_at DESC",
     )
@@ -145,6 +150,7 @@ pub async fn get_transfers(pool: &DbPool) -> Result<Vec<FileTransfer>> {
         .map(|row| {
             let eta_seconds: Option<i64> = row.get("eta_seconds");
             let status_str: String = row.get("status");
+            let compression_ratio: Option<f64> = row.get("compression_ratio");
             FileTransfer {
                 id: row.get("id"),
                 filename: row.get("filename"),
@@ -159,6 +165,9 @@ pub async fn get_transfers(pool: &DbPool) -> Result<Vec<FileTransfer>> {
                 eta_seconds: eta_seconds.map(|e| e as u64),
                 created_at: row.get("created_at"),
                 updated_at: row.get("updated_at"),
+                compression: row.get("compression"),
+                compression_ratio,
+                parallel_streams: row.get::<i64, _>("parallel_streams") as u8,
             }
         })
         .collect();
@@ -197,7 +206,8 @@ pub async fn get_resumable_transfers(pool: &DbPool) -> Result<Vec<FileTransfer>>
     let rows = sqlx::query(
         "SELECT id, filename, file_path, size, transferred, status,
                 from_device_id, to_device_id, checksum, speed_bps,
-                eta_seconds, created_at, updated_at
+                eta_seconds, created_at, updated_at,
+                compression, compression_ratio, parallel_streams
          FROM   file_transfers
          WHERE  status IN ('paused', 'failed', 'in_progress')
                 AND transferred > 0
@@ -212,6 +222,7 @@ pub async fn get_resumable_transfers(pool: &DbPool) -> Result<Vec<FileTransfer>>
         .map(|row| {
             let eta_seconds: Option<i64> = row.get("eta_seconds");
             let status_str: String = row.get("status");
+            let compression_ratio: Option<f64> = row.get("compression_ratio");
             FileTransfer {
                 id: row.get("id"),
                 filename: row.get("filename"),
@@ -226,6 +237,9 @@ pub async fn get_resumable_transfers(pool: &DbPool) -> Result<Vec<FileTransfer>>
                 eta_seconds: eta_seconds.map(|e| e as u64),
                 created_at: row.get("created_at"),
                 updated_at: row.get("updated_at"),
+                compression: row.get("compression"),
+                compression_ratio,
+                parallel_streams: row.get::<i64, _>("parallel_streams") as u8,
             }
         })
         .collect();

@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { useAppStore } from "@/store";
+import { useMeshRouting } from "@/hooks/use-mesh-routing";
 import { cn } from "@/lib/utils";
 import {
 	Wifi,
@@ -10,6 +11,7 @@ import {
 	SignalLow,
 	SignalMedium,
 	SignalHigh,
+	GitBranch,
 } from "lucide-react";
 import {
 	Tooltip,
@@ -44,7 +46,9 @@ function computeNetworkHealth(
 
 	const avgLatencyMs =
 		latencies.length > 0
-			? Math.round(latencies.reduce((a, b) => a + b, 0) / latencies.length)
+			? Math.round(
+					latencies.reduce((a, b) => a + b, 0) / latencies.length,
+				)
 			: null;
 
 	const minLatencyMs =
@@ -167,6 +171,9 @@ export default function NetworkHealthBar() {
 	const connectedDevices = useAppStore((s) => s.connectedDevices);
 	const deviceLatencyMs = useAppStore((s) => s.deviceLatencyMs);
 
+	const { hasMeshRoutes, relayedDestinations, relayCount, isEnabled } =
+		useMeshRouting();
+
 	const health = useMemo(
 		() => computeNetworkHealth(devices, connectedDevices, deviceLatencyMs),
 		[devices, connectedDevices, deviceLatencyMs],
@@ -190,9 +197,19 @@ export default function NetworkHealthBar() {
 						<TooltipTrigger asChild>
 							<div className="flex items-center gap-1.5 cursor-default">
 								{health.quality === "offline" ? (
-									<WifiOff className={cn("h-3.5 w-3.5", config.textColor)} />
+									<WifiOff
+										className={cn(
+											"h-3.5 w-3.5",
+											config.textColor,
+										)}
+									/>
 								) : (
-									<Wifi className={cn("h-3.5 w-3.5", config.textColor)} />
+									<Wifi
+										className={cn(
+											"h-3.5 w-3.5",
+											config.textColor,
+										)}
+									/>
 								)}
 								<div className="flex items-center gap-1.5">
 									{/* Animated status dot */}
@@ -225,29 +242,39 @@ export default function NetworkHealthBar() {
 						</TooltipTrigger>
 						<TooltipContent side="bottom" className="text-xs">
 							<div className="space-y-1">
-								<p className="font-semibold">Network Quality: {health.label}</p>
+								<p className="font-semibold">
+									Network Quality: {health.label}
+								</p>
 								{health.avgLatencyMs !== null && (
 									<>
 										<p>
 											Avg latency:{" "}
 											<span className="font-mono">
-												{formatLatency(health.avgLatencyMs)}
+												{formatLatency(
+													health.avgLatencyMs,
+												)}
 											</span>
 										</p>
 										<p>
 											Range:{" "}
 											<span className="font-mono">
-												{formatLatency(health.minLatencyMs)} –{" "}
-												{formatLatency(health.maxLatencyMs)}
+												{formatLatency(
+													health.minLatencyMs,
+												)}{" "}
+												–{" "}
+												{formatLatency(
+													health.maxLatencyMs,
+												)}
 											</span>
 										</p>
 									</>
 								)}
-								{health.avgLatencyMs === null && health.deviceCount > 0 && (
-									<p className="text-muted-foreground">
-										Waiting for latency data…
-									</p>
-								)}
+								{health.avgLatencyMs === null &&
+									health.deviceCount > 0 && (
+										<p className="text-muted-foreground">
+											Waiting for latency data…
+										</p>
+									)}
 							</div>
 						</TooltipContent>
 					</Tooltip>
@@ -263,7 +290,9 @@ export default function NetworkHealthBar() {
 								<span className="tabular-nums font-medium">
 									{health.deviceCount}{" "}
 									<span className="hidden sm:inline">
-										{health.deviceCount === 1 ? "Device" : "Devices"}
+										{health.deviceCount === 1
+											? "Device"
+											: "Devices"}
 									</span>
 								</span>
 								{health.connectedCount > 0 && (
@@ -276,11 +305,13 @@ export default function NetworkHealthBar() {
 						<TooltipContent side="bottom" className="text-xs">
 							<p>
 								{health.deviceCount} device
-								{health.deviceCount !== 1 ? "s" : ""} discovered on LAN
+								{health.deviceCount !== 1 ? "s" : ""} discovered
+								on LAN
 							</p>
 							{health.connectedCount > 0 && (
 								<p>
-									{health.connectedCount} with active connection
+									{health.connectedCount} with active
+									connection
 									{health.connectedCount !== 1 ? "s" : ""}
 								</p>
 							)}
@@ -288,8 +319,62 @@ export default function NetworkHealthBar() {
 					</Tooltip>
 				</div>
 
-				{/* Right section: Latency & Signal */}
+				{/* Right section: Mesh + Latency + Signal */}
 				<div className="flex items-center gap-2 sm:gap-3">
+					{/* Mesh routing indicator */}
+					{isEnabled && hasMeshRoutes && (
+						<>
+							<Tooltip>
+								<TooltipTrigger asChild>
+									<div className="flex items-center gap-1 cursor-default">
+										<GitBranch className="h-3 w-3 text-violet-500" />
+										<span className="tabular-nums font-medium text-violet-600 dark:text-violet-400">
+											{relayedDestinations}
+											<span className="hidden sm:inline">
+												{" "}
+												mesh
+											</span>
+										</span>
+										{relayCount > 0 && (
+											<span className="text-[10px] text-muted-foreground tabular-nums">
+												({relayCount} relayed)
+											</span>
+										)}
+									</div>
+								</TooltipTrigger>
+								<TooltipContent
+									side="bottom"
+									className="text-xs"
+								>
+									<div className="space-y-1">
+										<p className="font-semibold">
+											Mesh Routing Active
+										</p>
+										<p>
+											{relayedDestinations} device
+											{relayedDestinations !== 1
+												? "s"
+												: ""}{" "}
+											reachable via multi-hop relay
+										</p>
+										{relayCount > 0 && (
+											<p>
+												{relayCount} message
+												{relayCount !== 1
+													? "s"
+													: ""}{" "}
+												relayed through this device
+											</p>
+										)}
+									</div>
+								</TooltipContent>
+							</Tooltip>
+
+							{/* Separator */}
+							<div className="h-3.5 w-px bg-border" />
+						</>
+					)}
+
 					{health.avgLatencyMs !== null && (
 						<>
 							<Tooltip>
@@ -301,11 +386,18 @@ export default function NetworkHealthBar() {
 										</span>
 									</div>
 								</TooltipTrigger>
-								<TooltipContent side="bottom" className="text-xs">
+								<TooltipContent
+									side="bottom"
+									className="text-xs"
+								>
 									<p>
 										Average round-trip latency across{" "}
-										{Object.keys(deviceLatencyMs).length} peer
-										{Object.keys(deviceLatencyMs).length !== 1 ? "s" : ""}
+										{Object.keys(deviceLatencyMs).length}{" "}
+										peer
+										{Object.keys(deviceLatencyMs).length !==
+										1
+											? "s"
+											: ""}
 									</p>
 								</TooltipContent>
 							</Tooltip>
@@ -320,7 +412,10 @@ export default function NetworkHealthBar() {
 							<div className="cursor-default">
 								<SignalIcon
 									quality={health.quality}
-									className={cn("h-3.5 w-3.5", config.textColor)}
+									className={cn(
+										"h-3.5 w-3.5",
+										config.textColor,
+									)}
 								/>
 							</div>
 						</TooltipTrigger>

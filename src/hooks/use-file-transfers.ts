@@ -78,6 +78,7 @@ export function useFileTransfers() {
 							transferred,
 							speed_bps,
 							eta_seconds,
+							compression_ratio,
 						} = event.payload;
 
 						updateTransfer(transfer_id, {
@@ -85,6 +86,7 @@ export function useFileTransfers() {
 							speed_bps,
 							eta_seconds,
 							status: TransferStatus.InProgress,
+							compression_ratio: compression_ratio ?? null,
 						});
 					},
 				);

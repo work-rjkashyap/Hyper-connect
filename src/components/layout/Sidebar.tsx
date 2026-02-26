@@ -5,8 +5,10 @@ import { useNavigate, useLocation } from "react-router-dom";
 import Settings from "lucide-react/dist/esm/icons/settings";
 import Search from "lucide-react/dist/esm/icons/search";
 import MoreVertical from "lucide-react/dist/esm/icons/more-vertical";
+import Monitor from "lucide-react/dist/esm/icons/monitor";
 import Sun from "lucide-react/dist/esm/icons/sun";
 import Moon from "lucide-react/dist/esm/icons/moon";
+import Sparkles from "lucide-react/dist/esm/icons/sparkles";
 import Plus from "lucide-react/dist/esm/icons/plus";
 import UserCheck from "lucide-react/dist/esm/icons/user-check";
 import UserX from "lucide-react/dist/esm/icons/user-x";
@@ -308,6 +310,17 @@ export default function Sidebar({ className, onClose }: SidebarProps) {
 						size="sm"
 						className="h-8 w-8 sm:h-8 sm:w-8"
 						onClick={() => {
+							navigate("/search");
+							onClose?.();
+						}}
+					>
+						<Search className="h-4 w-4 sm:h-5 sm:w-5 text-muted-foreground" />
+					</Button>
+					<Button
+						variant="ghost"
+						size="sm"
+						className="h-8 w-8 sm:h-8 sm:w-8"
+						onClick={() => {
 							navigate("/discovery");
 							onClose?.();
 						}}
@@ -327,6 +340,33 @@ export default function Sidebar({ className, onClose }: SidebarProps) {
 						<DropdownMenuContent align="end">
 							<DropdownMenuLabel>My Account</DropdownMenuLabel>
 							<DropdownMenuSeparator />
+							<DropdownMenuItem
+								onClick={() => {
+									navigate("/search");
+									onClose?.();
+								}}
+							>
+								<Search className="mr-2 h-4 w-4" />
+								<span>Search</span>
+							</DropdownMenuItem>
+							<DropdownMenuItem
+								onClick={() => {
+									navigate("/screen-share");
+									onClose?.();
+								}}
+							>
+								<Monitor className="mr-2 h-4 w-4" />
+								<span>Screen Share</span>
+							</DropdownMenuItem>
+							<DropdownMenuItem
+								onClick={() => {
+									navigate("/ai");
+									onClose?.();
+								}}
+							>
+								<Sparkles className="mr-2 h-4 w-4" />
+								<span>AI Assistant</span>
+							</DropdownMenuItem>
 							<DropdownMenuItem
 								onClick={() => {
 									navigate("/settings");

@@ -173,6 +173,12 @@ export interface FileTransfer {
 	updated_at: number;
 	speed_bps: number;
 	eta_seconds: number | null;
+	/** Compression algorithm used (e.g. "zstd"), or null if uncompressed. */
+	compression: string | null;
+	/** Compression ratio: original_size / compressed_bytes_sent. e.g. 2.0 = 50% reduction. */
+	compression_ratio: number | null;
+	/** Number of parallel TCP streams used for this transfer. 1 = single-stream, >1 = parallel. */
+	parallel_streams: number;
 }
 
 // ============================================================================
@@ -225,6 +231,8 @@ export interface TransferProgressEvent {
 	total: number;
 	speed_bps: number;
 	eta_seconds: number | null;
+	/** Compression ratio for this transfer (if compression is active). */
+	compression_ratio: number | null;
 }
 
 export interface TransferCompletedEvent {
@@ -248,6 +256,62 @@ export interface FileRejectedEvent {
 export interface TransferResumedEvent {
 	transfer_id: string;
 	resume_offset: number;
+}
+
+// ============================================================================
+// Full-Text Search Types (Feature #18)
+// ============================================================================
+
+export interface MessageSearchResult {
+	id: string;
+	conversation_key: string;
+	from_device_id: string;
+	to_device_id: string;
+	msg_type: string;
+	content: string;
+	timestamp: number;
+	/** FTS5 snippet with search term highlighted (wrapped in <b>…</b>) */
+	snippet: string;
+	/** FTS5 rank score (lower = more relevant) */
+	rank: number;
+}
+
+export interface GroupMessageSearchResult {
+	id: string;
+	group_id: string;
+	from_device_id: string;
+	msg_type: string;
+	content: string;
+	timestamp: number;
+	snippet: string;
+	rank: number;
+}
+
+export interface FileSearchResult {
+	id: string;
+	filename: string;
+	from_device_id: string;
+	to_device_id: string;
+	status: string;
+	size: number;
+	created_at: number;
+	snippet: string;
+	rank: number;
+}
+
+/** Discriminated union of search results — use `kind` to distinguish. */
+export type SearchResult =
+	| ({ kind: "message" } & MessageSearchResult)
+	| ({ kind: "group_message" } & GroupMessageSearchResult)
+	| ({ kind: "file" } & FileSearchResult);
+
+export interface SearchResponse {
+	query: string;
+	results: SearchResult[];
+	message_count: number;
+	group_message_count: number;
+	file_count: number;
+	total_count: number;
 }
 
 export interface SecurityErrorEvent {
@@ -280,6 +344,72 @@ export interface MessageDeliveredEvent {
 	from_device_id: string;
 	/** The device that originally sent the message (ACK target) */
 	to_device_id: string;
+}
+
+// ============================================================================
+// Secure Handshake / SAS Verification Types
+// ============================================================================
+
+/**
+ * The current state of the SAS verification process for a specific peer.
+ * Mirrors Rust's `VerificationState` enum (serialised snake_case).
+ */
+export type VerificationState =
+	| "none"
+	| "pending_confirmation"
+	| "local_confirmed"
+	| "verified"
+	| "rejected"
+	| { failed: string };
+
+/**
+ * Snapshot of a single peer's verification status, returned by
+ * `get_verification_status` IPC command.
+ */
+export interface VerificationStatus {
+	device_id: string;
+	display_name: string;
+	state: VerificationState;
+	verification_code: string | null;
+	initiated_at: number | null;
+}
+
+/**
+ * Event payload emitted when a verification code is ready for the user
+ * to compare with the peer's display.
+ */
+export interface VerificationCodeReadyEvent {
+	device_id: string;
+	display_name: string;
+	verification_code: string;
+	initiated_by_us: boolean;
+}
+
+/**
+ * Event payload emitted when both sides confirmed and the session is verified.
+ */
+export interface HandshakeVerifiedEvent {
+	device_id: string;
+	display_name: string;
+	verification_code: string;
+}
+
+/**
+ * Event payload emitted when either side rejects the verification code.
+ */
+export interface HandshakeRejectedEvent {
+	device_id: string;
+	display_name: string;
+	rejected_by: "local" | "remote";
+	reason: string | null;
+}
+
+/**
+ * Event payload emitted when the remote side has confirmed but the
+ * local user hasn't yet.
+ */
+export interface VerificationRemoteConfirmedEvent {
+	device_id: string;
 }
 
 /** Emitted by the Rust backend when the recipient opens the conversation. */
@@ -320,6 +450,231 @@ export interface GroupHostChangedEvent {
 
 export interface GroupDisbandedEvent {
 	group_id: string;
+}
+
+// ============================================================================
+// Screen Share Types
+// ============================================================================
+
+export type StreamQuality = "low" | "medium" | "high";
+
+export type ScreenShareState =
+	| "idle"
+	| "offering"
+	| "awaiting_acceptance"
+	| "streaming"
+	| "stopping";
+
+export interface ScreenShareSession {
+	session_id: string;
+	broadcaster_id: string;
+	broadcaster_name: string;
+	viewer_id: string;
+	viewer_name: string;
+	state: ScreenShareState;
+	quality: StreamQuality;
+	stream_port: number;
+	display_index: number;
+	screen_width: number;
+	screen_height: number;
+	created_at: number;
+	updated_at: number;
+}
+
+export interface ScreenShareOfferEvent {
+	session_id: string;
+	from_device_id: string;
+	from_display_name: string;
+	quality: StreamQuality;
+	screen_width: number;
+	screen_height: number;
+}
+
+export interface ScreenShareAnswerEvent {
+	session_id: string;
+	from_device_id: string;
+	accepted: boolean;
+	reason: string | null;
+}
+
+export interface ScreenShareStoppedEvent {
+	session_id: string;
+	from_device_id: string;
+	reason: string | null;
+}
+
+export interface ScreenShareStatsEvent {
+	session_id: string;
+	/** Current frames per second */
+	fps: number;
+	/** Average frame size in bytes */
+	avg_frame_size: number;
+	/** Total bytes transferred in this session */
+	total_bytes: number;
+	/** Estimated latency in milliseconds */
+	latency_ms: number;
+	/** Number of dropped/lost frames */
+	dropped_frames: number;
+}
+
+export interface ScreenShareStateChangedEvent {
+	session_id: string;
+	state: ScreenShareState;
+	/** "broadcaster" or "viewer" */
+	role: "broadcaster" | "viewer";
+	peer_device_id: string;
+	peer_display_name: string;
+}
+
+export interface ScreenShareFrameEvent {
+	session_id: string;
+	frame_seq: number;
+	width: number;
+	height: number;
+	/** Base64-encoded JPEG data */
+	jpeg_base64: string;
+}
+
+// ============================================================================
+// Mesh Routing Types
+// ============================================================================
+
+export interface MeshRoute {
+	device_id: string;
+	device_name: string;
+	hop_count: number;
+	is_direct: boolean;
+	next_hop_id: string;
+	latency_ms: number | null;
+	is_active: boolean;
+}
+
+export interface MeshRoutingUpdatedEvent {
+	total_destinations: number;
+	direct_peers: number;
+	relayed_destinations: number;
+	routes: MeshRoute[];
+}
+
+export interface MeshMessageRelayedEvent {
+	relay_id: string;
+	origin_device_id: string;
+	final_destination_id: string;
+	hop_count: number;
+	ttl: number;
+}
+
+export interface MeshMessageDeliveredEvent {
+	relay_id: string;
+	origin_device_id: string;
+	origin_display_name: string;
+	hop_count: number;
+}
+
+// ============================================================================
+// AI Types (Google Gemini Integration)
+// ============================================================================
+
+export type AiModel =
+	| "gemini-2.5-flash"
+	| "gemini-2.0-flash"
+	| "gemini-2.5-pro";
+
+export type AiAction =
+	| "summarize"
+	| "smart_reply"
+	| "ask"
+	| "smart_search"
+	| "analyze";
+
+export type AiServiceStatus =
+	| "not_configured"
+	| "ready"
+	| "processing"
+	| "error";
+
+export type AiChatRole = "user" | "assistant" | "system";
+
+export interface AiStatus {
+	status: AiServiceStatus;
+	model: AiModel;
+	has_api_key: boolean;
+	request_count: number;
+	total_tokens_used: number;
+	last_error: string | null;
+}
+
+export interface AiChatMessage {
+	id: string;
+	role: AiChatRole;
+	content: string;
+	timestamp: number;
+	action: AiAction | null;
+	tokens_used: number | null;
+}
+
+export interface SummarizeResponse {
+	summary: string;
+	message_count: number;
+	tokens_used: number;
+	model: string;
+}
+
+export interface SmartReplyResponse {
+	suggestions: string[];
+	tokens_used: number;
+	model: string;
+}
+
+export interface AskResponse {
+	answer: string;
+	tokens_used: number;
+	model: string;
+}
+
+export interface SmartSearchResult {
+	content: string;
+	conversation_id: string;
+	is_group: boolean;
+	from_device_id: string;
+	timestamp: number;
+	relevance: string;
+}
+
+export interface SmartSearchResponse {
+	results: SmartSearchResult[];
+	query: string;
+	tokens_used: number;
+	model: string;
+}
+
+export interface AnalyzeResponse {
+	tone: string;
+	topics: string[];
+	activity: string;
+	insights: string[];
+	tokens_used: number;
+	model: string;
+}
+
+// AI Events
+
+export interface AiProcessingEvent {
+	action: AiAction;
+	conversation_id: string | null;
+}
+
+export interface AiCompletedEvent {
+	action: AiAction;
+	conversation_id: string | null;
+	tokens_used: number;
+	success: boolean;
+	error: string | null;
+}
+
+export interface AiStatusChangedEvent {
+	status: AiServiceStatus;
+	has_api_key: boolean;
 }
 
 // ============================================================================
@@ -371,6 +726,47 @@ export function getMessageContent(messageType: MessageType): string {
 		return `📎 ${messageType.filename}`;
 	}
 	return "";
+}
+
+// ============================================================================
+// Verification Helpers
+// ============================================================================
+
+/**
+ * Check whether a verification state represents a successfully verified session.
+ */
+export function isVerified(state: VerificationState): boolean {
+	return state === "verified";
+}
+
+/**
+ * Check whether verification is still in progress (waiting for confirmation).
+ */
+export function isVerificationPending(state: VerificationState): boolean {
+	return state === "pending_confirmation" || state === "local_confirmed";
+}
+
+/**
+ * Get a human-readable label for a verification state.
+ */
+export function getVerificationLabel(state: VerificationState): string {
+	if (typeof state === "object" && "failed" in state) {
+		return `Failed: ${state.failed}`;
+	}
+	switch (state) {
+		case "none":
+			return "Not verified";
+		case "pending_confirmation":
+			return "Awaiting confirmation";
+		case "local_confirmed":
+			return "Waiting for peer";
+		case "verified":
+			return "Verified";
+		case "rejected":
+			return "Rejected";
+		default:
+			return "Unknown";
+	}
 }
 
 // Helper to format file size

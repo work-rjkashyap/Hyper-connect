@@ -7,7 +7,10 @@
 #![allow(dead_code)]
 
 use crate::crypto::{encrypt_message, Session};
-use crate::network::protocol::{Frame, MessageType, PingPayload, PongPayload};
+use crate::network::protocol::{
+    Frame, MessageType, PingPayload, PongPayload, SasConfirmPayload, SasRejectPayload,
+    SasVerifyRequestPayload,
+};
 use crate::network::secure_channel::SecureChannelManager;
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -742,6 +745,90 @@ impl TcpClient {
     }
 
     /// Close a specific connection
+    // ========================================================================
+    // SAS Verification Methods
+    // ========================================================================
+
+    /// Get the ECDH shared secret for a connected peer's session.
+    ///
+    /// Returns `None` if no connection or session exists for the device.
+    /// Used by the `VerificationService` to derive the SAS verification code.
+    pub async fn get_session_shared_secret(&self, device_id: &str) -> Option<[u8; 32]> {
+        let connections = self.connections.read().await;
+        if let Some(conn) = connections.get(device_id) {
+            let conn_lock = conn.lock().await;
+            conn_lock.session().map(|s| *s.shared_secret())
+        } else {
+            None
+        }
+    }
+
+    /// Send a `SasVerifyRequest` frame to a peer, asking them to start
+    /// the SAS verification flow on their side.
+    pub async fn send_sas_verify_request(
+        &self,
+        device_id: &str,
+        address: &str,
+        port: u16,
+    ) -> Result<(), String> {
+        let payload = SasVerifyRequestPayload {
+            device_id: self.secure_channel_manager.local_device_id.clone(),
+            display_name: self.secure_channel_manager.display_name.clone(),
+        };
+        let payload_bytes = serde_json::to_vec(&payload)
+            .map_err(|e| format!("Failed to serialize SasVerifyRequest: {}", e))?;
+        let frame = Frame::new(MessageType::SasVerifyRequest, payload_bytes);
+        self.send_frame(device_id, address, port, frame).await
+    }
+
+    /// Send a `SasConfirm` frame to a peer, indicating the local user
+    /// confirmed the verification code matches.
+    pub async fn send_sas_confirm(
+        &self,
+        device_id: &str,
+        address: &str,
+        port: u16,
+        verification_code: &str,
+    ) -> Result<(), String> {
+        let payload = SasConfirmPayload {
+            device_id: self.secure_channel_manager.local_device_id.clone(),
+            verification_code: verification_code.to_string(),
+        };
+        let payload_bytes = serde_json::to_vec(&payload)
+            .map_err(|e| format!("Failed to serialize SasConfirm: {}", e))?;
+        let frame = Frame::new(MessageType::SasConfirm, payload_bytes);
+        self.send_frame(device_id, address, port, frame).await
+    }
+
+    /// Send a `SasReject` frame to a peer, indicating the local user
+    /// rejected the verification code (it didn't match).
+    pub async fn send_sas_reject(
+        &self,
+        device_id: &str,
+        address: &str,
+        port: u16,
+        reason: Option<String>,
+    ) -> Result<(), String> {
+        let payload = SasRejectPayload {
+            device_id: self.secure_channel_manager.local_device_id.clone(),
+            reason,
+        };
+        let payload_bytes = serde_json::to_vec(&payload)
+            .map_err(|e| format!("Failed to serialize SasReject: {}", e))?;
+        let frame = Frame::new(MessageType::SasReject, payload_bytes);
+        self.send_frame(device_id, address, port, frame).await
+    }
+
+    /// Get the local device ID from the secure channel manager.
+    pub fn local_device_id(&self) -> &str {
+        &self.secure_channel_manager.local_device_id
+    }
+
+    /// Get the local display name from the secure channel manager.
+    pub fn local_display_name(&self) -> &str {
+        &self.secure_channel_manager.display_name
+    }
+
     pub async fn close_connection(&self, device_id: &str) {
         let mut connections = self.connections.write().await;
         if connections.remove(device_id).is_some() {

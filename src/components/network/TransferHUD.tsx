@@ -25,6 +25,8 @@ import XCircle from "lucide-react/dist/esm/icons/x-circle";
 import X from "lucide-react/dist/esm/icons/x";
 import Pause from "lucide-react/dist/esm/icons/pause";
 import RotateCcw from "lucide-react/dist/esm/icons/rotate-ccw";
+import Minimize2 from "lucide-react/dist/esm/icons/minimize-2";
+import Zap from "lucide-react/dist/esm/icons/zap";
 
 import ChevronDown from "lucide-react/dist/esm/icons/chevron-down";
 import ChevronUp from "lucide-react/dist/esm/icons/chevron-up";
@@ -182,6 +184,11 @@ function TransferItem({
 		transfer.transferred > 0 &&
 		transfer.transferred < transfer.size;
 	const isDone = isCompleted || isFailed || isCancelled || isRejected;
+	const hasCompression =
+		transfer.compression != null &&
+		transfer.compression_ratio != null &&
+		transfer.compression_ratio > 1.0;
+	const isParallel = transfer.parallel_streams > 1;
 
 	return (
 		<div
@@ -208,6 +215,18 @@ function TransferItem({
 							<p className="break-all">{transfer.filename}</p>
 							<p className="text-muted-foreground mt-1">
 								{formatFileSize(transfer.size)}
+								{hasCompression && (
+									<span className="ml-1 text-violet-500">
+										· {transfer.compression}{" "}
+										{transfer.compression_ratio!.toFixed(1)}
+										x
+									</span>
+								)}
+								{isParallel && (
+									<span className="ml-1 text-amber-500">
+										· {transfer.parallel_streams} streams
+									</span>
+								)}
 							</p>
 						</TooltipContent>
 					</Tooltip>
@@ -387,9 +406,52 @@ function TransferItem({
 				<div className="mt-1.5 space-y-0.5">
 					<Progress value={progress} className="h-1" />
 					<div className="flex items-center justify-between text-[10px] text-muted-foreground tabular-nums">
-						<span>
+						<span className="flex items-center gap-1">
 							{formatFileSize(transfer.transferred)} /{" "}
 							{formatFileSize(transfer.size)}
+							{isParallel && (
+								<Tooltip>
+									<TooltipTrigger asChild>
+										<span className="inline-flex items-center gap-0.5 px-1 py-px rounded bg-amber-500/15 text-amber-500 font-medium cursor-default">
+											<Zap className="h-2.5 w-2.5" />
+											{transfer.parallel_streams}×
+										</span>
+									</TooltipTrigger>
+									<TooltipContent
+										side="left"
+										className="text-xs"
+									>
+										{transfer.parallel_streams} parallel
+										streams
+									</TooltipContent>
+								</Tooltip>
+							)}
+							{transfer.compression &&
+								transfer.compression_ratio != null &&
+								transfer.compression_ratio > 1.0 && (
+									<Tooltip>
+										<TooltipTrigger asChild>
+											<span className="inline-flex items-center gap-0.5 px-1 py-px rounded bg-violet-500/15 text-violet-500 font-medium cursor-default">
+												<Minimize2 className="h-2.5 w-2.5" />
+												{transfer.compression_ratio.toFixed(
+													1,
+												)}
+												x
+											</span>
+										</TooltipTrigger>
+										<TooltipContent
+											side="left"
+											className="text-xs"
+										>
+											Compressed with{" "}
+											{transfer.compression} (
+											{transfer.compression_ratio.toFixed(
+												1,
+											)}
+											x ratio)
+										</TooltipContent>
+									</Tooltip>
+								)}
 						</span>
 						<span>
 							{isInProgress && transfer.speed_bps > 0

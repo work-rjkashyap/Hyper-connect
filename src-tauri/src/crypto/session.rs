@@ -160,8 +160,11 @@ impl Session {
         FileStreamCipher { cipher }
     }
 
-    /// Get a reference to the shared secret (for debugging only)
-    #[cfg(test)]
+    /// Get a reference to the shared secret.
+    ///
+    /// Used by `crypto::verification::VerificationCode` to derive the
+    /// Short Authentication String (SAS) that both peers display for
+    /// visual confirmation.  Also available in tests.
     pub fn shared_secret(&self) -> &[u8; 32] {
         &self.shared_secret
     }

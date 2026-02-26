@@ -5,6 +5,9 @@ import ChatPage from "./pages/ChatPage";
 import SettingsPage from "./pages/SettingsPage";
 import DiscoveryPage from "./pages/DiscoveryPage";
 import GroupChatPage from "./pages/GroupChatPage";
+import SearchPage from "./pages/SearchPage";
+import ScreenSharePage from "./pages/ScreenSharePage";
+import AiChatPage from "./pages/AiChatPage";
 import OnboardingPage from "./pages/OnboardingPage";
 import { useAppStore } from "./store";
 
@@ -58,6 +61,22 @@ export const router = createHashRouter([
 			{
 				path: "group/:groupId",
 				element: <GroupChatPage />,
+			},
+			{
+				path: "search",
+				element: <SearchPage />,
+			},
+			{
+				path: "screen-share",
+				element: <ScreenSharePage />,
+			},
+			{
+				path: "screen-share/:deviceId",
+				element: <ScreenSharePage />,
+			},
+			{
+				path: "ai",
+				element: <AiChatPage />,
 			},
 			{
 				path: "settings",

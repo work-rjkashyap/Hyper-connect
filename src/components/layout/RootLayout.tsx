@@ -3,11 +3,14 @@ import { ThemeProvider } from "@/context/ThemeContext";
 import Sidebar from "./Sidebar";
 import NetworkHealthBar from "@/components/network/NetworkHealthBar";
 import TransferHUD from "@/components/network/TransferHUD";
+import HandshakeVerificationDialog from "@/components/network/HandshakeVerificationDialog";
+import ScreenShareOfferDialog from "@/components/screen-share/ScreenShareOfferDialog";
 import { useIdentity } from "@/hooks/use-identity";
 import { useLanPeers } from "@/hooks/use-lan-peers";
 import { useFileTransfers } from "@/hooks/use-file-transfers";
 import { useMessaging } from "@/hooks/use-messaging";
 import { useGroupChat } from "@/hooks/use-group-chat";
+import { useSecureHandshake } from "@/hooks/use-secure-handshake";
 import { useMobileNav } from "@/hooks/use-mobile-nav";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
@@ -24,6 +27,7 @@ export default function RootLayout() {
 	useFileTransfers();
 	useMessaging();
 	useGroupChat();
+	useSecureHandshake();
 
 	const { isOpen, setIsOpen, isMobile } = useMobileNav();
 
@@ -80,6 +84,8 @@ export default function RootLayout() {
 				</div>
 			</div>
 			<TransferHUD />
+			<HandshakeVerificationDialog />
+			<ScreenShareOfferDialog />
 			<Toaster />
 		</ThemeProvider>
 	);

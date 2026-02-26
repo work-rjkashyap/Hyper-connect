@@ -53,5 +53,11 @@ rcgen = "0.13"
 dirs = "5"
 sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio-rustls"] }
 
+# Compression
+zstd = "0.13"
+
+# HTTP client for AI API calls (Google Gemini)
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+
 [target.'cfg(not(any(target_os = "ios", target_os = "android")))'.dependencies]
 tauri-plugin-updater = "2"

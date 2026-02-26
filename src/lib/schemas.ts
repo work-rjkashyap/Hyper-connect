@@ -86,6 +86,12 @@ export const fileTransferSchema = z.object({
 	checksum: z.string().optional(),
 	created_at: z.number().int(),
 	updated_at: z.number().int(),
+	/** Compression algorithm used (e.g. "zstd"), or null if uncompressed. */
+	compression: z.string().nullable().optional(),
+	/** Compression ratio: original_size / compressed_bytes_sent. e.g. 2.0 = 50% reduction. */
+	compression_ratio: z.number().nullable().optional(),
+	/** Number of parallel TCP streams used for this transfer. 1 = single-stream, >1 = parallel. */
+	parallel_streams: z.number().int().min(1).default(1),
 });
 
 // ============================================================================
@@ -121,6 +127,61 @@ export type Settings = z.infer<typeof settingsSchema>;
 export type OnboardingForm = z.infer<typeof onboardingSchema>;
 
 // ============================================================================
+// SAS VERIFICATION SCHEMAS
+// ============================================================================
+
+export const verificationStateSchema = z.union([
+	z.literal("none"),
+	z.literal("pending_confirmation"),
+	z.literal("local_confirmed"),
+	z.literal("verified"),
+	z.literal("rejected"),
+	z.object({ failed: z.string() }),
+]);
+
+export const verificationStatusSchema = z.object({
+	device_id: z.string(),
+	display_name: z.string(),
+	state: verificationStateSchema,
+	verification_code: z.string().nullable(),
+	initiated_at: z.number().nullable(),
+});
+
+export const verificationCodeReadyEventSchema = z.object({
+	device_id: z.string(),
+	display_name: z.string(),
+	verification_code: z
+		.string()
+		.regex(/^\d{3}-\d{3}$/, "Must be formatted as XXX-XXX"),
+	initiated_by_us: z.boolean(),
+});
+
+export const handshakeVerifiedEventSchema = z.object({
+	device_id: z.string(),
+	display_name: z.string(),
+	verification_code: z.string(),
+});
+
+export const handshakeRejectedEventSchema = z.object({
+	device_id: z.string(),
+	display_name: z.string(),
+	rejected_by: z.enum(["local", "remote"]),
+	reason: z.string().nullable(),
+});
+
+export type VerificationState = z.infer<typeof verificationStateSchema>;
+export type VerificationStatus = z.infer<typeof verificationStatusSchema>;
+export type VerificationCodeReadyEvent = z.infer<
+	typeof verificationCodeReadyEventSchema
+>;
+export type HandshakeVerifiedEvent = z.infer<
+	typeof handshakeVerifiedEventSchema
+>;
+export type HandshakeRejectedEvent = z.infer<
+	typeof handshakeRejectedEventSchema
+>;
+
+// ============================================================================
 // VALIDATION HELPERS
 // ============================================================================
 
@@ -138,4 +199,12 @@ export function validateMessage(data: unknown) {
 
 export function validateFileTransfer(data: unknown) {
 	return fileTransferSchema.safeParse(data);
+}
+
+export function validateVerificationStatus(data: unknown) {
+	return verificationStatusSchema.safeParse(data);
+}
+
+export function validateVerificationCodeReady(data: unknown) {
+	return verificationCodeReadyEventSchema.safeParse(data);
 }

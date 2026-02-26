@@ -3,20 +3,27 @@
 //! High-performance LAN file and message transfer application built with Tauri 2.
 //! Implements optimized TCP networking, mDNS discovery, and zero-copy file streaming.
 
+mod ai;
 mod crypto;
 mod db;
 mod discovery;
 mod identity;
 mod ipc;
+mod mesh;
 mod messaging;
 mod network;
+mod screen_share;
 
+use ai::AiService;
 use crypto::tls::TlsConfig;
+use crypto::VerificationService;
 use discovery::MdnsDiscoveryService;
 use identity::IdentityManager;
 use ipc::{DownloadDir, TcpPort};
 use messaging::{GroupService, MessagingService};
 use network::{FileTransferService, TcpClient, TcpServer};
+use mesh::MeshRouter;
+use screen_share::ScreenShareService;
 use std::sync::Arc;
 use tauri::Manager;
 use tokio::sync::Mutex;
@@ -94,7 +101,7 @@ pub fn run() {
                 TlsConfig::new(&app_data_dir).expect("Failed to initialize TLS configuration");
             println!("✓ TLS configuration initialized");
 
-            // ── TCP client ────────────────────────────────────────────────────
+            // ── TCP client ────────────────────────────────────────────────
             let tcp_client = Arc::new(TcpClient::new(
                 identity.device_id.clone(),
                 identity.display_name.clone(),
@@ -102,6 +109,9 @@ pub fn run() {
                 identity.app_version.clone(),
                 tls_config.connector,
             ));
+
+            // ── SAS Verification Service ──────────────────────────────────
+            let verification_service = VerificationService::new();
 
             // ── Services ──────────────────────────────────────────────────────
             let mut messaging_service = MessagingService::new(Arc::clone(&db_pool));
@@ -116,6 +126,25 @@ pub fn run() {
             let mut group_service = GroupService::new(Arc::clone(&db_pool));
             group_service.set_tcp_client(Arc::clone(&tcp_client));
             group_service.set_tcp_port(tcp_port);
+
+            // ── Screen Share ──────────────────────────────────────────────────
+            let mut screen_share_service = ScreenShareService::new(
+                identity.device_id.clone(),
+                identity.display_name.clone(),
+            );
+            screen_share_service.set_tcp_client(Arc::clone(&tcp_client));
+            screen_share_service.set_tcp_port(tcp_port);
+
+            // ── AI Service ────────────────────────────────────────────────────
+            let ai_service = AiService::new(Arc::clone(&db_pool));
+
+            // ── Mesh Router ───────────────────────────────────────────────────
+            let mut mesh_router = MeshRouter::new(
+                identity.device_id.clone(),
+                identity.display_name.clone(),
+            );
+            mesh_router.set_tcp_client(Arc::clone(&tcp_client));
+            mesh_router.set_tcp_port(tcp_port);
 
             // ── TCP server ────────────────────────────────────────────────────
             let tcp_server = TcpServer::new(
@@ -152,6 +181,19 @@ pub fn run() {
             app.manage(group_service);
             app.manage(TcpPort(tcp_port));
             app.manage(DownloadDir(tokio::sync::Mutex::new(None)));
+            app.manage(verification_service);
+            app.manage(screen_share_service);
+            app.manage(mesh_router.clone());
+            app.manage(Arc::clone(&tcp_client));
+            app.manage(ai_service);
+
+            // ── Auto-start mesh routing ───────────────────────────────────────
+            let mesh_clone = mesh_router.clone();
+            let mesh_app_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                mesh_clone.start_topology_task(mesh_app_handle).await;
+                println!("✓ Mesh routing topology task started");
+            });
 
             // ── Auto-start mDNS ───────────────────────────────────────────────
             let discovery_clone = Arc::clone(&discovery_service);
@@ -223,6 +265,43 @@ pub fn run() {
             ipc::clear_group_history,
             ipc::get_group_info,
             ipc::get_group_summaries,
+            // Full-text search commands
+            ipc::search_all,
+            ipc::search_messages_cmd,
+            ipc::search_group_messages_cmd,
+            ipc::search_files_cmd,
+            ipc::rebuild_search_index,
+            // Secure handshake / SAS verification commands
+            ipc::initiate_verification,
+            ipc::confirm_verification,
+            ipc::reject_verification,
+            ipc::get_verification_status,
+            ipc::get_verified_devices,
+            ipc::revoke_verification,
+            ipc::get_all_verification_statuses,
+            // Screen share commands
+            ipc::start_screen_share,
+            ipc::answer_screen_share,
+            ipc::stop_screen_share,
+            ipc::get_screen_share_sessions,
+            // Mesh routing commands
+            ipc::get_mesh_routes,
+            ipc::get_mesh_route_to,
+            ipc::set_mesh_enabled,
+            ipc::get_mesh_enabled,
+            ipc::get_mesh_relay_count,
+            // AI commands (Google Gemini)
+            ipc::ai_set_api_key,
+            ipc::ai_clear_api_key,
+            ipc::ai_set_model,
+            ipc::ai_get_status,
+            ipc::ai_summarize_chat,
+            ipc::ai_smart_reply,
+            ipc::ai_ask,
+            ipc::ai_smart_search,
+            ipc::ai_analyze_chat,
+            ipc::ai_get_conversation_history,
+            ipc::ai_clear_conversation_history,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

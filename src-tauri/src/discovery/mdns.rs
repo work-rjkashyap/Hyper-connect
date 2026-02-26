@@ -6,6 +6,7 @@
 #![allow(dead_code)]
 
 use crate::identity::DeviceIdentity;
+use crate::mesh::MeshRouter;
 use crate::messaging::GroupService;
 use mdns_sd::{ServiceDaemon, ServiceEvent, ServiceInfo};
 use serde::{Deserialize, Serialize};
@@ -303,6 +304,13 @@ impl MdnsDiscoveryService {
 
         devices.write().await.insert(id.clone(), device.clone());
 
+        // Notify mesh router about the new direct peer
+        if let Some(mesh_router) = app_handle.try_state::<MeshRouter>() {
+            mesh_router
+                .on_device_discovered(&id, &device.name, app_handle)
+                .await;
+        }
+
         let _ = app_handle.emit("device-discovered", device);
     }
 
@@ -323,6 +331,12 @@ impl MdnsDiscoveryService {
         if let Some(id) = id {
             devices.write().await.remove(&id);
             println!("✓ Peer left: {} ({})", fullname, id);
+
+            // Notify mesh router about the removed peer
+            if let Some(mesh_router) = app_handle.try_state::<MeshRouter>() {
+                mesh_router.on_device_removed(&id, app_handle).await;
+            }
+
             let _ = app_handle.emit("device-removed", &id);
 
             // Trigger group host election if the departing device was a host.

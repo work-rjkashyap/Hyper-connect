@@ -1,4 +1,4 @@
-import { useParams } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -6,8 +6,15 @@ import { useEffect, useCallback, useState, useMemo } from "react";
 import { ChatWindow } from "@/components/chat/ChatWindow";
 import { useAppStore } from "@/store";
 import { useFileTransfer } from "@/hooks/use-file-transfer";
+import { useSecureHandshake } from "@/hooks/use-secure-handshake";
+import { useAi } from "@/hooks/use-ai";
 import { toast } from "@/hooks/use-toast";
-import type { Message, ConnectionStatusEvent, FileTransfer } from "@/types";
+import type {
+	Message,
+	ConnectionStatusEvent,
+	FileTransfer,
+	AnalyzeResponse,
+} from "@/types";
 import {
 	getConversationKey,
 	getMessageContent,
@@ -39,6 +46,7 @@ type ApprovalState =
 	| "none";
 
 export default function ChatPage() {
+	const navigate = useNavigate();
 	const { deviceId } = useParams<{ deviceId: string }>();
 	const {
 		devices,
@@ -60,7 +68,28 @@ export default function ChatPage() {
 		declineDevice,
 		setChatRequestStatus,
 		startedChats,
+		// Secure handshake / SAS verification
+		verifiedDevices,
 	} = useAppStore();
+
+	const { initiateVerification } = useSecureHandshake();
+
+	// AI features
+	const {
+		isReady: isAiReady,
+		getSmartReplies,
+		summarizeChat,
+		analyzeChat,
+	} = useAi();
+
+	const [smartReplies, setSmartReplies] = useState<string[]>([]);
+	const [isLoadingSmartReplies, setIsLoadingSmartReplies] = useState(false);
+	const [summaryText, setSummaryText] = useState<string | null>(null);
+	const [isLoadingSummary, setIsLoadingSummary] = useState(false);
+	const [analysisData, setAnalysisData] = useState<AnalyzeResponse | null>(
+		null,
+	);
+	const [isLoadingAnalysis, setIsLoadingAnalysis] = useState(false);
 
 	const {
 		createTransfer,
@@ -81,6 +110,49 @@ export default function ChatPage() {
 		localDeviceId && selectedDevice
 			? getConversationKey(localDeviceId, selectedDevice.device_id)
 			: null;
+
+	// AI handler callbacks (must be after conversationKey is declared)
+	const handleRequestSmartReplies = useCallback(async () => {
+		if (!conversationKey || isLoadingSmartReplies) return;
+		setIsLoadingSmartReplies(true);
+		setSmartReplies([]);
+		try {
+			const result = await getSmartReplies(conversationKey, false, 3);
+			if (result) {
+				setSmartReplies(result.suggestions);
+			}
+		} finally {
+			setIsLoadingSmartReplies(false);
+		}
+	}, [conversationKey, isLoadingSmartReplies, getSmartReplies]);
+
+	const handleSummarize = useCallback(async () => {
+		if (!conversationKey || isLoadingSummary) return;
+		setIsLoadingSummary(true);
+		setSummaryText(null);
+		try {
+			const result = await summarizeChat(conversationKey, false);
+			if (result) {
+				setSummaryText(result.summary);
+			}
+		} finally {
+			setIsLoadingSummary(false);
+		}
+	}, [conversationKey, isLoadingSummary, summarizeChat]);
+
+	const handleAnalyze = useCallback(async () => {
+		if (!conversationKey || isLoadingAnalysis) return;
+		setIsLoadingAnalysis(true);
+		setAnalysisData(null);
+		try {
+			const result = await analyzeChat(conversationKey, false);
+			if (result) {
+				setAnalysisData(result);
+			}
+		} finally {
+			setIsLoadingAnalysis(false);
+		}
+	}, [conversationKey, isLoadingAnalysis, analyzeChat]);
 
 	// Filter out system messages for display
 	const currentMessages = useMemo((): Message[] => {
@@ -464,9 +536,7 @@ export default function ChatPage() {
 				toast({
 					title: "Failed to send file",
 					description:
-						error instanceof Error
-							? error.message
-							: String(error),
+						error instanceof Error ? error.message : String(error),
 					variant: "destructive",
 				});
 			}
@@ -663,6 +733,38 @@ export default function ChatPage() {
 			onRejectFile={handleRejectFile}
 			onCancelFile={handleCancelFile}
 			onPauseFile={handlePauseFile}
+			// Screen share
+			onScreenShare={
+				deviceId
+					? () => navigate(`/screen-share/${deviceId}`)
+					: undefined
+			}
+			// Secure handshake / SAS verification
+			isVerified={deviceId ? verifiedDevices.includes(deviceId) : false}
+			onVerify={
+				deviceId
+					? () => {
+							initiateVerification(deviceId).catch((err) =>
+								toast({
+									title: "Verification failed",
+									description: String(err),
+									variant: "destructive",
+								}),
+							);
+						}
+					: undefined
+			}
+			// AI features
+			isAiReady={isAiReady}
+			smartReplies={smartReplies}
+			isLoadingSmartReplies={isLoadingSmartReplies}
+			onRequestSmartReplies={handleRequestSmartReplies}
+			onSummarize={handleSummarize}
+			onAnalyze={handleAnalyze}
+			summaryText={summaryText}
+			isLoadingSummary={isLoadingSummary}
+			analysisData={analysisData}
+			isLoadingAnalysis={isLoadingAnalysis}
 		/>
 	);
 }

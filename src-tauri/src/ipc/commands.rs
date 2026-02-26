@@ -2,6 +2,16 @@
 //!
 //! Tauri command handlers for frontend-backend communication.
 
+use crate::ai::AiService;
+use crate::ai::types::{
+    AiChatMessage, AiModel, AiStatus, AnalyzeRequest, AnalyzeResponse, AskRequest, AskResponse,
+    SmartReplyRequest, SmartReplyResponse, SmartSearchRequest, SmartSearchResponse,
+    SummarizeRequest, SummarizeResponse,
+};
+use crate::crypto::VerificationService;
+use crate::crypto::verification_service::VerificationStatus;
+use crate::db;
+use crate::db::search::{SearchResponse, MessageSearchResult, GroupMessageSearchResult, FileSearchResult};
 use crate::discovery::{Device, MdnsDiscoveryService};
 use crate::identity::{DeviceIdentity, IdentityManager};
 use crate::messaging::{
@@ -9,7 +19,11 @@ use crate::messaging::{
     GroupService, GroupSummary, Message, MessageType, MessagingService, Thread,
 };
 use crate::network::protocol::{serialize_json, FileAckPayload, FileRejectPayload};
-use crate::network::{FileTransfer, FileTransferService};
+use crate::network::{FileTransfer, FileTransferService, TcpClient};
+use crate::screen_share::{ScreenShareService, ScreenShareSession};
+use crate::screen_share::types::StreamQuality;
+use crate::mesh::MeshRouter;
+use crate::mesh::types::MeshRoute;
 use serde::Serialize;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -572,8 +586,98 @@ pub async fn clear_all_data(
     messaging.clear_all().await;
     file_transfer.clear_all().await;
     group_service.clear_all().await?;
+    // Clear FTS5 search indexes
+    if let Err(e) = db::search::clear_fts_indexes(messaging.db_pool()).await {
+        eprintln!("⚠️  Failed to clear FTS indexes: {}", e);
+    }
     println!("✓ All application data cleared via IPC");
     Ok(())
+}
+
+// ============================================================================
+// Full-Text Search Commands (Feature #18)
+// ============================================================================
+
+/// Search across all content types (messages, group messages, file transfers).
+///
+/// Returns a unified `SearchResponse` with results sorted by FTS5 relevance.
+/// Each result carries a `kind` discriminant so the frontend can render the
+/// appropriate UI for messages vs files.
+///
+/// `limit` controls per-category cap (default 20, max 100).
+#[tauri::command]
+pub async fn search_all(
+    messaging: State<'_, MessagingService>,
+    query: String,
+    limit: Option<u32>,
+) -> Result<SearchResponse, String> {
+    let pool = messaging.db_pool();
+    let limit = limit.unwrap_or(20).min(100);
+    db::search::search_all(pool, &query, limit)
+        .await
+        .map_err(|e| format!("Search failed: {}", e))
+}
+
+/// Search only direct messages.
+///
+/// Optionally scoped to a single conversation via `conversation_key`.
+#[tauri::command]
+pub async fn search_messages_cmd(
+    messaging: State<'_, MessagingService>,
+    query: String,
+    conversation_key: Option<String>,
+    limit: Option<u32>,
+) -> Result<Vec<MessageSearchResult>, String> {
+    let pool = messaging.db_pool();
+    let limit = limit.unwrap_or(30).min(100);
+    db::search::search_messages(pool, &query, conversation_key.as_deref(), limit)
+        .await
+        .map_err(|e| format!("Message search failed: {}", e))
+}
+
+/// Search only group messages.
+///
+/// Optionally scoped to a single group via `group_id`.
+#[tauri::command]
+pub async fn search_group_messages_cmd(
+    messaging: State<'_, MessagingService>,
+    query: String,
+    group_id: Option<String>,
+    limit: Option<u32>,
+) -> Result<Vec<GroupMessageSearchResult>, String> {
+    let pool = messaging.db_pool();
+    let limit = limit.unwrap_or(30).min(100);
+    db::search::search_group_messages(pool, &query, group_id.as_deref(), limit)
+        .await
+        .map_err(|e| format!("Group message search failed: {}", e))
+}
+
+/// Search file transfers by filename.
+#[tauri::command]
+pub async fn search_files_cmd(
+    messaging: State<'_, MessagingService>,
+    query: String,
+    limit: Option<u32>,
+) -> Result<Vec<FileSearchResult>, String> {
+    let pool = messaging.db_pool();
+    let limit = limit.unwrap_or(30).min(100);
+    db::search::search_files(pool, &query, limit)
+        .await
+        .map_err(|e| format!("File search failed: {}", e))
+}
+
+/// Rebuild all FTS5 search indexes from scratch.
+///
+/// This is an expensive but idempotent operation.  Useful if the index
+/// somehow gets out of sync (e.g. after a database restore).
+#[tauri::command]
+pub async fn rebuild_search_index(
+    messaging: State<'_, MessagingService>,
+) -> Result<(), String> {
+    let pool = messaging.db_pool();
+    db::search::rebuild_fts_indexes(pool)
+        .await
+        .map_err(|e| format!("Rebuild failed: {}", e))
 }
 
 // ============================================================================
@@ -815,4 +919,523 @@ pub async fn get_group_summaries(
     local_device_id: String,
 ) -> Result<Vec<GroupSummary>, String> {
     group_service.get_group_summaries(&local_device_id).await
+}
+
+// ============================================================================
+// Secure Handshake / SAS Verification Commands
+// ============================================================================
+
+/// Initiate SAS (Short Authentication String) verification with a peer device.
+///
+/// 1. Ensures a TCP connection exists (ECDH handshake happens automatically).
+/// 2. Derives a 6-digit verification code from the session's shared secret.
+/// 3. Sends a `SasVerifyRequest` frame to the peer so they also show the code.
+/// 4. Emits `verification-code-ready` to the local frontend with the code.
+///
+/// The user should compare this code with what the peer is displaying and
+/// then call `confirm_verification` or `reject_verification`.
+#[tauri::command]
+pub async fn initiate_verification(
+    verification_service: State<'_, VerificationService>,
+    tcp_client: State<'_, Arc<TcpClient>>,
+    discovery: State<'_, Arc<MdnsDiscoveryService>>,
+    _tcp_port: State<'_, TcpPort>,
+    device_id: String,
+    app_handle: AppHandle,
+) -> Result<String, String> {
+    // Look up the peer's network address from discovery.
+    let devices = discovery.get_devices().await;
+    let device = devices
+        .iter()
+        .find(|d| d.id == device_id)
+        .ok_or_else(|| format!("Device {} not found in discovery", device_id))?;
+
+    let address = device
+        .addresses
+        .first()
+        .ok_or_else(|| format!("Device {} has no addresses", device_id))?
+        .clone();
+    let port = device.port;
+    let display_name = device.name.clone();
+
+    // Ensure connection exists (this performs ECDH if needed).
+    tcp_client
+        .ensure_connected(&device_id, &address, port)
+        .await
+        .map_err(|e| format!("Failed to connect to {}: {}", device_id, e))?;
+
+    // Get the session's shared secret.
+    let shared_secret = tcp_client
+        .get_session_shared_secret(&device_id)
+        .await
+        .ok_or_else(|| format!("No active session with {} — cannot derive verification code", device_id))?;
+
+    // Derive the SAS verification code.
+    let pv = verification_service.start_verification(&device_id, &display_name, &shared_secret)?;
+    let code = pv.code.formatted();
+
+    // Send SasVerifyRequest to the peer so they also show their code.
+    if let Err(e) = tcp_client
+        .send_sas_verify_request(&device_id, &address, port)
+        .await
+    {
+        eprintln!("⚠️ Failed to send SAS verify request to {}: {}", device_id, e);
+        // Continue anyway — the local user can still see their code.
+    }
+
+    // Emit event to local frontend.
+    let _ = app_handle.emit(
+        "verification-code-ready",
+        serde_json::json!({
+            "device_id": device_id,
+            "display_name": display_name,
+            "verification_code": code,
+            "initiated_by_us": true,
+        }),
+    );
+
+    Ok(code)
+}
+
+/// Confirm that the SAS verification code matches what the peer is showing.
+///
+/// If the remote side has already confirmed, the verification transitions to
+/// `Verified` and a `handshake-verified` event is emitted. Otherwise it moves
+/// to `LocalConfirmed` and waits for the remote `SasConfirm` frame.
+///
+/// Also sends a `SasConfirm` frame to the peer.
+#[tauri::command]
+pub async fn confirm_verification(
+    verification_service: State<'_, VerificationService>,
+    tcp_client: State<'_, Arc<TcpClient>>,
+    discovery: State<'_, Arc<MdnsDiscoveryService>>,
+    _tcp_port: State<'_, TcpPort>,
+    device_id: String,
+    app_handle: AppHandle,
+) -> Result<String, String> {
+    // Get the verification code before confirming.
+    let code = verification_service
+        .get_verification_code(&device_id)
+        .unwrap_or_default();
+
+    // Confirm locally.
+    let new_state = verification_service.local_confirm(&device_id)?;
+
+    // Send SasConfirm frame to the peer.
+    let devices = discovery.get_devices().await;
+    if let Some(device) = devices.iter().find(|d| d.id == device_id) {
+        if let Some(address) = device.addresses.first() {
+            if let Err(e) = tcp_client
+                .send_sas_confirm(&device_id, address, device.port, &code)
+                .await
+            {
+                eprintln!("⚠️ Failed to send SAS confirm to {}: {}", device_id, e);
+            }
+        }
+    }
+
+    // If both sides have now confirmed, emit verified event.
+    if new_state.is_verified() {
+        let _ = app_handle.emit(
+            "handshake-verified",
+            serde_json::json!({
+                "device_id": device_id,
+                "display_name": "",
+                "verification_code": code,
+            }),
+        );
+    }
+
+    // Return the serialized state name.
+    let state_str = serde_json::to_string(&new_state)
+        .unwrap_or_else(|_| "\"unknown\"".to_string());
+    Ok(state_str)
+}
+
+/// Reject the SAS verification code (it does not match what the peer shows).
+///
+/// Sends a `SasReject` frame to the peer and emits `handshake-rejected`.
+#[tauri::command]
+pub async fn reject_verification(
+    verification_service: State<'_, VerificationService>,
+    tcp_client: State<'_, Arc<TcpClient>>,
+    discovery: State<'_, Arc<MdnsDiscoveryService>>,
+    _tcp_port: State<'_, TcpPort>,
+    device_id: String,
+    reason: Option<String>,
+    app_handle: AppHandle,
+) -> Result<(), String> {
+    verification_service.local_reject(&device_id, reason.clone())?;
+
+    // Send SasReject frame to the peer.
+    let devices = discovery.get_devices().await;
+    if let Some(device) = devices.iter().find(|d| d.id == device_id) {
+        if let Some(address) = device.addresses.first() {
+            if let Err(e) = tcp_client
+                .send_sas_reject(&device_id, address, device.port, reason.clone())
+                .await
+            {
+                eprintln!("⚠️ Failed to send SAS reject to {}: {}", device_id, e);
+            }
+        }
+    }
+
+    let _ = app_handle.emit(
+        "handshake-rejected",
+        serde_json::json!({
+            "device_id": device_id,
+            "display_name": "",
+            "rejected_by": "local",
+            "reason": reason,
+        }),
+    );
+
+    Ok(())
+}
+
+/// Get the current SAS verification status for a specific peer device.
+#[tauri::command]
+pub fn get_verification_status(
+    verification_service: State<'_, VerificationService>,
+    device_id: String,
+) -> VerificationStatus {
+    verification_service.get_status(&device_id)
+}
+
+/// Get the list of all device IDs that have been successfully SAS-verified.
+#[tauri::command]
+pub fn get_verified_devices(
+    verification_service: State<'_, VerificationService>,
+) -> Vec<String> {
+    verification_service.verified_device_ids()
+}
+
+/// Revoke SAS verification for a peer device (user no longer trusts them).
+#[tauri::command]
+pub fn revoke_verification(
+    verification_service: State<'_, VerificationService>,
+    device_id: String,
+) -> Result<(), String> {
+    verification_service.revoke(&device_id);
+    Ok(())
+}
+
+/// Get verification status summaries for all peers (verified + pending).
+#[tauri::command]
+pub fn get_all_verification_statuses(
+    verification_service: State<'_, VerificationService>,
+) -> Vec<VerificationStatus> {
+    verification_service.get_all_statuses()
+}
+
+// ============================================================================
+// Screen Share Commands
+// ============================================================================
+
+/// Start a screen share session by sending an offer to a remote device.
+///
+/// The broadcaster captures their screen and streams JPEG frames over UDP.
+/// Signaling (offer/answer/stop) is done over the existing encrypted TCP channel.
+///
+/// Returns the session ID on success.
+#[tauri::command]
+pub async fn start_screen_share(
+    screen_share: State<'_, ScreenShareService>,
+    viewer_device_id: String,
+    viewer_display_name: String,
+    quality: Option<String>,
+    display_index: Option<u32>,
+    app_handle: AppHandle,
+) -> Result<String, String> {
+    let quality_preset = match quality.as_deref() {
+        Some("low") => StreamQuality::Low,
+        Some("high") => StreamQuality::High,
+        _ => StreamQuality::Medium,
+    };
+
+    screen_share
+        .start_offer(
+            viewer_device_id,
+            viewer_display_name,
+            quality_preset,
+            display_index.unwrap_or(0),
+            app_handle,
+        )
+        .await
+}
+
+/// Accept or reject an incoming screen share offer.
+///
+/// Called by the viewer in response to a `screen-share-offer` event.
+#[tauri::command]
+pub async fn answer_screen_share(
+    screen_share: State<'_, ScreenShareService>,
+    session_id: String,
+    accepted: bool,
+    app_handle: AppHandle,
+) -> Result<(), String> {
+    screen_share
+        .answer_offer(session_id, accepted, app_handle)
+        .await
+}
+
+/// Stop an active screen share session.
+///
+/// Can be called by either the broadcaster or the viewer.
+/// Sends a stop signal to the remote peer and cleans up local state.
+#[tauri::command]
+pub async fn stop_screen_share(
+    screen_share: State<'_, ScreenShareService>,
+    session_id: String,
+    app_handle: AppHandle,
+) -> Result<(), String> {
+    screen_share.stop_session(session_id, app_handle).await
+}
+
+/// Get all active screen share sessions.
+#[tauri::command]
+pub async fn get_screen_share_sessions(
+    screen_share: State<'_, ScreenShareService>,
+) -> Result<Vec<ScreenShareSession>, String> {
+    Ok(screen_share.get_sessions().await)
+}
+
+// ============================================================================
+// Mesh Routing Commands
+// ============================================================================
+
+/// Get the full mesh routing table.
+///
+/// Returns all known routes (direct peers + relayed multi-hop destinations).
+/// Each route includes the next-hop device ID, hop count, and whether it is
+/// a direct connection or a relayed route through intermediate devices.
+#[tauri::command]
+pub async fn get_mesh_routes(
+    mesh: State<'_, MeshRouter>,
+) -> Result<Vec<MeshRoute>, String> {
+    Ok(mesh.get_routing_table().await)
+}
+
+/// Get the route to a specific destination device.
+///
+/// Returns the next-hop device ID if a route exists, or `null` if the
+/// destination is unreachable via the mesh.
+#[tauri::command]
+pub async fn get_mesh_route_to(
+    mesh: State<'_, MeshRouter>,
+    device_id: String,
+) -> Result<Option<String>, String> {
+    Ok(mesh.get_next_hop(&device_id).await)
+}
+
+/// Enable or disable mesh routing.
+///
+/// When disabled, only directly connected peers are reachable.
+/// Relayed routes are cleared and topology announcements stop.
+#[tauri::command]
+pub async fn set_mesh_enabled(
+    mesh: State<'_, MeshRouter>,
+    enabled: bool,
+    app_handle: AppHandle,
+) -> Result<(), String> {
+    mesh.set_enabled(enabled, &app_handle).await;
+    Ok(())
+}
+
+/// Check whether mesh routing is currently enabled.
+#[tauri::command]
+pub async fn get_mesh_enabled(
+    mesh: State<'_, MeshRouter>,
+) -> Result<bool, String> {
+    Ok(mesh.is_enabled().await)
+}
+
+/// Get the total number of messages this device has relayed for other peers.
+#[tauri::command]
+pub async fn get_mesh_relay_count(
+    mesh: State<'_, MeshRouter>,
+) -> Result<u64, String> {
+    Ok(mesh.relay_count().await)
+}
+
+// ============================================================================
+// AI Commands (Google Gemini Integration)
+// ============================================================================
+
+/// Set the Gemini API key. The key is passed from the frontend (which reads
+/// it from `tauri-plugin-store`) and stored only in memory on the Rust side.
+#[tauri::command]
+pub async fn ai_set_api_key(
+    ai: State<'_, AiService>,
+    api_key: String,
+) -> Result<(), String> {
+    ai.set_api_key(api_key).await;
+    Ok(())
+}
+
+/// Clear the stored Gemini API key.
+#[tauri::command]
+pub async fn ai_clear_api_key(
+    ai: State<'_, AiService>,
+) -> Result<(), String> {
+    ai.clear_api_key().await;
+    Ok(())
+}
+
+/// Change the Gemini model to use.
+#[tauri::command]
+pub async fn ai_set_model(
+    ai: State<'_, AiService>,
+    model: AiModel,
+) -> Result<(), String> {
+    ai.set_model(model).await;
+    Ok(())
+}
+
+/// Get the current AI service status (ready, model, token usage, etc.).
+#[tauri::command]
+pub async fn ai_get_status(
+    ai: State<'_, AiService>,
+) -> Result<AiStatus, String> {
+    Ok(ai.get_status().await)
+}
+
+/// Summarize a direct or group conversation using Gemini.
+#[tauri::command]
+pub async fn ai_summarize_chat(
+    ai: State<'_, AiService>,
+    identity: State<'_, std::sync::Mutex<IdentityManager>>,
+    app_handle: AppHandle,
+    conversation_id: String,
+    is_group: bool,
+    message_limit: Option<u32>,
+) -> Result<SummarizeResponse, String> {
+    let local_device_id = {
+        let mgr = identity.lock().map_err(|e| e.to_string())?;
+        mgr.device_id().to_string()
+    };
+
+    let req = SummarizeRequest {
+        conversation_id,
+        is_group,
+        message_limit,
+    };
+
+    ai.summarize_chat(&req, &local_device_id, Some(&app_handle))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Generate smart reply suggestions for a conversation.
+#[tauri::command]
+pub async fn ai_smart_reply(
+    ai: State<'_, AiService>,
+    identity: State<'_, std::sync::Mutex<IdentityManager>>,
+    app_handle: AppHandle,
+    conversation_id: String,
+    is_group: bool,
+    count: Option<u32>,
+) -> Result<SmartReplyResponse, String> {
+    let local_device_id = {
+        let mgr = identity.lock().map_err(|e| e.to_string())?;
+        mgr.device_id().to_string()
+    };
+
+    let req = SmartReplyRequest {
+        conversation_id,
+        is_group,
+        count,
+    };
+
+    ai.smart_reply(&req, &local_device_id, Some(&app_handle))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Ask the AI assistant a free-form question, optionally with conversation context.
+#[tauri::command]
+pub async fn ai_ask(
+    ai: State<'_, AiService>,
+    identity: State<'_, std::sync::Mutex<IdentityManager>>,
+    app_handle: AppHandle,
+    prompt: String,
+    context_conversation_id: Option<String>,
+    context_is_group: Option<bool>,
+) -> Result<AskResponse, String> {
+    let local_device_id = {
+        let mgr = identity.lock().map_err(|e| e.to_string())?;
+        mgr.device_id().to_string()
+    };
+
+    let req = AskRequest {
+        prompt,
+        context_conversation_id,
+        context_is_group,
+    };
+
+    ai.ask(&req, &local_device_id, Some(&app_handle))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Perform an AI-powered semantic search across all messages.
+#[tauri::command]
+pub async fn ai_smart_search(
+    ai: State<'_, AiService>,
+    identity: State<'_, std::sync::Mutex<IdentityManager>>,
+    app_handle: AppHandle,
+    query: String,
+    limit: Option<u32>,
+) -> Result<SmartSearchResponse, String> {
+    let local_device_id = {
+        let mgr = identity.lock().map_err(|e| e.to_string())?;
+        mgr.device_id().to_string()
+    };
+
+    let req = SmartSearchRequest { query, limit };
+
+    ai.smart_search(&req, &local_device_id, Some(&app_handle))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Analyze the tone, topics, and sentiment of a conversation.
+#[tauri::command]
+pub async fn ai_analyze_chat(
+    ai: State<'_, AiService>,
+    identity: State<'_, std::sync::Mutex<IdentityManager>>,
+    app_handle: AppHandle,
+    conversation_id: String,
+    is_group: bool,
+) -> Result<AnalyzeResponse, String> {
+    let local_device_id = {
+        let mgr = identity.lock().map_err(|e| e.to_string())?;
+        mgr.device_id().to_string()
+    };
+
+    let req = AnalyzeRequest {
+        conversation_id,
+        is_group,
+    };
+
+    ai.analyze_chat(&req, &local_device_id, Some(&app_handle))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Get the AI assistant conversation history (in-memory, current session).
+#[tauri::command]
+pub async fn ai_get_conversation_history(
+    ai: State<'_, AiService>,
+) -> Result<Vec<AiChatMessage>, String> {
+    Ok(ai.get_conversation_history().await)
+}
+
+/// Clear the AI assistant conversation history.
+#[tauri::command]
+pub async fn ai_clear_conversation_history(
+    ai: State<'_, AiService>,
+) -> Result<(), String> {
+    ai.clear_conversation_history().await;
+    Ok(())
 }
