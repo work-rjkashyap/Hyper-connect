@@ -1453,7 +1453,11 @@ impl FileTransferService {
     }
 
     /// Accept an incoming file transfer
-    pub async fn accept_transfer(&self, transfer_id: &str) -> Result<(), String> {
+    pub async fn accept_transfer(
+        &self,
+        transfer_id: &str,
+        target_dir: Option<PathBuf>,
+    ) -> Result<(), String> {
         let now = chrono::Utc::now().timestamp();
         let file_path_str;
 
@@ -1465,7 +1469,11 @@ impl FileTransferService {
                 return Err("Transfer is not awaiting acceptance".to_string());
             }
 
-            let file_path = self.transfer_dir.join(&transfer.filename);
+            let save_dir = target_dir.as_deref().unwrap_or(&self.transfer_dir);
+            if let Err(e) = std::fs::create_dir_all(save_dir) {
+                eprintln!("⚠️  Failed to create download dir {:?}: {}", save_dir, e);
+            }
+            let file_path = save_dir.join(&transfer.filename);
             file_path_str = file_path.to_string_lossy().to_string();
 
             transfer.file_path = Some(file_path_str.clone());

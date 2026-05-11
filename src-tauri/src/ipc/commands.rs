@@ -38,6 +38,175 @@ pub struct TcpPort(pub u16);
 /// Defaults to the system Downloads folder when not explicitly set.
 pub struct DownloadDir(pub Mutex<Option<PathBuf>>);
 
+// ── Android: copy a content:// URI to a real file via JNI ContentResolver ───
+
+#[cfg(target_os = "android")]
+fn copy_content_uri_jni(uri_str: &str, dest: &std::path::Path) -> Result<(), String> {
+    use jni::objects::{JObject, JValue};
+    use std::io::Write;
+
+    // Obtain the JVM and Android activity that ndk-context set up at process start.
+    let ctx = ndk_context::android_context();
+    let vm = unsafe { jni::JavaVM::from_raw(ctx.vm().cast()) }
+        .map_err(|e| format!("JavaVM init: {e}"))?;
+    let mut env = vm
+        .attach_current_thread()
+        .map_err(|e| format!("JNI attach: {e}"))?;
+
+    let activity = unsafe { JObject::from_raw(ctx.context().cast()) };
+
+    // ContentResolver resolver = activity.getContentResolver();
+    let resolver = env
+        .call_method(&activity, "getContentResolver", "()Landroid/content/ContentResolver;", &[])
+        .map_err(|e| format!("getContentResolver: {e}"))?
+        .l()
+        .map_err(|e| format!("ContentResolver l(): {e}"))?;
+
+    // Uri uri = Uri.parse(uriStr);
+    let uri_jstr = env.new_string(uri_str).map_err(|e| format!("new_string: {e}"))?;
+    let uri_class = env.find_class("android/net/Uri").map_err(|e| format!("find Uri: {e}"))?;
+    let uri_obj = env
+        .call_static_method(
+            uri_class,
+            "parse",
+            "(Ljava/lang/String;)Landroid/net/Uri;",
+            &[JValue::from(&uri_jstr)],
+        )
+        .map_err(|e| format!("Uri.parse: {e}"))?
+        .l()
+        .map_err(|e| format!("Uri l(): {e}"))?;
+
+    // InputStream is = resolver.openInputStream(uri);
+    let input_stream = env
+        .call_method(
+            &resolver,
+            "openInputStream",
+            "(Landroid/net/Uri;)Ljava/io/InputStream;",
+            &[JValue::from(&uri_obj)],
+        )
+        .map_err(|e| format!("openInputStream: {e}"))?
+        .l()
+        .map_err(|e| format!("InputStream l(): {e}"))?;
+
+    if input_stream.is_null() {
+        return Err(format!("ContentResolver returned null stream for {}", uri_str));
+    }
+
+    // Read in 64KB chunks
+    let buf_size = 65536i32;
+    let byte_array = env.new_byte_array(buf_size).map_err(|e| format!("new_byte_array: {e}"))?;
+
+    let mut dest_file = std::fs::File::create(dest)
+        .map_err(|e| format!("create dest file: {e}"))?;
+
+    loop {
+        let n = env
+            .call_method(&input_stream, "read", "([B)I", &[JValue::from(&byte_array)])
+            .map_err(|e| format!("InputStream.read: {e}"))?
+            .i()
+            .map_err(|e| format!("read i(): {e}"))?;
+
+        if n <= 0 {
+            break;
+        }
+
+        let chunk = env
+            .convert_byte_array(&byte_array)
+            .map_err(|e| format!("convert_byte_array: {e}"))?;
+
+        dest_file
+            .write_all(&chunk[..n as usize])
+            .map_err(|e| format!("write chunk: {e}"))?;
+    }
+
+    let _ = env.call_method(&input_stream, "close", "()V", &[]);
+
+    Ok(())
+}
+
+fn push_unique_address(addresses: &mut Vec<String>, address: String) {
+    if !address.is_empty() && !addresses.iter().any(|existing| existing == &address) {
+        addresses.push(address);
+    }
+}
+
+async fn candidate_peer_endpoints(
+    discovery: &Arc<MdnsDiscoveryService>,
+    device_id: &str,
+    fallback_address: Option<&str>,
+    fallback_port: Option<u16>,
+) -> Vec<(String, u16)> {
+    let mut addresses = Vec::new();
+    let mut port = fallback_port;
+
+    let devices = discovery.get_devices().await;
+    if let Some(peer) = devices.iter().find(|d| d.id == device_id) {
+        port = Some(port.unwrap_or(peer.port));
+        for address in &peer.addresses {
+            push_unique_address(&mut addresses, address.clone());
+        }
+    }
+
+    if let Some(address) = fallback_address {
+        push_unique_address(&mut addresses, address.to_string());
+    }
+
+    let port = port.unwrap_or(8080);
+    addresses.into_iter().map(|address| (address, port)).collect()
+}
+
+async fn resolve_reachable_message_endpoint(
+    messaging: &MessagingService,
+    discovery: &Arc<MdnsDiscoveryService>,
+    device_id: &str,
+    fallback_address: Option<&str>,
+    fallback_port: Option<u16>,
+    app_handle: &AppHandle,
+) -> Result<(String, u16), String> {
+    let candidates = candidate_peer_endpoints(discovery, device_id, fallback_address, fallback_port).await;
+
+    if candidates.is_empty() {
+        return Err(format!("Device {} has no reachable endpoints", device_id));
+    }
+
+    let mut last_error = None;
+    for (address, port) in &candidates {
+        match messaging
+            .ensure_connected(device_id, address, Some(*port), app_handle.clone())
+            .await
+        {
+            Ok(_) => return Ok((address.clone(), *port)),
+            Err(error) => last_error = Some(format!("{}:{} -> {}", address, port, error)),
+        }
+    }
+
+    Err(last_error.unwrap_or_else(|| format!("Unable to reach device {}", device_id)))
+}
+
+async fn resolve_reachable_tcp_endpoint(
+    tcp_client: &Arc<TcpClient>,
+    discovery: &Arc<MdnsDiscoveryService>,
+    device_id: &str,
+    fallback_address: Option<&str>,
+    fallback_port: Option<u16>,
+) -> Result<(String, u16), String> {
+    let candidates = candidate_peer_endpoints(discovery, device_id, fallback_address, fallback_port).await;
+
+    if candidates.is_empty() {
+        return Err(format!("Device {} has no reachable endpoints", device_id));
+    }
+
+    let mut last_error = None;
+    for (address, port) in &candidates {
+        match tcp_client.ensure_connected(device_id, address, *port).await {
+            Ok(_) => return Ok((address.clone(), *port)),
+            Err(error) => last_error = Some(format!("{}:{} -> {}", address, port, error)),
+        }
+    }
+
+    Err(last_error.unwrap_or_else(|| format!("Unable to reach device {}", device_id)))
+}
+
 // ============================================================================
 // Connection Health Commands
 // ============================================================================
@@ -56,13 +225,29 @@ pub struct DownloadDir(pub Mutex<Option<PathBuf>>);
 #[tauri::command]
 pub async fn ping_device(
     messaging: State<'_, MessagingService>,
+    discovery: State<'_, Arc<MdnsDiscoveryService>>,
     device_id: String,
     peer_address: String,
     peer_port: Option<u16>,
     app_handle: AppHandle,
 ) -> Result<u64, String> {
+    let (resolved_address, resolved_port) = resolve_reachable_message_endpoint(
+        &messaging,
+        discovery.inner(),
+        &device_id,
+        Some(&peer_address),
+        peer_port,
+        &app_handle,
+    )
+    .await?;
+
     messaging
-        .ensure_connected(&device_id, &peer_address, peer_port, app_handle)
+        .ensure_connected(
+            &device_id,
+            &resolved_address,
+            Some(resolved_port),
+            app_handle,
+        )
         .await
 }
 
@@ -130,6 +315,7 @@ pub fn get_local_device_id(discovery: State<Arc<MdnsDiscoveryService>>) -> Strin
 #[tauri::command]
 pub async fn send_message(
     messaging: State<'_, MessagingService>,
+    discovery: State<'_, Arc<MdnsDiscoveryService>>,
     from_device_id: String,
     to_device_id: String,
     content: String,
@@ -137,6 +323,27 @@ pub async fn send_message(
     peer_port: Option<u16>,
     app_handle: AppHandle,
 ) -> Result<Message, String> {
+    let resolved = resolve_reachable_message_endpoint(
+        &messaging,
+        discovery.inner(),
+        &to_device_id,
+        Some(&peer_address),
+        peer_port,
+        &app_handle,
+    )
+    .await;
+
+    let (peer_address, peer_port) = match resolved {
+        Ok((address, port)) => (address, Some(port)),
+        Err(error) => {
+            eprintln!(
+                "⚠️ Failed to pre-resolve reachable endpoint for {}: {}",
+                to_device_id, error
+            );
+            (peer_address, peer_port)
+        }
+    };
+
     let message_type = MessageType::Text { content };
     messaging
         .send_message(
@@ -258,20 +465,18 @@ pub async fn flush_message_queue(
     device_id: String,
     app_handle: AppHandle,
 ) -> Result<FlushResult, String> {
-    // Look up the device's current address from mDNS discovery
-    let devices = discovery.get_devices().await;
-    let peer = devices
-        .iter()
-        .find(|d| d.id == device_id)
-        .ok_or_else(|| format!("Device {} not found in discovery", device_id))?;
-
-    let peer_address = peer
-        .addresses
-        .first()
-        .ok_or_else(|| format!("Device {} has no network address", device_id))?;
+    let (peer_address, peer_port) = resolve_reachable_message_endpoint(
+        &messaging,
+        discovery.inner(),
+        &device_id,
+        None,
+        None,
+        &app_handle,
+    )
+    .await?;
 
     let flushed = messaging
-        .flush_queue_for_device(&device_id, peer_address, peer.port, app_handle)
+        .flush_queue_for_device(&device_id, &peer_address, peer_port, app_handle)
         .await;
 
     let remaining = messaging.queued_count_for_device(&device_id).await;
@@ -303,11 +508,40 @@ pub async fn get_queued_count(
 #[tauri::command]
 pub async fn create_transfer(
     file_transfer: State<'_, FileTransferService>,
+    app_handle: AppHandle,
     filename: String,
     file_path: String,
     from_device_id: String,
     to_device_id: String,
 ) -> Result<FileTransfer, String> {
+    // On Android the dialog returns a content:// URI, not a real filesystem
+    // path. Use Android's ContentResolver (via JNI) to copy the file into
+    // the app's temp directory, then pass the real path to the transfer logic.
+    #[cfg(target_os = "android")]
+    let file_path = {
+        if file_path.starts_with("content://") {
+            use tauri::Manager;
+            use std::io::Write;
+
+            let tmp_dir = app_handle
+                .path()
+                .temp_dir()
+                .map_err(|e| format!("Failed to get temp dir: {}", e))?;
+            std::fs::create_dir_all(&tmp_dir)
+                .map_err(|e| format!("Failed to create temp dir: {}", e))?;
+            let tmp_path = tmp_dir.join(&filename);
+
+            copy_content_uri_jni(&file_path, &tmp_path)?;
+
+            tmp_path.to_string_lossy().to_string()
+        } else {
+            file_path
+        }
+    };
+
+    #[cfg(not(target_os = "android"))]
+    let _ = app_handle; // suppress unused warning
+
     file_transfer
         .create_transfer(filename, file_path, from_device_id, to_device_id)
         .await
@@ -316,12 +550,35 @@ pub async fn create_transfer(
 #[tauri::command]
 pub async fn start_transfer(
     file_transfer: State<'_, FileTransferService>,
+    discovery: State<'_, Arc<MdnsDiscoveryService>>,
     transfer_id: String,
     peer_address: String,
     app_handle: AppHandle,
 ) -> Result<(), String> {
+    let to_device_id = {
+        let transfers = file_transfer.transfers.lock().await;
+        let transfer = transfers
+            .get(&transfer_id)
+            .ok_or("Transfer not found")?;
+        transfer.to_device_id.clone()
+    };
+
+    let tcp_client = file_transfer
+        .tcp_client_ref()
+        .ok_or("TCP client not initialized")?
+        .clone();
+
+    let (resolved_address, _) = resolve_reachable_tcp_endpoint(
+        &tcp_client,
+        discovery.inner(),
+        &to_device_id,
+        Some(&peer_address),
+        None,
+    )
+    .await?;
+
     file_transfer
-        .start_transfer(&transfer_id, Some(peer_address), app_handle)
+        .start_transfer(&transfer_id, Some(resolved_address), app_handle)
         .await
 }
 
@@ -329,11 +586,28 @@ pub async fn start_transfer(
 pub async fn accept_transfer(
     file_transfer: State<'_, FileTransferService>,
     discovery: State<'_, Arc<MdnsDiscoveryService>>,
+    download_dir: State<'_, DownloadDir>,
     transfer_id: String,
     app_handle: AppHandle,
 ) -> Result<(), String> {
+    // Resolve target directory: user's chosen dir → Android app dir → transfer_dir fallback
+    let target_dir: Option<PathBuf> = {
+        let guard = download_dir.0.lock().await;
+        guard.clone()
+    };
+
+    // On Android, if no explicit dir is set, default to app_data_dir/downloads
+    #[cfg(target_os = "android")]
+    let target_dir = Some(target_dir.unwrap_or_else(|| {
+        app_handle
+            .path()
+            .app_data_dir()
+            .unwrap_or_else(|_| PathBuf::from("/data/data"))
+            .join("downloads")
+    }));
+
     // 1. Accept locally (sets status to InProgress, assigns download path)
-    file_transfer.accept_transfer(&transfer_id).await?;
+    file_transfer.accept_transfer(&transfer_id, target_dir).await?;
 
     // 2. Look up the sender's address so we can send the ACK back
     let sender_device_id = {
@@ -352,19 +626,28 @@ pub async fn accept_transfer(
 
     let devices = discovery.get_devices().await;
     if let Some(sender) = devices.iter().find(|d| d.id == sender_device_id) {
-        if let Some(addr) = sender.addresses.first() {
+        if let Some(ref tcp_client) = file_transfer.tcp_client_ref() {
+            let resolved = resolve_reachable_tcp_endpoint(
+                tcp_client,
+                discovery.inner(),
+                &sender_device_id,
+                sender.addresses.first().map(String::as_str),
+                Some(tcp_port),
+            )
+            .await;
+
+            if let Ok((addr, port)) = resolved {
             // Send FILE_ACK so the sender knows to start streaming
             let ack = FileAckPayload {
                 transfer_id: transfer_id.clone(),
                 offset: 0,
             };
             if let Ok(payload) = serialize_json(&ack) {
-                if let Some(ref tcp_client) = file_transfer.tcp_client_ref() {
-                    let _ = tcp_client
-                        .send_file_ack(&sender_device_id, addr, tcp_port, payload)
-                        .await;
-                    println!("✓ Sent FILE_ACK to {}", sender_device_id);
-                }
+                let _ = tcp_client
+                    .send_file_ack(&sender_device_id, &addr, port, payload)
+                    .await;
+                println!("✓ Sent FILE_ACK to {} via {}:{}", sender_device_id, addr, port);
+            }
             }
         }
     }
@@ -398,19 +681,28 @@ pub async fn reject_transfer(
 
     let devices = discovery.get_devices().await;
     if let Some(sender) = devices.iter().find(|d| d.id == sender_device_id) {
-        if let Some(addr) = sender.addresses.first() {
+        if let Some(ref tcp_client) = file_transfer.tcp_client_ref() {
+            let resolved = resolve_reachable_tcp_endpoint(
+                tcp_client,
+                discovery.inner(),
+                &sender_device_id,
+                sender.addresses.first().map(String::as_str),
+                Some(tcp_port),
+            )
+            .await;
+
+            if let Ok((addr, port)) = resolved {
             let reject = FileRejectPayload {
                 msg_type: "FILE_REJECT".to_string(),
                 transfer_id: transfer_id.clone(),
                 reason: "Declined by receiver".to_string(),
             };
             if let Ok(payload) = serialize_json(&reject) {
-                if let Some(ref tcp_client) = file_transfer.tcp_client_ref() {
-                    let _ = tcp_client
-                        .send_file_reject(&sender_device_id, addr, tcp_port, payload)
-                        .await;
-                    println!("✓ Sent FILE_REJECT to {}", sender_device_id);
-                }
+                let _ = tcp_client
+                    .send_file_reject(&sender_device_id, &addr, port, payload)
+                    .await;
+                println!("✓ Sent FILE_REJECT to {} via {}:{}", sender_device_id, addr, port);
+            }
             }
         }
     }
@@ -444,12 +736,35 @@ pub async fn get_transfers(
 #[tauri::command]
 pub async fn resume_transfer(
     file_transfer: State<'_, FileTransferService>,
+    discovery: State<'_, Arc<MdnsDiscoveryService>>,
     transfer_id: String,
     peer_address: String,
     app_handle: AppHandle,
 ) -> Result<(), String> {
+    let to_device_id = {
+        let transfers = file_transfer.transfers.lock().await;
+        let transfer = transfers
+            .get(&transfer_id)
+            .ok_or("Transfer not found")?;
+        transfer.to_device_id.clone()
+    };
+
+    let tcp_client = file_transfer
+        .tcp_client_ref()
+        .ok_or("TCP client not initialized")?
+        .clone();
+
+    let (resolved_address, _) = resolve_reachable_tcp_endpoint(
+        &tcp_client,
+        discovery.inner(),
+        &to_device_id,
+        Some(&peer_address),
+        None,
+    )
+    .await?;
+
     file_transfer
-        .resume_transfer(&transfer_id, Some(peer_address), app_handle)
+        .resume_transfer(&transfer_id, Some(resolved_address), app_handle)
         .await
 }
 
@@ -477,6 +792,7 @@ pub fn get_tcp_port(tcp_port: State<TcpPort>) -> u16 {
 ///
 /// If the user has set a custom path via `set_download_dir`, that path is
 /// returned.  Otherwise the platform's standard Downloads folder is used.
+/// On Android the writable app-scoped downloads dir is always returned.
 #[tauri::command]
 pub async fn get_default_downloads_dir(
     download_dir: State<'_, DownloadDir>,
@@ -489,7 +805,20 @@ pub async fn get_default_downloads_dir(
     }
     drop(guard);
 
-    // Fall back to system Downloads directory
+    // Android: scoped storage — use app data dir / downloads (always writable)
+    #[cfg(target_os = "android")]
+    {
+        let dir = app_handle
+            .path()
+            .app_data_dir()
+            .map_err(|e| format!("Failed to get app data dir: {}", e))?
+            .join("downloads");
+        let _ = std::fs::create_dir_all(&dir);
+        return Ok(dir.to_string_lossy().to_string());
+    }
+
+    // Desktop: fall back to system Downloads directory
+    #[cfg(not(target_os = "android"))]
     if let Some(dirs) = dirs::download_dir() {
         Ok(dirs.to_string_lossy().to_string())
     } else {
@@ -505,11 +834,31 @@ pub async fn get_default_downloads_dir(
 }
 
 /// Let the user change where received files are saved.
+/// On Android, content:// URIs cannot be used with std::fs, so the
+/// app-scoped downloads directory is always used regardless of the path arg.
 #[tauri::command]
 pub async fn set_download_dir(
     download_dir: State<'_, DownloadDir>,
+    app_handle: AppHandle,
     path: String,
 ) -> Result<(), String> {
+    #[cfg(target_os = "android")]
+    let path = {
+        // Ignore content:// URI — resolve to the writable app downloads dir
+        let _ = path;
+        let dir = app_handle
+            .path()
+            .app_data_dir()
+            .map_err(|e| format!("Failed to get app data dir: {}", e))?
+            .join("downloads");
+        std::fs::create_dir_all(&dir)
+            .map_err(|e| format!("Failed to create downloads dir: {}", e))?;
+        dir.to_string_lossy().to_string()
+    };
+
+    #[cfg(not(target_os = "android"))]
+    let _ = app_handle;
+
     let p = PathBuf::from(&path);
     if !p.is_dir() {
         return Err(format!("Path is not a valid directory: {}", path));

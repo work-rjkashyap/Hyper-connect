@@ -671,9 +671,9 @@ export default function AiChatPage() {
 	}
 
 	return (
-		<div className="flex flex-col h-full relative">
+		<div className="relative flex h-full min-h-0 flex-col overflow-hidden">
 			{/* Header */}
-			<div className="shrink-0 flex items-center justify-between px-4 py-3 border-b border-border/50">
+			<div className="shrink-0 flex items-center justify-between border-b border-border/50 bg-background/95 px-4 py-3 backdrop-blur-sm">
 				<div className="flex items-center gap-3">
 					<Button
 						variant="ghost"
@@ -824,7 +824,7 @@ export default function AiChatPage() {
 			)}
 
 			{/* Chat Content */}
-			<div ref={scrollRef} className="flex-1 overflow-y-auto">
+			<div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
 				<div className="max-w-2xl mx-auto px-4 py-6 space-y-4">
 					{/* Quick Actions (shown when empty) */}
 					{showQuickActions && (

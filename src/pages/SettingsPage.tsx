@@ -3,7 +3,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
+
 import { Badge } from "@/components/ui/badge";
 import {
 	AlertDialog,
@@ -51,6 +51,7 @@ import {
 import { useMeshRouting } from "@/hooks/use-mesh-routing";
 import { useAi } from "@/hooks/use-ai";
 import type { AiModel } from "@/types";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 export default function SettingsPage() {
 	const {
@@ -137,6 +138,7 @@ export default function SettingsPage() {
 		downloadDir || "",
 	);
 	const [isLoadingDir, setIsLoadingDir] = useState(false);
+	const isMobile = useIsMobile();
 
 	const [settings, setSettings] = [
 		appSettings,
@@ -160,15 +162,18 @@ export default function SettingsPage() {
 		setHasUnsavedChanges(localDeviceName !== deviceName);
 	}, [localDeviceName, deviceName]);
 
-	const handleSave = () => {
+	const handleSave = async () => {
+		if (!localDeviceName.trim()) return;
 		setIsSaving(true);
-		if (localDeviceName.trim()) {
-			setDeviceName(localDeviceName);
-		}
-		setTimeout(() => {
-			setIsSaving(false);
+		try {
+			await invoke("update_display_name", { name: localDeviceName.trim() });
+			setDeviceName(localDeviceName.trim());
 			setHasUnsavedChanges(false);
-		}, 800);
+		} catch (err) {
+			console.error("Failed to update display name:", err);
+		} finally {
+			setIsSaving(false);
+		}
 	};
 
 	const handleResetApp = async () => {
@@ -236,32 +241,53 @@ export default function SettingsPage() {
 	};
 
 	return (
-		<div className="flex flex-col h-full bg-background overflow-hidden">
-			{/* Header */}
-			<header className="flex h-14 shrink-0 items-center border-b border-border px-6 bg-background sticky top-0 z-10">
-				<div className="flex items-center gap-3">
-					<div className="flex h-8 w-8 items-center justify-center rounded-lg bg-muted shrink-0">
-						<SettingsIcon className="h-4 w-4 text-foreground/70" />
+		<div className="flex flex-col h-full bg-background text-foreground font-sans selection:bg-primary/30 relative">
+			{/* Subtle Ambient Background */}
+			<div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] bg-primary/10 rounded-full blur-[140px] pointer-events-none" />
+			<div className="absolute bottom-[-20%] right-[-10%] w-[50%] h-[50%] bg-primary/5 rounded-full blur-[140px] pointer-events-none" />
+
+			{/* Sticky Top Navigation */}
+			<header className="hidden md:block flex-none px-6 py-5 sticky top-0 z-20 bg-background/70 backdrop-blur-2xl border-b border-border/50">
+				<div className="flex flex-col md:flex-row md:items-center justify-between max-w-4xl mx-auto gap-4">
+					<div className="flex items-center gap-3">
+						<div className="w-8 h-8 rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center border border-primary/20">
+							<SettingsIcon className="w-4 h-4 text-primary" />
+						</div>
+						<h1 className="text-lg font-semibold tracking-tight font-sans">Preferences</h1>
 					</div>
-					<div>
-						<h1 className="text-sm font-semibold tracking-tight">
-							App Settings
-						</h1>
-						<p className="text-xs text-muted-foreground">
-							Configure your Hyper Connect experience
-						</p>
+
+					<div className="flex items-center overflow-x-auto bg-foreground/[0.03] p-1 rounded-full border border-border/50 shadow-inner hide-scrollbar">
+						{[
+							{ id: 'general', icon: User, label: 'General' },
+							{ id: 'appearance', icon: Palette, label: 'Appearance' },
+							{ id: 'network', icon: Wifi, label: 'Network' },
+							{ id: 'ai', icon: Sparkles, label: 'AI' },
+							{ id: 'security', icon: Shield, label: 'Security' },
+						].map(tab => (
+							<button
+								key={tab.id}
+								onClick={() => {
+									const el = document.getElementById(tab.id);
+									el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+								}}
+								className="flex items-center gap-1.5 px-4 py-1.5 rounded-full text-[12px] font-medium text-muted-foreground hover:text-foreground hover:bg-foreground/10 transition-all whitespace-nowrap"
+							>
+								<tab.icon className="w-3.5 h-3.5" />
+								{tab.label}
+							</button>
+						))}
 					</div>
 				</div>
 			</header>
 
-			{/* Content Area */}
-			<ScrollArea className="flex-1">
-				<div className="max-w-2xl mx-auto p-6 space-y-8">
-					{/* ── General ── */}
-					<section id="general">
+			{/* Main Content Area */}
+			<main className={cn("flex-1 overflow-y-auto relative scroll-smooth", isMobile ? "px-4 py-4" : "p-6 md:p-10")}>
+				<div className={cn("max-w-3xl mx-auto pb-32", isMobile ? "space-y-8" : "space-y-16")}>
+						{/* ── General ── */}
+						<section id="general">
 						<div className="flex items-center gap-3 mb-4">
-							<div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-violet-500/10">
-								<User className="h-4 w-4 text-violet-600 dark:text-violet-400" />
+							<div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10">
+								<User className="h-4 w-4 text-primary dark:text-primary/80" />
 							</div>
 							<div>
 								<h2 className="text-sm font-semibold tracking-tight">
@@ -273,7 +299,7 @@ export default function SettingsPage() {
 								</p>
 							</div>
 						</div>
-						<Card className="shadow-sm">
+						<Card className="shadow-2xl dark:shadow-black/50 shadow-foreground/5 border-border/50 bg-foreground/[0.02] backdrop-blur-xl rounded-2xl">
 							<CardContent className="p-6 space-y-4">
 								<div className="space-y-2">
 									<Label
@@ -291,15 +317,25 @@ export default function SettingsPage() {
 													e.target.value,
 												)
 											}
+											onKeyDown={(e) => e.key === "Enter" && handleSave()}
 											placeholder="Enter device name"
 											className="max-w-xs"
 										/>
-										<Badge
-											variant="outline"
-											className="h-9 px-3 font-medium text-xs shrink-0"
+										<Button
+											onClick={handleSave}
+											disabled={!hasUnsavedChanges || isSaving}
+											size="sm"
+											className="gap-1.5 shrink-0 h-9"
 										>
-											Active
-										</Badge>
+											{isSaving ? (
+												<RefreshCw className="h-3.5 w-3.5 animate-spin" />
+											) : hasUnsavedChanges ? (
+												<Save className="h-3.5 w-3.5" />
+											) : (
+												<Check className="h-3.5 w-3.5" />
+											)}
+											{isSaving ? "Saving…" : "Save"}
+										</Button>
 									</div>
 									<p className="text-xs text-muted-foreground">
 										This name will be broadcasted via mDNS
@@ -325,7 +361,7 @@ export default function SettingsPage() {
 								</p>
 							</div>
 						</div>
-						<Card className="shadow-sm">
+						<Card className="shadow-2xl dark:shadow-black/50 shadow-foreground/5 border-border/50 bg-foreground/[0.02] backdrop-blur-xl rounded-2xl">
 							<CardContent className="p-0">
 								{/* Theme toggle row */}
 								<div className="flex items-center justify-between p-4 border-b border-border">
@@ -494,7 +530,7 @@ export default function SettingsPage() {
 								</p>
 							</div>
 						</div>
-						<Card className="shadow-sm">
+						<Card className="shadow-2xl dark:shadow-black/50 shadow-foreground/5 border-border/50 bg-foreground/[0.02] backdrop-blur-xl rounded-2xl">
 							<CardContent className="p-6 space-y-6">
 								<div className="flex items-center justify-between">
 									<div className="space-y-0.5">
@@ -559,7 +595,7 @@ export default function SettingsPage() {
 									<div className="flex items-center justify-between">
 										<div className="space-y-0.5">
 											<Label className="text-sm font-medium flex items-center gap-1.5">
-												<GitBranch className="h-3.5 w-3.5 text-violet-500" />
+												<GitBranch className="h-3.5 w-3.5 text-primary" />
 												Mesh Routing
 											</Label>
 											<p className="text-xs text-muted-foreground">
@@ -580,7 +616,7 @@ export default function SettingsPage() {
 										<div className="flex items-center gap-3 text-xs text-muted-foreground">
 											{relayedDestinations > 0 && (
 												<span className="flex items-center gap-1">
-													<GitBranch className="h-3 w-3 text-violet-500" />
+													<GitBranch className="h-3 w-3 text-primary" />
 													{relayedDestinations} mesh
 													route
 													{relayedDestinations !== 1
@@ -620,8 +656,8 @@ export default function SettingsPage() {
 					{/* ── AI Assistant ── */}
 					<section id="ai">
 						<div className="flex items-center gap-3 mb-4">
-							<div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-violet-500/10">
-								<Sparkles className="h-4 w-4 text-violet-600 dark:text-violet-400" />
+							<div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10">
+								<Sparkles className="h-4 w-4 text-primary dark:text-primary/80" />
 							</div>
 							<div>
 								<h2 className="text-sm font-semibold tracking-tight">
@@ -632,7 +668,7 @@ export default function SettingsPage() {
 								</p>
 							</div>
 						</div>
-						<Card className="shadow-sm overflow-hidden">
+						<Card className="shadow-2xl dark:shadow-black/50 shadow-foreground/5 border-border/50 bg-foreground/[0.02] backdrop-blur-xl rounded-2xl overflow-hidden">
 							<CardContent className="p-4 space-y-4">
 								{/* Status */}
 								<div className="flex items-center justify-between">
@@ -673,7 +709,7 @@ export default function SettingsPage() {
 								{/* API Key */}
 								<div className="space-y-2 p-4 rounded-lg bg-muted/50 border border-border">
 									<Label className="text-sm font-medium flex items-center gap-1.5">
-										<KeyRound className="h-3.5 w-3.5 text-violet-500" />
+										<KeyRound className="h-3.5 w-3.5 text-primary" />
 										Gemini API Key
 									</Label>
 									{isAiReady ? (
@@ -758,7 +794,7 @@ export default function SettingsPage() {
 								{isAiReady && (
 									<div className="space-y-2 p-4 rounded-lg bg-muted/50 border border-border">
 										<Label className="text-sm font-medium flex items-center gap-1.5">
-											<Sparkles className="h-3.5 w-3.5 text-violet-500" />
+											<Sparkles className="h-3.5 w-3.5 text-primary" />
 											Model
 										</Label>
 										<div className="grid grid-cols-3 gap-2">
@@ -819,7 +855,7 @@ export default function SettingsPage() {
 								</p>
 							</div>
 						</div>
-						<Card className="shadow-sm overflow-hidden">
+						<Card className="shadow-2xl dark:shadow-black/50 shadow-foreground/5 border-border/50 bg-foreground/[0.02] backdrop-blur-xl rounded-2xl overflow-hidden">
 							<CardContent className="p-0">
 								{/* Encryption banner */}
 								<div className="flex items-start gap-3 p-4 bg-emerald-500/5 border-b border-border">
@@ -908,44 +944,60 @@ export default function SettingsPage() {
 								</p>
 							</div>
 						</div>
-						<Card className="shadow-sm">
+						<Card className="shadow-2xl dark:shadow-black/50 shadow-foreground/5 border-border/50 bg-foreground/[0.02] backdrop-blur-xl rounded-2xl">
 							<CardContent className="p-6 space-y-4">
 								<div className="space-y-2">
 									<Label className="text-sm font-medium">
 										Download Folder
 									</Label>
-									<div className="flex items-center gap-2">
-										<div className="flex-1 min-w-0 flex items-center gap-2 px-3 py-2 rounded-lg bg-muted/50 border border-border">
-											<FolderOpen className="h-4 w-4 text-muted-foreground shrink-0" />
-											<span className="text-sm text-foreground truncate font-mono">
-												{displayDownloadDir ||
-													"Loading…"}
-											</span>
-										</div>
-										<Button
-											variant="outline"
-											size="sm"
-											className="h-9 px-3 text-xs font-medium shrink-0"
-											onClick={handleChangeDownloadDir}
-											disabled={isLoadingDir}
-										>
-											{isLoadingDir ? "…" : "Change"}
-										</Button>
-										<Button
-											variant="ghost"
-											size="sm"
-											className="h-9 w-9 shrink-0 text-muted-foreground hover:text-foreground"
-											onClick={handleOpenDownloadDir}
-											title="Open folder"
-										>
-											<ExternalLink className="h-4 w-4" />
-										</Button>
-									</div>
-									<p className="text-xs text-muted-foreground">
-										Files received from other devices will
-										be saved to this folder. Click "Change"
-										to pick a different location.
-									</p>
+									{deviceIdentity?.platform === "android" ? (
+										<>
+											<div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-muted/50 border border-border">
+												<FolderOpen className="h-4 w-4 text-muted-foreground shrink-0" />
+												<span className="text-sm text-foreground truncate font-mono">
+													App downloads folder
+												</span>
+											</div>
+											<p className="text-xs text-muted-foreground">
+												On Android, received files are saved to the app's internal downloads folder due to system storage restrictions.
+											</p>
+										</>
+									) : (
+										<>
+											<div className="flex items-center gap-2">
+												<div className="flex-1 min-w-0 flex items-center gap-2 px-3 py-2 rounded-lg bg-muted/50 border border-border">
+													<FolderOpen className="h-4 w-4 text-muted-foreground shrink-0" />
+													<span className="text-sm text-foreground truncate font-mono">
+														{displayDownloadDir ||
+															"Loading…"}
+													</span>
+												</div>
+												<Button
+													variant="outline"
+													size="sm"
+													className="h-9 px-3 text-xs font-medium shrink-0"
+													onClick={handleChangeDownloadDir}
+													disabled={isLoadingDir}
+												>
+													{isLoadingDir ? "…" : "Change"}
+												</Button>
+												<Button
+													variant="ghost"
+													size="sm"
+													className="h-9 w-9 shrink-0 text-muted-foreground hover:text-foreground"
+													onClick={handleOpenDownloadDir}
+													title="Open folder"
+												>
+													<ExternalLink className="h-4 w-4" />
+												</Button>
+											</div>
+											<p className="text-xs text-muted-foreground">
+												Files received from other devices will
+												be saved to this folder. Click "Change"
+												to pick a different location.
+											</p>
+										</>
+									)}
 								</div>
 							</CardContent>
 						</Card>
@@ -966,7 +1018,7 @@ export default function SettingsPage() {
 								</p>
 							</div>
 						</div>
-						<Card className="shadow-sm">
+						<Card className="shadow-2xl dark:shadow-black/50 shadow-foreground/5 border-border/50 bg-foreground/[0.02] backdrop-blur-xl rounded-2xl">
 							<CardContent className="p-6 space-y-6">
 								<div className="flex items-center justify-between">
 									<div className="space-y-0.5">
@@ -1098,7 +1150,7 @@ export default function SettingsPage() {
 								</p>
 							</div>
 						</div>
-						<Card className="shadow-sm overflow-hidden">
+						<Card className="shadow-2xl dark:shadow-black/50 shadow-foreground/5 border-border/50 bg-foreground/[0.02] backdrop-blur-xl rounded-2xl overflow-hidden">
 							{/* Branding block */}
 							<div className="flex flex-col items-center text-center p-8 space-y-3 border-b border-border bg-muted/30">
 								<div className="h-14 w-14 rounded-2xl bg-primary flex items-center justify-center shadow-md">
@@ -1288,30 +1340,11 @@ export default function SettingsPage() {
 						</Card>
 					</section>
 
-					{/* Save button */}
-					<div className="flex items-center justify-end gap-3 pt-2 pb-2">
-						{hasUnsavedChanges && (
-							<span className="text-xs text-amber-500 font-medium">
-								Unsaved changes
-							</span>
-						)}
-						<Button
-							onClick={handleSave}
-							disabled={!hasUnsavedChanges || isSaving}
-							className="gap-2 px-4 h-9 text-sm shadow-sm"
-						>
-							{isSaving ? (
-								<RefreshCw className="h-4 w-4 animate-spin" />
-							) : (
-								<Save className="h-4 w-4" />
-							)}
-							{isSaving ? "Saving..." : "Save Changes"}
-						</Button>
-					</div>
+
 
 					<div className="h-4" />
 				</div>
-			</ScrollArea>
+			</main>
 		</div>
 	);
 }

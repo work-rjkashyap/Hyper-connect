@@ -53,6 +53,8 @@ export default function ChatPage() {
 		messages,
 		localDeviceId,
 		transfers,
+		connectedDevices,
+		deviceConnectionStatus,
 		addMessage,
 		setMessages,
 		markConversationAsRead,
@@ -178,6 +180,28 @@ export default function ChatPage() {
 		}
 		return map;
 	}, [transfers, selectedDevice, localDeviceId]);
+
+	const recipientStatus = useMemo<"online" | "offline">(() => {
+		if (!selectedDevice) return "offline";
+
+		const liveConnection =
+			connectionState === "connected" ||
+			connectedDevices.has(selectedDevice.device_id) ||
+			deviceConnectionStatus[selectedDevice.device_id] === "connected";
+
+		if (liveConnection) {
+			return "online";
+		}
+
+		return Date.now() - selectedDevice.last_seen * 1000 < 60_000
+			? "online"
+			: "offline";
+	}, [
+		selectedDevice,
+		connectionState,
+		connectedDevices,
+		deviceConnectionStatus,
+	]);
 
 	// ── Determine approval state ───────────────────────────────────────────
 	const approvalState: ApprovalState = useMemo(() => {
@@ -668,11 +692,7 @@ export default function ChatPage() {
 	return (
 		<ChatWindow
 			recipientName={selectedDevice.display_name}
-			recipientStatus={
-				Date.now() - selectedDevice.last_seen * 1000 < 60_000
-					? "online"
-					: "offline"
-			}
+			recipientStatus={recipientStatus}
 			connectionState={connectionState}
 			latencyMs={latencyMs}
 			messages={currentMessages.map((msg) => {
@@ -739,6 +759,7 @@ export default function ChatPage() {
 					? () => navigate(`/screen-share/${deviceId}`)
 					: undefined
 			}
+			onBack={() => navigate(-1)}
 			// Secure handshake / SAS verification
 			isVerified={deviceId ? verifiedDevices.includes(deviceId) : false}
 			onVerify={

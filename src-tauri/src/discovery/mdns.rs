@@ -11,7 +11,8 @@ use crate::messaging::GroupService;
 use mdns_sd::{ServiceDaemon, ServiceEvent, ServiceInfo};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::net::IpAddr;
+use std::cmp::Reverse;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,
@@ -21,6 +22,45 @@ use tokio::sync::RwLock;
 
 /// mDNS service type for Hyper Connect
 const SERVICE_TYPE: &str = "_hyperconnect._tcp.local.";
+
+fn is_reachable_ipv4(addr: &Ipv4Addr) -> bool {
+    !addr.is_loopback()
+        && !addr.is_unspecified()
+        && !addr.is_multicast()
+        && !addr.is_link_local()
+        && *addr != Ipv4Addr::BROADCAST
+}
+
+fn is_reachable_ipv6(addr: &Ipv6Addr) -> bool {
+    !addr.is_loopback()
+        && !addr.is_unspecified()
+        && !addr.is_multicast()
+        && !addr.is_unicast_link_local()
+}
+
+fn is_reachable_ip(addr: &IpAddr) -> bool {
+    match addr {
+        IpAddr::V4(ipv4) => is_reachable_ipv4(ipv4),
+        IpAddr::V6(ipv6) => is_reachable_ipv6(ipv6),
+    }
+}
+
+fn ip_priority(addr: &IpAddr) -> (u8, Reverse<u128>) {
+    match addr {
+        IpAddr::V4(ipv4) => {
+            let class = if ipv4.is_private() { 0 } else { 1 };
+            (class, Reverse(u32::from(*ipv4) as u128))
+        }
+        IpAddr::V6(ipv6) => {
+            let class = if ipv6.is_unique_local() { 3 } else { 4 };
+            (class, Reverse(u128::from(*ipv6)))
+        }
+    }
+}
+
+fn sort_ip_addresses(addresses: &mut [IpAddr]) {
+    addresses.sort_by_key(ip_priority);
+}
 
 /// Discovered device information
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -109,15 +149,13 @@ impl MdnsDiscoveryService {
             .into_iter()
             .filter(|iface| !iface.is_loopback())
             .map(|iface| iface.addr.ip())
+            .filter(is_reachable_ip)
             .collect();
 
-        // Sort IPv4 before IPv6 so the first entry is always the most
-        // reachable address on a typical LAN.
-        addresses.sort_by(|a, b| {
-            let a_v4 = a.is_ipv4();
-            let b_v4 = b.is_ipv4();
-            b_v4.cmp(&a_v4)
-        });
+        // Keep the most LAN-friendly addresses first so downstream callers
+        // that still need a single preferred address get the Wi-Fi/private
+        // interface before VPN, carrier, or IPv6-only candidates.
+        sort_ip_addresses(&mut addresses);
 
         if addresses.is_empty() {
             return Err("No network interfaces found".to_string());
@@ -245,26 +283,16 @@ impl MdnsDiscoveryService {
         }
 
         // Filter and prioritise IPv4 addresses; drop link-local IPv6.
-        let mut addresses: Vec<String> = info
+        let mut addresses: Vec<IpAddr> = info
             .get_addresses()
             .iter()
-            .filter(|addr| match addr {
-                IpAddr::V6(ipv6) => {
-                    let segments = ipv6.segments();
-                    // Reject fe80::/10 link-local addresses.
-                    !(segments[0] >= 0xfe80 && segments[0] <= 0xfebf)
-                }
-                IpAddr::V4(_) => true,
-            })
-            .map(|addr| addr.to_string())
+            .copied()
+            .filter(is_reachable_ip)
             .collect();
 
-        // IPv4 first.
-        addresses.sort_by(|a, b| {
-            let a_v4 = !a.contains(':');
-            let b_v4 = !b.contains(':');
-            b_v4.cmp(&a_v4)
-        });
+        sort_ip_addresses(&mut addresses);
+
+        let addresses: Vec<String> = addresses.into_iter().map(|addr| addr.to_string()).collect();
 
         if addresses.is_empty() {
             eprintln!(

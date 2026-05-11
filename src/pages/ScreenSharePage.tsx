@@ -162,9 +162,14 @@ interface DevicePickerProps {
 function DevicePicker({ onSelect, disabled }: DevicePickerProps) {
 	const devices = useAppStore((s) => s.devices);
 	const connectedDevices = useAppStore((s) => s.connectedDevices);
+	const deviceConnectionStatus = useAppStore(
+		(s) => s.deviceConnectionStatus,
+	);
 
 	const onlineDevices = devices.filter((d) => {
-		const isConnected = connectedDevices.has(d.device_id);
+		const isConnected =
+			connectedDevices.has(d.device_id) ||
+			deviceConnectionStatus[d.device_id] === "connected";
 		const isRecent = Date.now() - d.last_seen * 1000 < 60_000;
 		return isConnected || isRecent;
 	});

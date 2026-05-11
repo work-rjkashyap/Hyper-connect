@@ -18,6 +18,7 @@ import Sparkles from "lucide-react/dist/esm/icons/sparkles";
 import FileText from "lucide-react/dist/esm/icons/file-text";
 import BarChart3 from "lucide-react/dist/esm/icons/bar-chart-3";
 import X from "lucide-react/dist/esm/icons/x";
+import ArrowLeft from "lucide-react/dist/esm/icons/arrow-left";
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -76,6 +77,7 @@ interface ChatWindowProps {
 	onRejectFile?: (transferId: string) => void;
 	onCancelFile?: (transferId: string) => void;
 	onPauseFile?: (transferId: string) => void;
+	onBack?: () => void;
 	// Secure handshake / SAS verification props
 	isVerified?: boolean;
 	onVerify?: () => void;
@@ -289,6 +291,7 @@ export function ChatWindow({
 	onRejectFile,
 	onCancelFile,
 	onPauseFile,
+	onBack,
 	isVerified = false,
 	onVerify,
 	onScreenShare,
@@ -308,6 +311,18 @@ export function ChatWindow({
 	const [showSmartReplies, setShowSmartReplies] = useState(false);
 	const [showSummary, setShowSummary] = useState(false);
 	const [showAnalysis, setShowAnalysis] = useState(false);
+	// Track the visual viewport height so the layout shrinks when the soft
+	// keyboard opens on mobile WebView (WKWebView does NOT resize on keyboard).
+	const [vvHeight, setVvHeight] = useState<number | null>(null);
+
+	useEffect(() => {
+		const vv = window.visualViewport;
+		if (!vv) return;
+		const onResize = () => setVvHeight(vv.height);
+		onResize();
+		vv.addEventListener("resize", onResize);
+		return () => vv.removeEventListener("resize", onResize);
+	}, []);
 
 	// When smart replies arrive, show the bar
 	useEffect(() => {
@@ -335,6 +350,7 @@ export function ChatWindow({
 	);
 
 	const isOffline = recipientStatus === "offline";
+	const mobileHeaderHeight = "calc(4rem + var(--safe-area-top, 0px))";
 
 	// Whether the standard chat input should be shown
 	const showChatInput =
@@ -352,24 +368,37 @@ export function ChatWindow({
 		}
 	}, [messages]);
 
+
 	return (
 		<div
 			className={cn(
-				"flex flex-col h-full w-full bg-background text-foreground",
+				"relative flex h-full min-h-0 w-full flex-col overflow-hidden bg-background text-foreground",
 				className,
 			)}
+			style={vvHeight != null ? { height: `${vvHeight}px` } : undefined}
 		>
 			{/* ── Header ──────────────────────────────────────────────────── */}
 			<header
-				className="flex shrink-0 items-center justify-between border-b border-border px-3 sm:px-6 sm:pt-6 sm:h-20 bg-card/50 backdrop-blur-sm gap-2 sm:gap-4"
+				className="flex shrink-0 items-center justify-between gap-2 border-b border-border bg-card/95 px-3 backdrop-blur-sm sm:px-6 sm:pt-6 sm:h-20 sm:bg-card/50 sm:backdrop-blur-0"
 				style={{
-					height: "calc(4rem + var(--safe-area-top, 0px))",
+					minHeight: mobileHeaderHeight,
 					paddingTop:
 						"max(calc(0.5rem + var(--safe-area-top, 0px)), 0.5rem)",
 				}}
 			>
 				{/* Left: avatar + name + connection badge */}
 				<div className="flex items-center gap-2 sm:gap-4 min-w-0">
+					{onBack && (
+						<Button
+							variant="ghost"
+							size="sm"
+							onClick={onBack}
+							className="h-8 w-8 shrink-0 rounded-xl sm:hidden"
+						>
+							<ArrowLeft className="h-4 w-4" />
+							<span className="sr-only">Go back</span>
+						</Button>
+					)}
 					<div className="relative shrink-0">
 						<Avatar className="h-8 w-8 sm:h-10 sm:w-10">
 							<AvatarImage
@@ -571,7 +600,7 @@ export function ChatWindow({
 
 			{/* ── Message feed ────────────────────────────────────────────── */}
 			<ScrollArea
-				className="flex-1 p-3 sm:p-4 bg-background"
+				className="min-h-0 flex-1 bg-background p-3 sm:p-4"
 				ref={scrollRef}
 			>
 				{messages.length === 0 ? (
@@ -744,67 +773,69 @@ export function ChatWindow({
 				</div>
 			)}
 
-			{/* ── AI Smart Reply suggestions ────────────────────────────── */}
-			{showSmartReplies &&
-				showChatInput &&
-				(smartReplies.length > 0 || isLoadingSmartReplies) && (
-					<div className="flex items-center gap-2 px-3 py-2 border-t border-border/50 overflow-x-auto scrollbar-none">
-						<Sparkles className="h-3.5 w-3.5 text-primary shrink-0" />
-						{isLoadingSmartReplies ? (
-							<div className="flex items-center gap-2 text-xs text-muted-foreground">
-								<Loader2 className="h-3 w-3 animate-spin" />
-								Generating replies...
-							</div>
-						) : (
-							<>
-								{smartReplies.map((reply, i) => (
+			<div className="shrink-0 bg-background">
+				{/* ── AI Smart Reply suggestions ────────────────────────────── */}
+				{showSmartReplies &&
+					showChatInput &&
+					(smartReplies.length > 0 || isLoadingSmartReplies) && (
+						<div className="flex items-center gap-2 overflow-x-auto border-t border-border/50 px-3 py-2 scrollbar-none">
+							<Sparkles className="h-3.5 w-3.5 text-primary shrink-0" />
+							{isLoadingSmartReplies ? (
+								<div className="flex items-center gap-2 text-xs text-muted-foreground">
+									<Loader2 className="h-3 w-3 animate-spin" />
+									Generating replies...
+								</div>
+							) : (
+								<>
+									{smartReplies.map((reply, i) => (
+										<button
+											key={i}
+											onClick={() =>
+												handleSmartReplyClick(reply)
+											}
+											className="shrink-0 whitespace-nowrap rounded-full border border-primary/20 bg-primary/5 px-3 py-1.5 text-xs text-foreground transition-colors hover:bg-primary/10"
+										>
+											{reply}
+										</button>
+									))}
 									<button
-										key={i}
-										onClick={() =>
-											handleSmartReplyClick(reply)
-										}
-										className="shrink-0 px-3 py-1.5 text-xs rounded-full border border-primary/20 bg-primary/5 hover:bg-primary/10 text-foreground transition-colors whitespace-nowrap"
+										onClick={() => setShowSmartReplies(false)}
+										className="shrink-0 p-1 text-muted-foreground hover:text-foreground"
 									>
-										{reply}
+										<X className="h-3 w-3" />
 									</button>
-								))}
-								<button
-									onClick={() => setShowSmartReplies(false)}
-									className="shrink-0 p-1 text-muted-foreground hover:text-foreground"
-								>
-									<X className="h-3 w-3" />
-								</button>
-							</>
-						)}
+								</>
+							)}
+						</div>
+					)}
+
+				{/* ── Offline notice ─────────────────────────────────────────── */}
+				{showChatInput && isOffline && (
+					<div className="flex items-center justify-center gap-2 border-t border-border bg-muted/50 px-4 py-1.5 text-xs font-medium text-muted-foreground">
+						<WifiOff className="h-3 w-3 shrink-0" />
+						Device is offline — messages and files are disabled
 					</div>
 				)}
 
-			{/* ── Offline notice ─────────────────────────────────────────── */}
-			{showChatInput && isOffline && (
-				<div className="flex items-center justify-center gap-2 px-4 py-1.5 bg-muted/50 border-t border-border text-muted-foreground text-xs font-medium">
-					<WifiOff className="h-3 w-3 shrink-0" />
-					Device is offline — messages and files are disabled
-				</div>
-			)}
-
-			{/* ── Input area or disabled banner ──────────────────────────── */}
-			{showChatInput ? (
-				<ChatInput
-					onSendMessage={onSendMessage}
-					onFileSelect={onFileSelect}
-					disabled={isOffline}
-				/>
-			) : (
-				<DisabledInputBanner
-					state={
-						approvalState as
-							| "outgoing_pending"
-							| "outgoing_declined"
-							| "incoming_pending"
-					}
-					recipientName={recipientName}
-				/>
-			)}
+				{/* ── Input area or disabled banner ──────────────────────────── */}
+				{showChatInput ? (
+					<ChatInput
+						onSendMessage={onSendMessage}
+						onFileSelect={onFileSelect}
+						disabled={isOffline}
+					/>
+				) : (
+					<DisabledInputBanner
+						state={
+							approvalState as
+								| "outgoing_pending"
+								| "outgoing_declined"
+								| "incoming_pending"
+						}
+						recipientName={recipientName}
+					/>
+				)}
+			</div>
 		</div>
 	);
 }

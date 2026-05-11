@@ -327,8 +327,8 @@ export default function NetworkHealthBar() {
 							<Tooltip>
 								<TooltipTrigger asChild>
 									<div className="flex items-center gap-1 cursor-default">
-										<GitBranch className="h-3 w-3 text-violet-500" />
-										<span className="tabular-nums font-medium text-violet-600 dark:text-violet-400">
+										<GitBranch className="h-3 w-3 text-primary" />
+										<span className="tabular-nums font-medium text-primary dark:text-primary/80">
 											{relayedDestinations}
 											<span className="hidden sm:inline">
 												{" "}

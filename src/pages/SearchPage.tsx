@@ -213,8 +213,8 @@ function GroupMessageResultCard({
 			onClick={onClick}
 		>
 			<div className="flex items-start gap-3">
-				<div className="mt-0.5 shrink-0 h-8 w-8 rounded-full bg-violet-500/10 flex items-center justify-center">
-					<UsersIcon className="h-4 w-4 text-violet-500" />
+				<div className="mt-0.5 shrink-0 h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center">
+					<UsersIcon className="h-4 w-4 text-primary" />
 				</div>
 
 				<div className="flex-1 min-w-0 space-y-1">
@@ -448,7 +448,7 @@ export default function SearchPage() {
 
 	return (
 		<TooltipProvider delayDuration={300}>
-			<div className="flex flex-col h-full">
+			<div className="flex h-full min-h-0 flex-col overflow-hidden">
 				{/* ── Header ─────────────────────────────────────────────── */}
 				<div className="shrink-0 border-b border-border/50 bg-card/50 backdrop-blur-sm">
 					<div className="px-4 pt-3 pb-2">
@@ -534,7 +534,7 @@ export default function SearchPage() {
 				</div>
 
 				{/* ── Results ─────────────────────────────────────────────── */}
-				<ScrollArea className="flex-1">
+				<ScrollArea className="min-h-0 flex-1">
 					<div className="p-4 space-y-2">
 						{!hasQuery && <EmptySearchState />}
 

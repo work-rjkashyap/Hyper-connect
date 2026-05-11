@@ -87,7 +87,7 @@ export default function ChatInput({
 	return (
 		<div
 			className={cn(
-				"flex items-end gap-1 sm:gap-2 border-t border-border bg-background p-2 sm:p-4 transition-opacity",
+				"flex items-center gap-2 sm:gap-3 border-t border-border bg-background p-2 sm:p-4 transition-opacity",
 				disabled && "opacity-60 pointer-events-none select-none",
 			)}
 			style={{
@@ -103,7 +103,7 @@ export default function ChatInput({
 			/>
 
 			{/* Left Actions */}
-			<div className="flex items-center gap-0.5 sm:gap-1 pb-2">
+			<div className="flex items-center gap-0.5 sm:gap-1">
 				<DropdownMenu>
 					<DropdownMenuTrigger asChild>
 						<Button
@@ -185,23 +185,23 @@ export default function ChatInput({
 			</div>
 
 			{/* Right Actions */}
-			<div className="pb-1">
+			<div>
 				{message.trim() ? (
 					<Button
 						onClick={handleSendMessage}
 						size="sm"
-						className="h-8 w-8 sm:h-10 sm:w-10 shrink-0"
+						className="h-10 w-10 sm:h-11 sm:w-11 shrink-0"
 					>
-						<Send className="h-4 w-4 sm:h-5 sm:w-5" />
+						<Send className="h-5 w-5" />
 						<span className="sr-only">Send</span>
 					</Button>
 				) : (
 					<Button
 						variant="ghost"
 						size="sm"
-						className="h-8 w-8 sm:h-10 sm:w-10 shrink-0 text-muted-foreground hover:text-foreground"
+						className="h-10 w-10 sm:h-11 sm:w-11 shrink-0 text-muted-foreground hover:text-foreground"
 					>
-						<Mic className="h-4 w-4 sm:h-5 sm:w-5" />
+						<Mic className="h-5 w-5" />
 					</Button>
 				)}
 			</div>
